@@ -198,10 +198,12 @@ export class WebGPUCanvasRenderer {
   }
 
   private toNdcX(pixelX: number): number {
-    return (pixelX / Math.max(this.canvas.width, 1)) * 2 - 1;
+    const logicalWidth = Math.max(this.canvas.clientWidth, 1);
+    return (pixelX / logicalWidth) * 2 - 1;
   }
 
   private toNdcY(pixelY: number): number {
-    return 1 - (pixelY / Math.max(this.canvas.height, 1)) * 2;
+    const logicalHeight = Math.max(this.canvas.clientHeight, 1);
+    return 1 - (pixelY / logicalHeight) * 2;
   }
 }

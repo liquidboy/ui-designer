@@ -101,9 +101,11 @@ export class RuntimeHost {
 
   private toCanvasPoint(event: PointerEvent): { x: number; y: number } {
     const rect = this.canvas.getBoundingClientRect();
+    const offsetX = this.canvas.clientLeft;
+    const offsetY = this.canvas.clientTop;
     return {
-      x: event.clientX - rect.left,
-      y: event.clientY - rect.top
+      x: event.clientX - rect.left - offsetX,
+      y: event.clientY - rect.top - offsetY
     };
   }
 
