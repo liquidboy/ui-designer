@@ -1,11 +1,12 @@
 import { parseXaml } from '@ui-designer/xaml-parser';
 import {
   buildDrawCommands,
+  type DrawRectCommand,
   buildUiTree,
   type DrawCommand,
   findElementById,
-  hitTest,
   runLayout,
+  type Point,
   type UiElement
 } from '@ui-designer/ui-core';
 import { WebGPUCanvasRenderer } from '@ui-designer/webgpu-renderer';
@@ -30,6 +31,8 @@ export class RuntimeHost {
   private isRunning = false;
   private frameHandle = 0;
   private camera: RuntimeCamera = { x: 0, y: 0, zoom: 1 };
+  private screenCommands: DrawCommand[] = [];
+  private readonly elementOffsets = new Map<string, Point>();
   private selectedElementId: string | null = null;
   private hoveredElementId: string | null = null;
   private onHoveredElementChange?: (elementId: string | null) => void;
@@ -84,7 +87,20 @@ export class RuntimeHost {
       return null;
     }
 
-    return findElementById(this.root, id);
+    const element = findElementById(this.root, id);
+    if (!element) {
+      return null;
+    }
+
+    const offset = this.getElementOffset(id);
+    return {
+      ...element,
+      layout: {
+        ...element.layout,
+        x: element.layout.x + offset.x,
+        y: element.layout.y + offset.y
+      }
+    };
   }
 
   setCamera(camera: RuntimeCamera): void {
@@ -93,6 +109,37 @@ export class RuntimeHost {
       y: camera.y,
       zoom: Math.max(0.05, camera.zoom)
     };
+  }
+
+  getElementOffset(id: string): Point {
+    return this.elementOffsets.get(id) ?? { x: 0, y: 0 };
+  }
+
+  setElementOffset(id: string, offset: Point): void {
+    this.elementOffsets.set(id, { x: offset.x, y: offset.y });
+  }
+
+  moveElementBy(id: string, delta: Point): void {
+    const current = this.getElementOffset(id);
+    this.setElementOffset(id, {
+      x: current.x + delta.x,
+      y: current.y + delta.y
+    });
+  }
+
+  pickElementAtScreenPoint(point: Point): string | null {
+    for (let i = this.screenCommands.length - 1; i >= 0; i -= 1) {
+      const command = this.screenCommands[i];
+      if (command.kind !== 'rect') {
+        continue;
+      }
+
+      if (this.containsPoint(command, point)) {
+        return command.elementId;
+      }
+    }
+
+    return null;
   }
 
   private layoutAndRender(): void {
@@ -112,7 +159,10 @@ export class RuntimeHost {
       hoveredElementId: this.hoveredElementId,
       selectedElementId: this.selectedElementId
     });
-    this.renderer.render(this.projectCommands(commands));
+
+    const worldCommands = this.applyElementOffsets(commands);
+    this.screenCommands = this.projectCommands(worldCommands);
+    this.renderer.render(this.screenCommands);
   }
 
   private toCanvasPoint(event: PointerEvent): { x: number; y: number } {
@@ -126,14 +176,8 @@ export class RuntimeHost {
   }
 
   private pickElementId(event: PointerEvent): string | null {
-    if (!this.root) {
-      return null;
-    }
-
     const point = this.toCanvasPoint(event);
-    const worldPoint = this.screenToWorld(point);
-    const target = hitTest(this.root, worldPoint);
-    return target ? target.id : null;
+    return this.pickElementAtScreenPoint(point);
   }
 
   private handlePointerMove(event: PointerEvent): void {
@@ -193,5 +237,33 @@ export class RuntimeHost {
         height: command.height * this.camera.zoom
       };
     });
+  }
+
+  private applyElementOffsets(commands: DrawCommand[]): DrawCommand[] {
+    return commands.map((command: DrawCommand) => {
+      if (command.kind !== 'rect') {
+        return command;
+      }
+
+      const offset = this.getElementOffset(command.elementId);
+      if (offset.x === 0 && offset.y === 0) {
+        return command;
+      }
+
+      return {
+        ...command,
+        x: command.x + offset.x,
+        y: command.y + offset.y
+      };
+    });
+  }
+
+  private containsPoint(rect: DrawRectCommand, point: Point): boolean {
+    return (
+      point.x >= rect.x &&
+      point.y >= rect.y &&
+      point.x <= rect.x + rect.width &&
+      point.y <= rect.y + rect.height
+    );
   }
 }

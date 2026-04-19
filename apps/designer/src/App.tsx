@@ -30,6 +30,9 @@ export function App() {
   const [cameraView, setCameraView] = useState<CameraState>(() => createCameraState());
   const cameraRef = useRef<CameraState>(cameraView);
   const isPanningRef = useRef(false);
+  const isDraggingRef = useRef(false);
+  const dragElementIdRef = useRef<string | null>(null);
+  const dragLastWorldRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const panOriginRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const panStartCameraRef = useRef<CameraState>(cameraView);
   const sections = useMemo(() => createPropertySections(), []);
@@ -63,7 +66,7 @@ export function App() {
         }
       })
       .then(() => {
-        setStatus('Design surface online. Middle-drag to pan and use wheel to zoom.');
+        setStatus('Design surface online. Left-drag to move, middle-drag to pan, wheel to zoom.');
         runtime.start();
       })
       .catch((error: unknown) => {
@@ -92,6 +95,26 @@ export function App() {
     };
 
     const onPointerDown = (event: PointerEvent) => {
+      if (event.button === 0) {
+        const runtime = runtimeRef.current;
+        if (!runtime) {
+          return;
+        }
+
+        const point = toCanvasPoint(event);
+        const id = runtime.pickElementAtScreenPoint(point);
+        if (!id) {
+          return;
+        }
+
+        isDraggingRef.current = true;
+        dragElementIdRef.current = id;
+        dragLastWorldRef.current = screenToWorld(point, cameraRef.current);
+        canvas.classList.add('is-dragging');
+        canvas.setPointerCapture(event.pointerId);
+        return;
+      }
+
       if (event.button !== 1) {
         return;
       }
@@ -104,6 +127,27 @@ export function App() {
     };
 
     const onPointerMove = (event: PointerEvent) => {
+      if (isDraggingRef.current && dragElementIdRef.current) {
+        const runtime = runtimeRef.current;
+        if (!runtime) {
+          return;
+        }
+
+        const point = toCanvasPoint(event);
+        const world = screenToWorld(point, cameraRef.current);
+        const previous = dragLastWorldRef.current;
+        const dx = world.x - previous.x;
+        const dy = world.y - previous.y;
+
+        runtime.moveElementBy(dragElementIdRef.current, { x: dx, y: dy });
+        dragLastWorldRef.current = world;
+
+        if (selectedId === dragElementIdRef.current) {
+          setSelectedElement(runtime.getElementById(selectedId) ?? null);
+        }
+        return;
+      }
+
       if (!isPanningRef.current) {
         return;
       }
@@ -122,6 +166,12 @@ export function App() {
     };
 
     const endPan = () => {
+      if (isDraggingRef.current) {
+        isDraggingRef.current = false;
+        dragElementIdRef.current = null;
+        canvas.classList.remove('is-dragging');
+      }
+
       if (!isPanningRef.current) {
         return;
       }
@@ -159,6 +209,7 @@ export function App() {
       window.removeEventListener('pointercancel', endPan);
       canvas.removeEventListener('wheel', onWheel);
       canvas.classList.remove('is-panning');
+      canvas.classList.remove('is-dragging');
     };
   }, []);
 

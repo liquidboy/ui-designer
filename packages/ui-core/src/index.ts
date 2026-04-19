@@ -339,12 +339,11 @@ function emitOutline(
 ): void {
   const t = Math.max(1, thickness);
   const r = element.layout;
-  const edgeId = `${element.id}:outline`;
 
-  pushRect(commands, edgeId, { x: r.x, y: r.y, width: r.width, height: t }, color);
-  pushRect(commands, edgeId, { x: r.x, y: r.y + r.height - t, width: r.width, height: t }, color);
-  pushRect(commands, edgeId, { x: r.x, y: r.y, width: t, height: r.height }, color);
-  pushRect(commands, edgeId, { x: r.x + r.width - t, y: r.y, width: t, height: r.height }, color);
+  pushRect(commands, element.id, { x: r.x, y: r.y, width: r.width, height: t }, color);
+  pushRect(commands, element.id, { x: r.x, y: r.y + r.height - t, width: r.width, height: t }, color);
+  pushRect(commands, element.id, { x: r.x, y: r.y, width: t, height: r.height }, color);
+  pushRect(commands, element.id, { x: r.x + r.width - t, y: r.y, width: t, height: r.height }, color);
 }
 
 function emitElementCommands(commands: DrawCommand[], element: UiElement, options: DrawCommandOptions): void {
