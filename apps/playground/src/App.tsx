@@ -21,6 +21,8 @@ export function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const runtimeRef = useRef<RuntimeHost | null>(null);
   const [status, setStatus] = useState('Booting runtime...');
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -35,7 +37,9 @@ export function App() {
     runtime
       .boot({
         xaml: sampleXaml,
-        canvas
+        canvas,
+        onHoveredElementChange: setHoveredId,
+        onSelectedElementChange: setSelectedId
       })
       .then(() => {
         setStatus('Runtime booted. Rendering XAML scene through WebGPU.');
@@ -57,6 +61,8 @@ export function App() {
       <header className="top-bar">
         <h1>UI Runtime Playground</h1>
         <p>{status}</p>
+        <p>Hover: {hoveredId ?? 'none'}</p>
+        <p>Selected: {selectedId ?? 'none'}</p>
       </header>
       <section className="viewport-wrap">
         <canvas ref={canvasRef} className="viewport" />

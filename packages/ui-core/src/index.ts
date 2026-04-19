@@ -29,6 +29,7 @@ export interface ColorRgba {
 
 export interface DrawRectCommand {
   kind: 'rect';
+  elementId: string;
   x: number;
   y: number;
   width: number;
@@ -37,6 +38,11 @@ export interface DrawRectCommand {
 }
 
 export type DrawCommand = DrawRectCommand;
+
+export interface DrawCommandOptions {
+  hoveredElementId?: string | null;
+  selectedElementId?: string | null;
+}
 
 function toUiElement(node: XamlNode, idPrefix: string, index: number): UiElement {
   const id = `${idPrefix}.${index}`;
@@ -304,13 +310,19 @@ function colorFromProps(props: Record<string, unknown>, fallback: ColorRgba): Co
   return fallback;
 }
 
-function pushRect(commands: DrawCommand[], rect: LayoutRect, color: ColorRgba): void {
+function pushRect(
+  commands: DrawCommand[],
+  elementId: string,
+  rect: LayoutRect,
+  color: ColorRgba
+): void {
   if (rect.width <= 0 || rect.height <= 0 || color.a <= 0) {
     return;
   }
 
   commands.push({
     kind: 'rect',
+    elementId,
     x: rect.x,
     y: rect.y,
     width: rect.width,
@@ -319,21 +331,67 @@ function pushRect(commands: DrawCommand[], rect: LayoutRect, color: ColorRgba): 
   });
 }
 
-function emitElementCommands(commands: DrawCommand[], element: UiElement): void {
+function emitOutline(
+  commands: DrawCommand[],
+  element: UiElement,
+  color: ColorRgba,
+  thickness: number
+): void {
+  const t = Math.max(1, thickness);
+  const r = element.layout;
+  const edgeId = `${element.id}:outline`;
+
+  pushRect(commands, edgeId, { x: r.x, y: r.y, width: r.width, height: t }, color);
+  pushRect(commands, edgeId, { x: r.x, y: r.y + r.height - t, width: r.width, height: t }, color);
+  pushRect(commands, edgeId, { x: r.x, y: r.y, width: t, height: r.height }, color);
+  pushRect(commands, edgeId, { x: r.x + r.width - t, y: r.y, width: t, height: r.height }, color);
+}
+
+function emitElementCommands(commands: DrawCommand[], element: UiElement, options: DrawCommandOptions): void {
   const t = element.type.toLowerCase();
 
   if (t === 'canvas') {
-    pushRect(commands, element.layout, colorFromProps(element.props, { r: 0.1, g: 0.12, b: 0.16, a: 1 }));
+    pushRect(
+      commands,
+      element.id,
+      element.layout,
+      colorFromProps(element.props, { r: 0.1, g: 0.12, b: 0.16, a: 1 })
+    );
   } else if (t === 'grid') {
-    pushRect(commands, element.layout, colorFromProps(element.props, { r: 0.14, g: 0.17, b: 0.22, a: 1 }));
+    pushRect(
+      commands,
+      element.id,
+      element.layout,
+      colorFromProps(element.props, { r: 0.14, g: 0.17, b: 0.22, a: 1 })
+    );
   } else if (t === 'stackpanel') {
-    pushRect(commands, element.layout, colorFromProps(element.props, { r: 0.12, g: 0.15, b: 0.2, a: 0.9 }));
+    pushRect(
+      commands,
+      element.id,
+      element.layout,
+      colorFromProps(element.props, { r: 0.12, g: 0.15, b: 0.2, a: 0.9 })
+    );
   } else if (t === 'border') {
-    pushRect(commands, element.layout, colorFromProps(element.props, { r: 0.2, g: 0.23, b: 0.29, a: 1 }));
+    pushRect(
+      commands,
+      element.id,
+      element.layout,
+      colorFromProps(element.props, { r: 0.2, g: 0.23, b: 0.29, a: 1 })
+    );
   } else if (t === 'rectangle') {
-    pushRect(commands, element.layout, colorFromProps(element.props, { r: 0.34, g: 0.48, b: 0.92, a: 1 }));
+    pushRect(
+      commands,
+      element.id,
+      element.layout,
+      colorFromProps(element.props, { r: 0.34, g: 0.48, b: 0.92, a: 1 })
+    );
   } else if (t === 'button') {
-    pushRect(commands, element.layout, colorFromProps(element.props, { r: 0.2, g: 0.41, b: 0.8, a: 1 }));
+    pushRect(
+      commands,
+      element.id,
+      element.layout,
+      colorFromProps(element.props, { r: 0.2, g: 0.41, b: 0.8, a: 1 })
+    );
 
     const labelBar: LayoutRect = {
       x: element.layout.x + 10,
@@ -341,7 +399,7 @@ function emitElementCommands(commands: DrawCommand[], element: UiElement): void 
       width: Math.max(28, element.layout.width - 20),
       height: 6
     };
-    pushRect(commands, labelBar, { r: 0.92, g: 0.95, b: 1, a: 0.8 });
+    pushRect(commands, element.id, labelBar, { r: 0.92, g: 0.95, b: 1, a: 0.8 });
   } else if (t === 'textblock') {
     const line: LayoutRect = {
       x: element.layout.x,
@@ -350,16 +408,57 @@ function emitElementCommands(commands: DrawCommand[], element: UiElement): void 
       height: 6
     };
 
-    pushRect(commands, line, colorFromProps(element.props, { r: 0.9, g: 0.93, b: 1, a: 0.95 }));
+    pushRect(
+      commands,
+      element.id,
+      line,
+      colorFromProps(element.props, { r: 0.9, g: 0.93, b: 1, a: 0.95 })
+    );
+  }
+
+  if (options.hoveredElementId === element.id) {
+    emitOutline(commands, element, { r: 0.96, g: 0.83, b: 0.3, a: 0.95 }, 2);
+  }
+
+  if (options.selectedElementId === element.id) {
+    emitOutline(commands, element, { r: 0.35, g: 0.86, b: 0.98, a: 1 }, 3);
   }
 
   for (const child of element.children) {
-    emitElementCommands(commands, child);
+    emitElementCommands(commands, child, options);
   }
 }
 
-export function buildDrawCommands(root: UiElement): DrawCommand[] {
+export function buildDrawCommands(root: UiElement, options: DrawCommandOptions = {}): DrawCommand[] {
   const commands: DrawCommand[] = [];
-  emitElementCommands(commands, root);
+  emitElementCommands(commands, root, options);
   return commands;
+}
+
+function containsPoint(rect: LayoutRect, point: Point): boolean {
+  return (
+    point.x >= rect.x &&
+    point.y >= rect.y &&
+    point.x <= rect.x + rect.width &&
+    point.y <= rect.y + rect.height
+  );
+}
+
+export function hitTest(root: UiElement, point: Point): UiElement | null {
+  function walk(node: UiElement): UiElement | null {
+    if (!containsPoint(node.layout, point)) {
+      return null;
+    }
+
+    for (let i = node.children.length - 1; i >= 0; i -= 1) {
+      const candidate = walk(node.children[i]);
+      if (candidate) {
+        return candidate;
+      }
+    }
+
+    return node;
+  }
+
+  return walk(root);
 }
