@@ -8,7 +8,7 @@ import {
   type DesignerCommand
 } from '@ui-designer/designer-core';
 import { createPropertySections, type PropertyField, type PropertySection } from '@ui-designer/designer-widgets';
-import { RuntimeHost } from '@ui-designer/ui-runtime-web';
+import { RuntimeHost, type RuntimeOverridesSnapshot } from '@ui-designer/ui-runtime-web';
 import type { ColorRgba, Point, UiElement } from '@ui-designer/ui-core';
 
 const sampleXaml = `
@@ -27,6 +27,7 @@ const sampleXaml = `
 </Canvas>
 `;
 const GRID_SIZE = 8;
+const DRAFT_STORAGE_KEY = 'ui-designer:overrides-draft:v1';
 
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
@@ -61,6 +62,18 @@ function parseHexColor(input: string): ColorRgba | null {
   const g = Number.parseInt(normalized.slice(2, 4), 16) / 255;
   const b = Number.parseInt(normalized.slice(4, 6), 16) / 255;
   return { r, g, b, a: 1 };
+}
+
+function readDraftSnapshot(): RuntimeOverridesSnapshot | null {
+  try {
+    const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
+    if (!raw) {
+      return null;
+    }
+    return JSON.parse(raw) as RuntimeOverridesSnapshot;
+  } catch {
+    return null;
+  }
 }
 
 export function App() {
@@ -267,6 +280,35 @@ export function App() {
     syncSelectedElement();
   };
 
+  const saveDraftToStorage = () => {
+    const runtime = runtimeRef.current;
+    if (!runtime) {
+      return;
+    }
+
+    try {
+      const snapshot = runtime.exportOverridesSnapshot();
+      localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(snapshot));
+    } catch {
+      // Best-effort local persistence.
+    }
+  };
+
+  const loadDraftFromStorage = () => {
+    const runtime = runtimeRef.current;
+    if (!runtime) {
+      return;
+    }
+
+    const snapshot = readDraftSnapshot();
+    runtime.importOverridesSnapshot(snapshot);
+    syncSelectedElement();
+  };
+
+  const clearDraftFromStorage = () => {
+    localStorage.removeItem(DRAFT_STORAGE_KEY);
+  };
+
   const applyCamera = (cameraState: CameraState) => {
     const runtime = runtimeRef.current;
     cameraRef.current = cameraState;
@@ -311,6 +353,7 @@ export function App() {
         }
       })
       .then(() => {
+        runtime.importOverridesSnapshot(readDraftSnapshot());
         setStatus('Design surface online. Left-drag to move, handle-drag to resize, middle-drag to pan.');
         runtime.start();
       })
@@ -324,6 +367,10 @@ export function App() {
       runtimeRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    saveDraftToStorage();
+  }, [historyVersion]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -757,6 +804,17 @@ export function App() {
             Redo
           </button>
         </div>
+        <div className="toolbar-row">
+          <button className="toolbar-btn" type="button" onClick={saveDraftToStorage}>
+            Save Draft
+          </button>
+          <button className="toolbar-btn" type="button" onClick={loadDraftFromStorage}>
+            Load Draft
+          </button>
+        </div>
+        <button className="toolbar-btn full-width" type="button" onClick={clearDraftFromStorage}>
+          Clear Draft Storage
+        </button>
         <div className="origin">Hover: {hoveredId ?? 'none'}</div>
         <div className="origin">Selected: {selectedId ?? 'none'}</div>
       </aside>

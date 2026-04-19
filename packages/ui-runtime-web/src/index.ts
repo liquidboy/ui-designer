@@ -25,6 +25,12 @@ export interface RuntimeCamera {
   zoom: number;
 }
 
+export interface RuntimeOverridesSnapshot {
+  offsets: Record<string, Point>;
+  sizes: Record<string, { width: number; height: number }>;
+  colors: Record<string, ColorRgba>;
+}
+
 export class RuntimeHost {
   private readonly renderer: WebGPUCanvasRenderer;
   private readonly canvas: HTMLCanvasElement;
@@ -186,6 +192,58 @@ export class RuntimeHost {
     this.elementOffsets.delete(id);
     this.elementSizeOverrides.delete(id);
     this.elementColorOverrides.delete(id);
+  }
+
+  clearAllOverrides(): void {
+    this.elementOffsets.clear();
+    this.elementSizeOverrides.clear();
+    this.elementColorOverrides.clear();
+  }
+
+  exportOverridesSnapshot(): RuntimeOverridesSnapshot {
+    return {
+      offsets: Object.fromEntries(this.elementOffsets.entries()),
+      sizes: Object.fromEntries(this.elementSizeOverrides.entries()),
+      colors: Object.fromEntries(this.elementColorOverrides.entries())
+    };
+  }
+
+  importOverridesSnapshot(snapshot: RuntimeOverridesSnapshot | null): void {
+    this.clearAllOverrides();
+    if (!snapshot) {
+      return;
+    }
+
+    for (const [id, point] of Object.entries(snapshot.offsets ?? {})) {
+      if (Number.isFinite(point.x) && Number.isFinite(point.y)) {
+        this.elementOffsets.set(id, { x: point.x, y: point.y });
+      }
+    }
+
+    for (const [id, size] of Object.entries(snapshot.sizes ?? {})) {
+      if (Number.isFinite(size.width) && Number.isFinite(size.height)) {
+        this.elementSizeOverrides.set(id, {
+          width: Math.max(1, size.width),
+          height: Math.max(1, size.height)
+        });
+      }
+    }
+
+    for (const [id, color] of Object.entries(snapshot.colors ?? {})) {
+      if (
+        Number.isFinite(color.r) &&
+        Number.isFinite(color.g) &&
+        Number.isFinite(color.b) &&
+        Number.isFinite(color.a)
+      ) {
+        this.elementColorOverrides.set(id, {
+          r: Math.max(0, Math.min(1, color.r)),
+          g: Math.max(0, Math.min(1, color.g)),
+          b: Math.max(0, Math.min(1, color.b)),
+          a: Math.max(0, Math.min(1, color.a))
+        });
+      }
+    }
   }
 
   pickElementAtScreenPoint(point: Point): string | null {
