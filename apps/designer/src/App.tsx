@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import { createCameraState, worldToScreen } from '@ui-designer/designer-core';
+import { createCameraState, screenToWorld, worldToScreen, type CameraState } from '@ui-designer/designer-core';
 import { createPropertySections, type PropertyField, type PropertySection } from '@ui-designer/designer-widgets';
 import { RuntimeHost } from '@ui-designer/ui-runtime-web';
 import type { UiElement } from '@ui-designer/ui-core';
@@ -27,8 +27,19 @@ export function App() {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedElement, setSelectedElement] = useState<UiElement | null>(null);
-  const camera = useMemo(() => createCameraState(), []);
+  const [cameraView, setCameraView] = useState<CameraState>(() => createCameraState());
+  const cameraRef = useRef<CameraState>(cameraView);
+  const isPanningRef = useRef(false);
+  const panOriginRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const panStartCameraRef = useRef<CameraState>(cameraView);
   const sections = useMemo(() => createPropertySections(), []);
+
+  const applyCamera = (cameraState: CameraState) => {
+    const runtime = runtimeRef.current;
+    cameraRef.current = cameraState;
+    setCameraView(cameraState);
+    runtime?.setCamera(cameraState);
+  };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -39,6 +50,7 @@ export function App() {
 
     const runtime = new RuntimeHost(canvas);
     runtimeRef.current = runtime;
+    runtime.setCamera(cameraRef.current);
 
     runtime
       .boot({
@@ -51,7 +63,7 @@ export function App() {
         }
       })
       .then(() => {
-        setStatus('Design surface online. Hover or click any rendered element.');
+        setStatus('Design surface online. Middle-drag to pan and use wheel to zoom.');
         runtime.start();
       })
       .catch((error: unknown) => {
@@ -63,9 +75,94 @@ export function App() {
       runtime.stop();
       runtimeRef.current = null;
     };
-  }, [camera]);
+  }, []);
 
-  const origin = worldToScreen({ x: 0, y: 0 }, camera);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) {
+      return;
+    }
+
+    const toCanvasPoint = (event: PointerEvent | WheelEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      return {
+        x: event.clientX - rect.left - canvas.clientLeft,
+        y: event.clientY - rect.top - canvas.clientTop
+      };
+    };
+
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.button !== 1) {
+        return;
+      }
+
+      event.preventDefault();
+      isPanningRef.current = true;
+      panOriginRef.current = { x: event.clientX, y: event.clientY };
+      panStartCameraRef.current = cameraRef.current;
+      canvas.classList.add('is-panning');
+    };
+
+    const onPointerMove = (event: PointerEvent) => {
+      if (!isPanningRef.current) {
+        return;
+      }
+
+      const start = panOriginRef.current;
+      const startCamera = panStartCameraRef.current;
+      const dx = event.clientX - start.x;
+      const dy = event.clientY - start.y;
+      const zoom = Math.max(startCamera.zoom, 0.05);
+
+      applyCamera({
+        ...startCamera,
+        x: startCamera.x - dx / zoom,
+        y: startCamera.y - dy / zoom
+      });
+    };
+
+    const endPan = () => {
+      if (!isPanningRef.current) {
+        return;
+      }
+
+      isPanningRef.current = false;
+      canvas.classList.remove('is-panning');
+    };
+
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+
+      const point = toCanvasPoint(event);
+      const cameraNow = cameraRef.current;
+      const worldBefore = screenToWorld(point, cameraNow);
+      const zoomFactor = Math.exp(-event.deltaY * 0.0015);
+      const nextZoom = Math.min(4, Math.max(0.2, cameraNow.zoom * zoomFactor));
+
+      applyCamera({
+        zoom: nextZoom,
+        x: worldBefore.x - point.x / nextZoom,
+        y: worldBefore.y - point.y / nextZoom
+      });
+    };
+
+    canvas.addEventListener('pointerdown', onPointerDown);
+    canvas.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', endPan);
+    window.addEventListener('pointercancel', endPan);
+    canvas.addEventListener('wheel', onWheel, { passive: false });
+
+    return () => {
+      canvas.removeEventListener('pointerdown', onPointerDown);
+      canvas.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', endPan);
+      window.removeEventListener('pointercancel', endPan);
+      canvas.removeEventListener('wheel', onWheel);
+      canvas.classList.remove('is-panning');
+    };
+  }, []);
+
+  const origin = worldToScreen({ x: 0, y: 0 }, cameraView);
 
   return (
     <main className="designer-shell">
@@ -73,6 +170,8 @@ export function App() {
         <h1>Designer</h1>
         <p>{status}</p>
         <div className="origin">Screen origin: {origin.x.toFixed(0)}, {origin.y.toFixed(0)}</div>
+        <div className="origin">Camera: {cameraView.x.toFixed(0)}, {cameraView.y.toFixed(0)}</div>
+        <div className="origin">Zoom: {(cameraView.zoom * 100).toFixed(0)}%</div>
         <div className="origin">Hover: {hoveredId ?? 'none'}</div>
         <div className="origin">Selected: {selectedId ?? 'none'}</div>
       </aside>

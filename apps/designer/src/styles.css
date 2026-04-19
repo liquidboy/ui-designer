@@ -62,6 +62,11 @@ body,
   border: 1px solid #2b3647;
   border-radius: 12px;
   display: block;
+  cursor: crosshair;
+}
+
+.canvas.is-panning {
+  cursor: grabbing;
 }
 
 .inspector-group {

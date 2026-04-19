@@ -2,6 +2,7 @@ import { parseXaml } from '@ui-designer/xaml-parser';
 import {
   buildDrawCommands,
   buildUiTree,
+  type DrawCommand,
   findElementById,
   hitTest,
   runLayout,
@@ -16,12 +17,19 @@ export interface RuntimeBootOptions {
   onSelectedElementChange?: (elementId: string | null) => void;
 }
 
+export interface RuntimeCamera {
+  x: number;
+  y: number;
+  zoom: number;
+}
+
 export class RuntimeHost {
   private readonly renderer: WebGPUCanvasRenderer;
   private readonly canvas: HTMLCanvasElement;
   private root: UiElement | null = null;
   private isRunning = false;
   private frameHandle = 0;
+  private camera: RuntimeCamera = { x: 0, y: 0, zoom: 1 };
   private selectedElementId: string | null = null;
   private hoveredElementId: string | null = null;
   private onHoveredElementChange?: (elementId: string | null) => void;
@@ -79,6 +87,14 @@ export class RuntimeHost {
     return findElementById(this.root, id);
   }
 
+  setCamera(camera: RuntimeCamera): void {
+    this.camera = {
+      x: camera.x,
+      y: camera.y,
+      zoom: Math.max(0.05, camera.zoom)
+    };
+  }
+
   private layoutAndRender(): void {
     this.renderer.resize();
 
@@ -96,7 +112,7 @@ export class RuntimeHost {
       hoveredElementId: this.hoveredElementId,
       selectedElementId: this.selectedElementId
     });
-    this.renderer.render(commands);
+    this.renderer.render(this.projectCommands(commands));
   }
 
   private toCanvasPoint(event: PointerEvent): { x: number; y: number } {
@@ -115,7 +131,8 @@ export class RuntimeHost {
     }
 
     const point = this.toCanvasPoint(event);
-    const target = hitTest(this.root, point);
+    const worldPoint = this.screenToWorld(point);
+    const target = hitTest(this.root, worldPoint);
     return target ? target.id : null;
   }
 
@@ -132,6 +149,10 @@ export class RuntimeHost {
   }
 
   private handlePointerDown(event: PointerEvent): void {
+    if (event.button !== 0) {
+      return;
+    }
+
     const next = this.pickElementId(event);
     if (next === this.selectedElementId) {
       return;
@@ -141,5 +162,36 @@ export class RuntimeHost {
     if (this.onSelectedElementChange) {
       this.onSelectedElementChange(next);
     }
+  }
+
+  private worldToScreen(point: { x: number; y: number }): { x: number; y: number } {
+    return {
+      x: (point.x - this.camera.x) * this.camera.zoom,
+      y: (point.y - this.camera.y) * this.camera.zoom
+    };
+  }
+
+  private screenToWorld(point: { x: number; y: number }): { x: number; y: number } {
+    return {
+      x: point.x / this.camera.zoom + this.camera.x,
+      y: point.y / this.camera.zoom + this.camera.y
+    };
+  }
+
+  private projectCommands(commands: DrawCommand[]): DrawCommand[] {
+    if (this.camera.zoom === 1 && this.camera.x === 0 && this.camera.y === 0) {
+      return commands;
+    }
+
+    return commands.map((command: DrawCommand) => {
+      const origin = this.worldToScreen({ x: command.x, y: command.y });
+      return {
+        ...command,
+        x: origin.x,
+        y: origin.y,
+        width: command.width * this.camera.zoom,
+        height: command.height * this.camera.zoom
+      };
+    });
   }
 }
