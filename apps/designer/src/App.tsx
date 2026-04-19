@@ -1,8 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import { createCameraState, screenToWorld, worldToScreen, type CameraState } from '@ui-designer/designer-core';
+import {
+  CommandStack,
+  createCameraState,
+  screenToWorld,
+  worldToScreen,
+  type CameraState,
+  type DesignerCommand
+} from '@ui-designer/designer-core';
 import { createPropertySections, type PropertyField, type PropertySection } from '@ui-designer/designer-widgets';
 import { RuntimeHost } from '@ui-designer/ui-runtime-web';
-import type { UiElement } from '@ui-designer/ui-core';
+import type { Point, UiElement } from '@ui-designer/ui-core';
 
 const sampleXaml = `
 <Canvas Width="1600" Height="1200">
@@ -26,16 +33,65 @@ export function App() {
   const [status, setStatus] = useState('Initializing designer viewport...');
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selectedIdRef = useRef<string | null>(null);
   const [selectedElement, setSelectedElement] = useState<UiElement | null>(null);
+  const [xInput, setXInput] = useState('');
+  const [yInput, setYInput] = useState('');
   const [cameraView, setCameraView] = useState<CameraState>(() => createCameraState());
   const cameraRef = useRef<CameraState>(cameraView);
+  const commandStackRef = useRef(new CommandStack());
   const isPanningRef = useRef(false);
   const isDraggingRef = useRef(false);
   const dragElementIdRef = useRef<string | null>(null);
+  const dragStartOffsetRef = useRef<Point>({ x: 0, y: 0 });
   const dragLastWorldRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const panOriginRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const panStartCameraRef = useRef<CameraState>(cameraView);
   const sections = useMemo(() => createPropertySections(), []);
+
+  const syncSelectedElement = () => {
+    const runtime = runtimeRef.current;
+    const id = selectedIdRef.current;
+
+    if (!runtime || !id) {
+      setSelectedElement(null);
+      setXInput('');
+      setYInput('');
+      return;
+    }
+
+    const element = runtime.getElementById(id);
+    setSelectedElement(element);
+
+    if (element) {
+      setXInput(element.layout.x.toFixed(0));
+      setYInput(element.layout.y.toFixed(0));
+    }
+  };
+
+  const executeMoveCommand = (elementId: string, from: Point, to: Point, label: string) => {
+    if (from.x === to.x && from.y === to.y) {
+      return;
+    }
+
+    const runtime = runtimeRef.current;
+    if (!runtime) {
+      return;
+    }
+
+    const command: DesignerCommand = {
+      id: label,
+      apply: () => {
+        runtime.setElementOffset(elementId, to);
+      },
+      undo: () => {
+        runtime.setElementOffset(elementId, from);
+      }
+    };
+
+    commandStackRef.current.execute(command);
+    syncSelectedElement();
+  };
 
   const applyCamera = (cameraState: CameraState) => {
     const runtime = runtimeRef.current;
@@ -61,8 +117,17 @@ export function App() {
         canvas,
         onHoveredElementChange: setHoveredId,
         onSelectedElementChange: (id: string | null) => {
+          selectedIdRef.current = id;
           setSelectedId(id);
           setSelectedElement(id ? runtime.getElementById(id) : null);
+          if (id) {
+            const element = runtime.getElementById(id);
+            setXInput(element ? element.layout.x.toFixed(0) : '');
+            setYInput(element ? element.layout.y.toFixed(0) : '');
+          } else {
+            setXInput('');
+            setYInput('');
+          }
         }
       })
       .then(() => {
@@ -109,6 +174,7 @@ export function App() {
 
         isDraggingRef.current = true;
         dragElementIdRef.current = id;
+        dragStartOffsetRef.current = runtime.getElementOffset(id);
         dragLastWorldRef.current = screenToWorld(point, cameraRef.current);
         canvas.classList.add('is-dragging');
         canvas.setPointerCapture(event.pointerId);
@@ -142,8 +208,13 @@ export function App() {
         runtime.moveElementBy(dragElementIdRef.current, { x: dx, y: dy });
         dragLastWorldRef.current = world;
 
-        if (selectedId === dragElementIdRef.current) {
-          setSelectedElement(runtime.getElementById(selectedId) ?? null);
+        if (selectedIdRef.current === dragElementIdRef.current) {
+          const updated = runtime.getElementById(dragElementIdRef.current);
+          setSelectedElement(updated ?? null);
+          if (updated) {
+            setXInput(updated.layout.x.toFixed(0));
+            setYInput(updated.layout.y.toFixed(0));
+          }
         }
         return;
       }
@@ -167,6 +238,14 @@ export function App() {
 
     const endPan = () => {
       if (isDraggingRef.current) {
+        const runtime = runtimeRef.current;
+        const id = dragElementIdRef.current;
+        if (runtime && id) {
+          const from = dragStartOffsetRef.current;
+          const to = runtime.getElementOffset(id);
+          executeMoveCommand(id, from, to, 'drag-move');
+        }
+
         isDraggingRef.current = false;
         dragElementIdRef.current = null;
         canvas.classList.remove('is-dragging');
@@ -213,6 +292,65 @@ export function App() {
     };
   }, []);
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target;
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+        return;
+      }
+
+      const isUndo = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z' && !event.shiftKey;
+      const isRedoMac = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z' && event.shiftKey;
+      const isRedoWin = event.ctrlKey && event.key.toLowerCase() === 'y';
+
+      if (isUndo) {
+        event.preventDefault();
+        commandStackRef.current.undo();
+        syncSelectedElement();
+        return;
+      }
+
+      if (isRedoMac || isRedoWin) {
+        event.preventDefault();
+        commandStackRef.current.redo();
+        syncSelectedElement();
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, []);
+
+  const commitInspectorPosition = () => {
+    const runtime = runtimeRef.current;
+    const id = selectedIdRef.current;
+
+    if (!runtime || !id || !selectedElement) {
+      return;
+    }
+
+    const nextX = Number.parseFloat(xInput);
+    const nextY = Number.parseFloat(yInput);
+
+    if (!Number.isFinite(nextX) || !Number.isFinite(nextY)) {
+      setXInput(selectedElement.layout.x.toFixed(0));
+      setYInput(selectedElement.layout.y.toFixed(0));
+      return;
+    }
+
+    const currentOffset = runtime.getElementOffset(id);
+    const deltaX = nextX - selectedElement.layout.x;
+    const deltaY = nextY - selectedElement.layout.y;
+    const nextOffset = {
+      x: currentOffset.x + deltaX,
+      y: currentOffset.y + deltaY
+    };
+
+    executeMoveCommand(id, currentOffset, nextOffset, 'inspector-move');
+  };
+
   const origin = worldToScreen({ x: 0, y: 0 }, cameraView);
 
   return (
@@ -241,11 +379,29 @@ export function App() {
             </label>
             <label className="field">
               <span>X</span>
-              <input readOnly value={selectedElement.layout.x.toFixed(0)} />
+              <input
+                value={xInput}
+                onInput={(event) => setXInput((event.target as HTMLInputElement).value)}
+                onBlur={commitInspectorPosition}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    commitInspectorPosition();
+                  }
+                }}
+              />
             </label>
             <label className="field">
               <span>Y</span>
-              <input readOnly value={selectedElement.layout.y.toFixed(0)} />
+              <input
+                value={yInput}
+                onInput={(event) => setYInput((event.target as HTMLInputElement).value)}
+                onBlur={commitInspectorPosition}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    commitInspectorPosition();
+                  }
+                }}
+              />
             </label>
             <label className="field">
               <span>Width</span>
