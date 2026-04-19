@@ -1,6 +1,7 @@
 import { parseXaml } from '@ui-designer/xaml-parser';
 import {
   buildDrawCommands,
+  type ColorRgba,
   type DrawRectCommand,
   buildUiTree,
   type DrawCommand,
@@ -34,6 +35,7 @@ export class RuntimeHost {
   private screenCommands: DrawCommand[] = [];
   private readonly elementOffsets = new Map<string, Point>();
   private readonly elementSizeOverrides = new Map<string, { width: number; height: number }>();
+  private readonly elementColorOverrides = new Map<string, ColorRgba>();
   private selectedElementId: string | null = null;
   private hoveredElementId: string | null = null;
   private onHoveredElementChange?: (elementId: string | null) => void;
@@ -147,6 +149,19 @@ export class RuntimeHost {
     });
   }
 
+  getElementColor(id: string): ColorRgba | null {
+    return this.elementColorOverrides.get(id) ?? null;
+  }
+
+  setElementColor(id: string, color: ColorRgba | null): void {
+    if (!color) {
+      this.elementColorOverrides.delete(id);
+      return;
+    }
+
+    this.elementColorOverrides.set(id, color);
+  }
+
   pickElementAtScreenPoint(point: Point): string | null {
     for (let i = this.screenCommands.length - 1; i >= 0; i -= 1) {
       const command = this.screenCommands[i];
@@ -180,7 +195,7 @@ export class RuntimeHost {
       selectedElementId: this.selectedElementId
     });
 
-    const worldCommands = this.applyElementSizes(this.applyElementOffsets(commands));
+    const worldCommands = this.applyElementColors(this.applyElementSizes(this.applyElementOffsets(commands)));
     this.screenCommands = this.projectCommands(worldCommands);
     this.renderer.render(this.screenCommands);
   }
@@ -354,6 +369,24 @@ export class RuntimeHost {
       }
 
       return command;
+    });
+  }
+
+  private applyElementColors(commands: DrawCommand[]): DrawCommand[] {
+    return commands.map((command: DrawCommand) => {
+      if (command.kind !== 'rect') {
+        return command;
+      }
+
+      const color = this.elementColorOverrides.get(command.elementId);
+      if (!color) {
+        return command;
+      }
+
+      return {
+        ...command,
+        color
+      };
     });
   }
 

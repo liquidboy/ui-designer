@@ -9,7 +9,7 @@ import {
 } from '@ui-designer/designer-core';
 import { createPropertySections, type PropertyField, type PropertySection } from '@ui-designer/designer-widgets';
 import { RuntimeHost } from '@ui-designer/ui-runtime-web';
-import type { Point, UiElement } from '@ui-designer/ui-core';
+import type { ColorRgba, Point, UiElement } from '@ui-designer/ui-core';
 
 const sampleXaml = `
 <Canvas Width="1600" Height="1200">
@@ -28,6 +28,41 @@ const sampleXaml = `
 `;
 const GRID_SIZE = 8;
 
+function clamp01(value: number): number {
+  return Math.max(0, Math.min(1, value));
+}
+
+function colorToHex(color: ColorRgba | null): string | null {
+  if (!color) {
+    return null;
+  }
+
+  const r = Math.round(clamp01(color.r) * 255)
+    .toString(16)
+    .padStart(2, '0');
+  const g = Math.round(clamp01(color.g) * 255)
+    .toString(16)
+    .padStart(2, '0');
+  const b = Math.round(clamp01(color.b) * 255)
+    .toString(16)
+    .padStart(2, '0');
+  return `#${r}${g}${b}`;
+}
+
+function parseHexColor(input: string): ColorRgba | null {
+  const value = input.trim();
+  const normalized = value.startsWith('#') ? value.slice(1) : value;
+
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) {
+    return null;
+  }
+
+  const r = Number.parseInt(normalized.slice(0, 2), 16) / 255;
+  const g = Number.parseInt(normalized.slice(2, 4), 16) / 255;
+  const b = Number.parseInt(normalized.slice(4, 6), 16) / 255;
+  return { r, g, b, a: 1 };
+}
+
 export function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const runtimeRef = useRef<RuntimeHost | null>(null);
@@ -40,6 +75,7 @@ export function App() {
   const [yInput, setYInput] = useState('');
   const [widthInput, setWidthInput] = useState('');
   const [heightInput, setHeightInput] = useState('');
+  const [colorInput, setColorInput] = useState('#67c7ff');
   const [snapEnabled, setSnapEnabled] = useState(true);
   const [cameraView, setCameraView] = useState<CameraState>(() => createCameraState());
   const cameraRef = useRef<CameraState>(cameraView);
@@ -78,6 +114,7 @@ export function App() {
       setYInput('');
       setWidthInput('');
       setHeightInput('');
+      setColorInput('#67c7ff');
       return;
     }
 
@@ -89,6 +126,7 @@ export function App() {
       setYInput(element.layout.y.toFixed(0));
       setWidthInput(element.layout.width.toFixed(0));
       setHeightInput(element.layout.height.toFixed(0));
+      setColorInput(colorToHex(runtime.getElementColor(id)) ?? '#67c7ff');
     }
   };
 
@@ -145,6 +183,43 @@ export function App() {
     syncSelectedElement();
   };
 
+  const executeColorCommand = (
+    elementId: string,
+    from: ColorRgba | null,
+    to: ColorRgba | null,
+    label: string
+  ) => {
+    const same =
+      from === to ||
+      (from &&
+        to &&
+        from.r === to.r &&
+        from.g === to.g &&
+        from.b === to.b &&
+        from.a === to.a);
+    if (same) {
+      return;
+    }
+
+    const runtime = runtimeRef.current;
+    if (!runtime) {
+      return;
+    }
+
+    const command: DesignerCommand = {
+      id: label,
+      apply: () => {
+        runtime.setElementColor(elementId, to);
+      },
+      undo: () => {
+        runtime.setElementColor(elementId, from);
+      }
+    };
+
+    commandStackRef.current.execute(command);
+    syncSelectedElement();
+  };
+
   const applyCamera = (cameraState: CameraState) => {
     const runtime = runtimeRef.current;
     cameraRef.current = cameraState;
@@ -178,11 +253,13 @@ export function App() {
             setYInput(element ? element.layout.y.toFixed(0) : '');
             setWidthInput(element ? element.layout.width.toFixed(0) : '');
             setHeightInput(element ? element.layout.height.toFixed(0) : '');
+            setColorInput(colorToHex(runtime.getElementColor(id)) ?? '#67c7ff');
           } else {
             setXInput('');
             setYInput('');
             setWidthInput('');
             setHeightInput('');
+            setColorInput('#67c7ff');
           }
         }
       })
@@ -279,6 +356,7 @@ export function App() {
             setYInput(updated.layout.y.toFixed(0));
             setWidthInput(updated.layout.width.toFixed(0));
             setHeightInput(updated.layout.height.toFixed(0));
+            setColorInput(colorToHex(runtime.getElementColor(resizeElementIdRef.current)) ?? '#67c7ff');
           }
         }
         return;
@@ -551,6 +629,24 @@ export function App() {
     );
   };
 
+  const commitInspectorColor = () => {
+    const runtime = runtimeRef.current;
+    const id = selectedIdRef.current;
+
+    if (!runtime || !id || !selectedElement) {
+      return;
+    }
+
+    const next = parseHexColor(colorInput);
+    if (!next) {
+      setColorInput(colorToHex(runtime.getElementColor(id)) ?? '#67c7ff');
+      return;
+    }
+
+    const from = runtime.getElementColor(id);
+    executeColorCommand(id, from, next, 'inspector-color');
+  };
+
   const origin = worldToScreen({ x: 0, y: 0 }, cameraView);
   const selectedScreenRect = selectedElement
     ? {
@@ -697,6 +793,19 @@ export function App() {
                 onKeyDown={(event) => {
                   if (event.key === 'Enter') {
                     commitInspectorSize();
+                  }
+                }}
+              />
+            </label>
+            <label className="field">
+              <span>Color</span>
+              <input
+                value={colorInput}
+                onInput={(event) => setColorInput((event.target as HTMLInputElement).value)}
+                onBlur={commitInspectorColor}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    commitInspectorColor();
                   }
                 }}
               />
