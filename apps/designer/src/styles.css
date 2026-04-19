@@ -62,6 +62,21 @@ body,
   height: 100%;
 }
 
+.grid-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms ease;
+  background-image:
+    linear-gradient(to right, rgba(102, 138, 173, 0.16) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(102, 138, 173, 0.16) 1px, transparent 1px);
+}
+
+.grid-overlay.is-visible {
+  opacity: 1;
+}
+
 .canvas {
   width: 100%;
   height: 100%;

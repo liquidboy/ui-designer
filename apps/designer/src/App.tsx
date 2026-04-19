@@ -560,6 +560,9 @@ export function App() {
         height: Math.max(8, selectedElement.layout.height * cameraView.zoom)
       }
     : null;
+  const gridStep = Math.max(4, GRID_SIZE * cameraView.zoom);
+  const gridOffsetX = -((cameraView.x * cameraView.zoom) % gridStep);
+  const gridOffsetY = -((cameraView.y * cameraView.zoom) % gridStep);
 
   const onResizeHandlePointerDown = (event: PointerEvent) => {
     event.preventDefault();
@@ -608,6 +611,13 @@ export function App() {
       </aside>
       <section className="canvas-wrap">
         <div className="viewport-layer">
+          <div
+            className={`grid-overlay ${snapEnabled ? 'is-visible' : ''}`}
+            style={{
+              backgroundSize: `${gridStep}px ${gridStep}px`,
+              backgroundPosition: `${gridOffsetX}px ${gridOffsetY}px`
+            }}
+          />
           <canvas className="canvas" ref={canvasRef} />
           {selectedScreenRect ? (
             <div
