@@ -6,6 +6,11 @@ name = "ui-designer"
 script = ""
 
 [[actions]]
-name = "Run"
+name = "Run Playground"
 icon = "run"
-command = "npm run dev"
+command = "npm run dev:playground"
+
+[[actions]]
+name = "Run Designer"
+icon = "tool"
+command = "npm run dev:designer"
