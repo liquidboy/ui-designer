@@ -26,6 +26,7 @@ const sampleXaml = `
   </Grid>
 </Canvas>
 `;
+const GRID_SIZE = 8;
 
 export function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -39,6 +40,7 @@ export function App() {
   const [yInput, setYInput] = useState('');
   const [widthInput, setWidthInput] = useState('');
   const [heightInput, setHeightInput] = useState('');
+  const [snapEnabled, setSnapEnabled] = useState(true);
   const [cameraView, setCameraView] = useState<CameraState>(() => createCameraState());
   const cameraRef = useRef<CameraState>(cameraView);
   const commandStackRef = useRef(new CommandStack());
@@ -47,6 +49,8 @@ export function App() {
   const isResizingRef = useRef(false);
   const dragElementIdRef = useRef<string | null>(null);
   const dragStartOffsetRef = useRef<Point>({ x: 0, y: 0 });
+  const dragStartElementPositionRef = useRef<Point>({ x: 0, y: 0 });
+  const dragStartWorldRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const dragLastWorldRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const resizeElementIdRef = useRef<string | null>(null);
   const resizeStartSizeRef = useRef<{ width: number; height: number }>({ width: 0, height: 0 });
@@ -54,6 +58,15 @@ export function App() {
   const panOriginRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const panStartCameraRef = useRef<CameraState>(cameraView);
   const sections = useMemo(() => createPropertySections(), []);
+  const snapEnabledRef = useRef(snapEnabled);
+
+  const snapValue = (value: number, enabled = snapEnabledRef.current) => {
+    if (!enabled) {
+      return value;
+    }
+
+    return Math.round(value / GRID_SIZE) * GRID_SIZE;
+  };
 
   const syncSelectedElement = () => {
     const runtime = runtimeRef.current;
@@ -218,6 +231,11 @@ export function App() {
         isDraggingRef.current = true;
         dragElementIdRef.current = id;
         dragStartOffsetRef.current = runtime.getElementOffset(id);
+        const selected = runtime.getElementById(id);
+        dragStartElementPositionRef.current = selected
+          ? { x: selected.layout.x, y: selected.layout.y }
+          : { x: 0, y: 0 };
+        dragStartWorldRef.current = screenToWorld(point, cameraRef.current);
         dragLastWorldRef.current = screenToWorld(point, cameraRef.current);
         canvas.classList.add('is-dragging');
         canvas.setPointerCapture(event.pointerId);
@@ -246,8 +264,10 @@ export function App() {
         const world = screenToWorld(point, cameraRef.current);
         const startWorld = resizeStartWorldRef.current;
         const startSize = resizeStartSizeRef.current;
-        const nextWidth = Math.max(24, startSize.width + (world.x - startWorld.x));
-        const nextHeight = Math.max(24, startSize.height + (world.y - startWorld.y));
+        const rawWidth = Math.max(24, startSize.width + (world.x - startWorld.x));
+        const rawHeight = Math.max(24, startSize.height + (world.y - startWorld.y));
+        const nextWidth = Math.max(24, snapValue(rawWidth, snapEnabledRef.current && !event.altKey));
+        const nextHeight = Math.max(24, snapValue(rawHeight, snapEnabledRef.current && !event.altKey));
 
         runtime.setElementSize(resizeElementIdRef.current, { width: nextWidth, height: nextHeight });
 
@@ -276,11 +296,27 @@ export function App() {
         const dx = world.x - previous.x;
         const dy = world.y - previous.y;
 
-        runtime.moveElementBy(dragElementIdRef.current, { x: dx, y: dy });
+        const id = dragElementIdRef.current;
+        runtime.moveElementBy(id, { x: dx, y: dy });
         dragLastWorldRef.current = world;
 
-        if (selectedIdRef.current === dragElementIdRef.current) {
-          const updated = runtime.getElementById(dragElementIdRef.current);
+        if (snapEnabledRef.current && !event.altKey) {
+          const startWorld = dragStartWorldRef.current;
+          const startOffset = dragStartOffsetRef.current;
+          const startPosition = dragStartElementPositionRef.current;
+          const unsnappedX = startPosition.x + (world.x - startWorld.x);
+          const unsnappedY = startPosition.y + (world.y - startWorld.y);
+          const snappedX = snapValue(unsnappedX, true);
+          const snappedY = snapValue(unsnappedY, true);
+
+          runtime.setElementOffset(id, {
+            x: startOffset.x + (snappedX - startPosition.x),
+            y: startOffset.y + (snappedY - startPosition.y)
+          });
+        }
+
+        if (selectedIdRef.current === id) {
+          const updated = runtime.getElementById(id);
           setSelectedElement(updated ?? null);
           if (updated) {
             setXInput(updated.layout.x.toFixed(0));
@@ -384,6 +420,10 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    snapEnabledRef.current = snapEnabled;
+  }, [snapEnabled]);
+
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target;
       if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
@@ -393,6 +433,19 @@ export function App() {
       const isUndo = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z' && !event.shiftKey;
       const isRedoMac = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z' && event.shiftKey;
       const isRedoWin = event.ctrlKey && event.key.toLowerCase() === 'y';
+      const isToggleSnap = !event.metaKey && !event.ctrlKey && !event.altKey && event.key.toLowerCase() === 'g';
+      const arrowKey = event.key;
+      const isArrow =
+        arrowKey === 'ArrowUp' ||
+        arrowKey === 'ArrowDown' ||
+        arrowKey === 'ArrowLeft' ||
+        arrowKey === 'ArrowRight';
+
+      if (isToggleSnap) {
+        event.preventDefault();
+        setSnapEnabled((value) => !value);
+        return;
+      }
 
       if (isUndo) {
         event.preventDefault();
@@ -405,6 +458,33 @@ export function App() {
         event.preventDefault();
         commandStackRef.current.redo();
         syncSelectedElement();
+        return;
+      }
+
+      if (isArrow) {
+        const runtime = runtimeRef.current;
+        const id = selectedIdRef.current;
+        if (!runtime || !id) {
+          return;
+        }
+
+        event.preventDefault();
+        const step = event.shiftKey
+          ? GRID_SIZE * 4
+          : snapEnabledRef.current
+            ? GRID_SIZE
+            : 1;
+        let dx = 0;
+        let dy = 0;
+
+        if (arrowKey === 'ArrowLeft') dx = -step;
+        if (arrowKey === 'ArrowRight') dx = step;
+        if (arrowKey === 'ArrowUp') dy = -step;
+        if (arrowKey === 'ArrowDown') dy = step;
+
+        const from = runtime.getElementOffset(id);
+        const to = { x: from.x + dx, y: from.y + dy };
+        executeMoveCommand(id, from, to, 'nudge-move');
       }
     };
 
@@ -412,7 +492,7 @@ export function App() {
     return () => {
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, []);
+  }, [snapEnabled]);
 
   const commitInspectorPosition = () => {
     const runtime = runtimeRef.current;
@@ -434,9 +514,13 @@ export function App() {
     const currentOffset = runtime.getElementOffset(id);
     const deltaX = nextX - selectedElement.layout.x;
     const deltaY = nextY - selectedElement.layout.y;
-    const nextOffset = {
+    const rawOffset = {
       x: currentOffset.x + deltaX,
       y: currentOffset.y + deltaY
+    };
+    const nextOffset = {
+      x: snapValue(rawOffset.x),
+      y: snapValue(rawOffset.y)
     };
 
     executeMoveCommand(id, currentOffset, nextOffset, 'inspector-move');
@@ -462,7 +546,7 @@ export function App() {
     executeResizeCommand(
       id,
       { width: selectedElement.layout.width, height: selectedElement.layout.height },
-      { width: nextWidth, height: nextHeight },
+      { width: Math.max(24, snapValue(nextWidth)), height: Math.max(24, snapValue(nextHeight)) },
       'inspector-resize'
     );
   };
@@ -518,6 +602,7 @@ export function App() {
         <div className="origin">Screen origin: {origin.x.toFixed(0)}, {origin.y.toFixed(0)}</div>
         <div className="origin">Camera: {cameraView.x.toFixed(0)}, {cameraView.y.toFixed(0)}</div>
         <div className="origin">Zoom: {(cameraView.zoom * 100).toFixed(0)}%</div>
+        <div className="origin">Snap: {snapEnabled ? `On (${GRID_SIZE}px)` : 'Off'} (toggle: G)</div>
         <div className="origin">Hover: {hoveredId ?? 'none'}</div>
         <div className="origin">Selected: {selectedId ?? 'none'}</div>
       </aside>
