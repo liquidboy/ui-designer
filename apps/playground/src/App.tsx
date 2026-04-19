@@ -3,10 +3,17 @@ import { RuntimeHost } from '@ui-designer/ui-runtime-web';
 
 const sampleXaml = `
 <Canvas Width="1280" Height="720">
-  <StackPanel Width="320">
-    <TextBlock Text="Hello WebGPU XAML" />
-    <Button Content="Click me" />
-  </StackPanel>
+  <Grid Rows="2" Columns="2" Width="760" Height="460" X="40" Y="40">
+    <Border Grid.Row="0" Grid.Column="0" Background="#1f2937" Padding="12">
+      <StackPanel Spacing="10">
+        <TextBlock Text="Hello WebGPU XAML" />
+        <Button Content="Click me" />
+      </StackPanel>
+    </Border>
+    <Rectangle Grid.Row="0" Grid.Column="1" Fill="#5b7cff" />
+    <Rectangle Grid.Row="1" Grid.Column="0" Fill="#ff7b5b" />
+    <Rectangle Grid.Row="1" Grid.Column="1" Fill="#40c89a" />
+  </Grid>
 </Canvas>
 `;
 

@@ -1,5 +1,5 @@
 import { parseXaml } from '@ui-designer/xaml-parser';
-import { buildUiTree, runLayout } from '@ui-designer/ui-core';
+import { buildDrawCommands, buildUiTree, runLayout, type UiElement } from '@ui-designer/ui-core';
 import { WebGPUCanvasRenderer } from '@ui-designer/webgpu-renderer';
 
 export interface RuntimeBootOptions {
@@ -9,23 +9,22 @@ export interface RuntimeBootOptions {
 
 export class RuntimeHost {
   private readonly renderer: WebGPUCanvasRenderer;
+  private readonly canvas: HTMLCanvasElement;
+  private root: UiElement | null = null;
   private isRunning = false;
   private frameHandle = 0;
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new WebGPUCanvasRenderer(canvas);
+    this.canvas = canvas;
   }
 
   async boot(options: RuntimeBootOptions): Promise<void> {
     const xamlDocument = parseXaml(options.xaml);
-    const tree = buildUiTree(xamlDocument.root);
-
-    runLayout(tree, {
-      width: options.canvas.clientWidth,
-      height: options.canvas.clientHeight
-    });
+    this.root = buildUiTree(xamlDocument.root);
 
     await this.renderer.initialize();
+    this.layoutAndRender();
   }
 
   start(): void {
@@ -36,8 +35,7 @@ export class RuntimeHost {
     this.isRunning = true;
 
     const frame = () => {
-      this.renderer.resize();
-      this.renderer.renderClear(0.08, 0.1, 0.14);
+      this.layoutAndRender();
       this.frameHandle = requestAnimationFrame(frame);
     };
 
@@ -50,5 +48,22 @@ export class RuntimeHost {
       cancelAnimationFrame(this.frameHandle);
       this.frameHandle = 0;
     }
+  }
+
+  private layoutAndRender(): void {
+    this.renderer.resize();
+
+    if (!this.root) {
+      this.renderer.render([]);
+      return;
+    }
+
+    runLayout(this.root, {
+      width: this.canvas.clientWidth,
+      height: this.canvas.clientHeight
+    });
+
+    const commands = buildDrawCommands(this.root);
+    this.renderer.render(commands);
   }
 }
