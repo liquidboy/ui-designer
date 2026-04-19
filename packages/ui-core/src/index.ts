@@ -30,6 +30,7 @@ export interface ColorRgba {
 export interface DrawRectCommand {
   kind: 'rect';
   elementId: string;
+  isBounds?: boolean;
   x: number;
   y: number;
   width: number;
@@ -314,7 +315,8 @@ function pushRect(
   commands: DrawCommand[],
   elementId: string,
   rect: LayoutRect,
-  color: ColorRgba
+  color: ColorRgba,
+  isBounds = false
 ): void {
   if (rect.width <= 0 || rect.height <= 0 || color.a <= 0) {
     return;
@@ -323,6 +325,7 @@ function pushRect(
   commands.push({
     kind: 'rect',
     elementId,
+    isBounds,
     x: rect.x,
     y: rect.y,
     width: rect.width,
@@ -354,42 +357,48 @@ function emitElementCommands(commands: DrawCommand[], element: UiElement, option
       commands,
       element.id,
       element.layout,
-      colorFromProps(element.props, { r: 0.1, g: 0.12, b: 0.16, a: 1 })
+      colorFromProps(element.props, { r: 0.1, g: 0.12, b: 0.16, a: 1 }),
+      true
     );
   } else if (t === 'grid') {
     pushRect(
       commands,
       element.id,
       element.layout,
-      colorFromProps(element.props, { r: 0.14, g: 0.17, b: 0.22, a: 1 })
+      colorFromProps(element.props, { r: 0.14, g: 0.17, b: 0.22, a: 1 }),
+      true
     );
   } else if (t === 'stackpanel') {
     pushRect(
       commands,
       element.id,
       element.layout,
-      colorFromProps(element.props, { r: 0.12, g: 0.15, b: 0.2, a: 0.9 })
+      colorFromProps(element.props, { r: 0.12, g: 0.15, b: 0.2, a: 0.9 }),
+      true
     );
   } else if (t === 'border') {
     pushRect(
       commands,
       element.id,
       element.layout,
-      colorFromProps(element.props, { r: 0.2, g: 0.23, b: 0.29, a: 1 })
+      colorFromProps(element.props, { r: 0.2, g: 0.23, b: 0.29, a: 1 }),
+      true
     );
   } else if (t === 'rectangle') {
     pushRect(
       commands,
       element.id,
       element.layout,
-      colorFromProps(element.props, { r: 0.34, g: 0.48, b: 0.92, a: 1 })
+      colorFromProps(element.props, { r: 0.34, g: 0.48, b: 0.92, a: 1 }),
+      true
     );
   } else if (t === 'button') {
     pushRect(
       commands,
       element.id,
       element.layout,
-      colorFromProps(element.props, { r: 0.2, g: 0.41, b: 0.8, a: 1 })
+      colorFromProps(element.props, { r: 0.2, g: 0.41, b: 0.8, a: 1 }),
+      true
     );
 
     const labelBar: LayoutRect = {
@@ -411,7 +420,8 @@ function emitElementCommands(commands: DrawCommand[], element: UiElement, option
       commands,
       element.id,
       line,
-      colorFromProps(element.props, { r: 0.9, g: 0.93, b: 1, a: 0.95 })
+      colorFromProps(element.props, { r: 0.9, g: 0.93, b: 1, a: 0.95 }),
+      true
     );
   }
 

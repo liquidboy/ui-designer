@@ -37,6 +37,8 @@ export function App() {
   const [selectedElement, setSelectedElement] = useState<UiElement | null>(null);
   const [xInput, setXInput] = useState('');
   const [yInput, setYInput] = useState('');
+  const [widthInput, setWidthInput] = useState('');
+  const [heightInput, setHeightInput] = useState('');
   const [cameraView, setCameraView] = useState<CameraState>(() => createCameraState());
   const cameraRef = useRef<CameraState>(cameraView);
   const commandStackRef = useRef(new CommandStack());
@@ -57,6 +59,8 @@ export function App() {
       setSelectedElement(null);
       setXInput('');
       setYInput('');
+      setWidthInput('');
+      setHeightInput('');
       return;
     }
 
@@ -66,6 +70,8 @@ export function App() {
     if (element) {
       setXInput(element.layout.x.toFixed(0));
       setYInput(element.layout.y.toFixed(0));
+      setWidthInput(element.layout.width.toFixed(0));
+      setHeightInput(element.layout.height.toFixed(0));
     }
   };
 
@@ -86,6 +92,35 @@ export function App() {
       },
       undo: () => {
         runtime.setElementOffset(elementId, from);
+      }
+    };
+
+    commandStackRef.current.execute(command);
+    syncSelectedElement();
+  };
+
+  const executeResizeCommand = (
+    elementId: string,
+    from: { width: number; height: number },
+    to: { width: number; height: number },
+    label: string
+  ) => {
+    if (from.width === to.width && from.height === to.height) {
+      return;
+    }
+
+    const runtime = runtimeRef.current;
+    if (!runtime) {
+      return;
+    }
+
+    const command: DesignerCommand = {
+      id: label,
+      apply: () => {
+        runtime.setElementSize(elementId, to);
+      },
+      undo: () => {
+        runtime.setElementSize(elementId, from);
       }
     };
 
@@ -124,9 +159,13 @@ export function App() {
             const element = runtime.getElementById(id);
             setXInput(element ? element.layout.x.toFixed(0) : '');
             setYInput(element ? element.layout.y.toFixed(0) : '');
+            setWidthInput(element ? element.layout.width.toFixed(0) : '');
+            setHeightInput(element ? element.layout.height.toFixed(0) : '');
           } else {
             setXInput('');
             setYInput('');
+            setWidthInput('');
+            setHeightInput('');
           }
         }
       })
@@ -214,6 +253,8 @@ export function App() {
           if (updated) {
             setXInput(updated.layout.x.toFixed(0));
             setYInput(updated.layout.y.toFixed(0));
+            setWidthInput(updated.layout.width.toFixed(0));
+            setHeightInput(updated.layout.height.toFixed(0));
           }
         }
         return;
@@ -351,6 +392,31 @@ export function App() {
     executeMoveCommand(id, currentOffset, nextOffset, 'inspector-move');
   };
 
+  const commitInspectorSize = () => {
+    const runtime = runtimeRef.current;
+    const id = selectedIdRef.current;
+
+    if (!runtime || !id || !selectedElement) {
+      return;
+    }
+
+    const nextWidth = Number.parseFloat(widthInput);
+    const nextHeight = Number.parseFloat(heightInput);
+
+    if (!Number.isFinite(nextWidth) || !Number.isFinite(nextHeight) || nextWidth <= 0 || nextHeight <= 0) {
+      setWidthInput(selectedElement.layout.width.toFixed(0));
+      setHeightInput(selectedElement.layout.height.toFixed(0));
+      return;
+    }
+
+    executeResizeCommand(
+      id,
+      { width: selectedElement.layout.width, height: selectedElement.layout.height },
+      { width: nextWidth, height: nextHeight },
+      'inspector-resize'
+    );
+  };
+
   const origin = worldToScreen({ x: 0, y: 0 }, cameraView);
 
   return (
@@ -405,11 +471,29 @@ export function App() {
             </label>
             <label className="field">
               <span>Width</span>
-              <input readOnly value={selectedElement.layout.width.toFixed(0)} />
+              <input
+                value={widthInput}
+                onInput={(event) => setWidthInput((event.target as HTMLInputElement).value)}
+                onBlur={commitInspectorSize}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    commitInspectorSize();
+                  }
+                }}
+              />
             </label>
             <label className="field">
               <span>Height</span>
-              <input readOnly value={selectedElement.layout.height.toFixed(0)} />
+              <input
+                value={heightInput}
+                onInput={(event) => setHeightInput((event.target as HTMLInputElement).value)}
+                onBlur={commitInspectorSize}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    commitInspectorSize();
+                  }
+                }}
+              />
             </label>
           </section>
         ) : null}

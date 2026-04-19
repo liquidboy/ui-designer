@@ -33,6 +33,7 @@ export class RuntimeHost {
   private camera: RuntimeCamera = { x: 0, y: 0, zoom: 1 };
   private screenCommands: DrawCommand[] = [];
   private readonly elementOffsets = new Map<string, Point>();
+  private readonly elementSizeOverrides = new Map<string, { width: number; height: number }>();
   private selectedElementId: string | null = null;
   private hoveredElementId: string | null = null;
   private onHoveredElementChange?: (elementId: string | null) => void;
@@ -93,12 +94,15 @@ export class RuntimeHost {
     }
 
     const offset = this.getElementOffset(id);
+    const size = this.getElementSize(id, element.layout.width, element.layout.height);
     return {
       ...element,
       layout: {
         ...element.layout,
         x: element.layout.x + offset.x,
-        y: element.layout.y + offset.y
+        y: element.layout.y + offset.y,
+        width: size.width,
+        height: size.height
       }
     };
   }
@@ -124,6 +128,22 @@ export class RuntimeHost {
     this.setElementOffset(id, {
       x: current.x + delta.x,
       y: current.y + delta.y
+    });
+  }
+
+  getElementSize(id: string, fallbackWidth: number, fallbackHeight: number): { width: number; height: number } {
+    const current = this.elementSizeOverrides.get(id);
+    if (!current) {
+      return { width: fallbackWidth, height: fallbackHeight };
+    }
+
+    return current;
+  }
+
+  setElementSize(id: string, size: { width: number; height: number }): void {
+    this.elementSizeOverrides.set(id, {
+      width: Math.max(1, size.width),
+      height: Math.max(1, size.height)
     });
   }
 
@@ -160,7 +180,7 @@ export class RuntimeHost {
       selectedElementId: this.selectedElementId
     });
 
-    const worldCommands = this.applyElementOffsets(commands);
+    const worldCommands = this.applyElementSizes(this.applyElementOffsets(commands));
     this.screenCommands = this.projectCommands(worldCommands);
     this.renderer.render(this.screenCommands);
   }
@@ -254,6 +274,29 @@ export class RuntimeHost {
         ...command,
         x: command.x + offset.x,
         y: command.y + offset.y
+      };
+    });
+  }
+
+  private applyElementSizes(commands: DrawCommand[]): DrawCommand[] {
+    return commands.map((command: DrawCommand) => {
+      if (command.kind !== 'rect') {
+        return command;
+      }
+
+      if (!command.isBounds) {
+        return command;
+      }
+
+      const current = this.elementSizeOverrides.get(command.elementId);
+      if (!current) {
+        return command;
+      }
+
+      return {
+        ...command,
+        width: current.width,
+        height: current.height
       };
     });
   }
