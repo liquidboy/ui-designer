@@ -279,12 +279,15 @@ export class RuntimeHost {
   }
 
   private applyElementSizes(commands: DrawCommand[]): DrawCommand[] {
+    const baseBounds = new Map<string, DrawRectCommand>();
+    for (const command of commands) {
+      if (command.kind === 'rect' && command.isBounds) {
+        baseBounds.set(command.elementId, command);
+      }
+    }
+
     return commands.map((command: DrawCommand) => {
       if (command.kind !== 'rect') {
-        return command;
-      }
-
-      if (!command.isBounds) {
         return command;
       }
 
@@ -293,11 +296,64 @@ export class RuntimeHost {
         return command;
       }
 
-      return {
-        ...command,
-        width: current.width,
-        height: current.height
-      };
+      if (command.isBounds) {
+        return {
+          ...command,
+          width: current.width,
+          height: current.height
+        };
+      }
+
+      const originalBounds = baseBounds.get(command.elementId);
+      if (!originalBounds) {
+        return command;
+      }
+
+      const epsilon = 0.5;
+      const isTop = Math.abs(command.y - originalBounds.y) <= epsilon;
+      const isBottom =
+        Math.abs(command.y + command.height - (originalBounds.y + originalBounds.height)) <= epsilon;
+      const isLeft = Math.abs(command.x - originalBounds.x) <= epsilon;
+      const isRight =
+        Math.abs(command.x + command.width - (originalBounds.x + originalBounds.width)) <= epsilon;
+
+      if (isTop && command.height <= 6) {
+        return {
+          ...command,
+          x: originalBounds.x,
+          y: originalBounds.y,
+          width: current.width
+        };
+      }
+
+      if (isBottom && command.height <= 6) {
+        return {
+          ...command,
+          x: originalBounds.x,
+          y: originalBounds.y + current.height - command.height,
+          width: current.width
+        };
+      }
+
+      if (isLeft && command.width <= 6) {
+        return {
+          ...command,
+          x: originalBounds.x,
+          y: originalBounds.y,
+          height: current.height
+        };
+      }
+
+      if (isRight && command.width <= 6) {
+        return {
+          ...command,
+          x: originalBounds.x + current.width - command.width,
+          y: originalBounds.y,
+          height: current.height
+        };
+      }
+
+      return command;
     });
   }
 

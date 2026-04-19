@@ -44,9 +44,13 @@ export function App() {
   const commandStackRef = useRef(new CommandStack());
   const isPanningRef = useRef(false);
   const isDraggingRef = useRef(false);
+  const isResizingRef = useRef(false);
   const dragElementIdRef = useRef<string | null>(null);
   const dragStartOffsetRef = useRef<Point>({ x: 0, y: 0 });
   const dragLastWorldRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const resizeElementIdRef = useRef<string | null>(null);
+  const resizeStartSizeRef = useRef<{ width: number; height: number }>({ width: 0, height: 0 });
+  const resizeStartWorldRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const panOriginRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const panStartCameraRef = useRef<CameraState>(cameraView);
   const sections = useMemo(() => createPropertySections(), []);
@@ -170,7 +174,7 @@ export function App() {
         }
       })
       .then(() => {
-        setStatus('Design surface online. Left-drag to move, middle-drag to pan, wheel to zoom.');
+        setStatus('Design surface online. Left-drag to move, handle-drag to resize, middle-drag to pan.');
         runtime.start();
       })
       .catch((error: unknown) => {
@@ -232,6 +236,34 @@ export function App() {
     };
 
     const onPointerMove = (event: PointerEvent) => {
+      if (isResizingRef.current && resizeElementIdRef.current) {
+        const runtime = runtimeRef.current;
+        if (!runtime) {
+          return;
+        }
+
+        const point = toCanvasPoint(event);
+        const world = screenToWorld(point, cameraRef.current);
+        const startWorld = resizeStartWorldRef.current;
+        const startSize = resizeStartSizeRef.current;
+        const nextWidth = Math.max(24, startSize.width + (world.x - startWorld.x));
+        const nextHeight = Math.max(24, startSize.height + (world.y - startWorld.y));
+
+        runtime.setElementSize(resizeElementIdRef.current, { width: nextWidth, height: nextHeight });
+
+        if (selectedIdRef.current === resizeElementIdRef.current) {
+          const updated = runtime.getElementById(resizeElementIdRef.current);
+          setSelectedElement(updated ?? null);
+          if (updated) {
+            setXInput(updated.layout.x.toFixed(0));
+            setYInput(updated.layout.y.toFixed(0));
+            setWidthInput(updated.layout.width.toFixed(0));
+            setHeightInput(updated.layout.height.toFixed(0));
+          }
+        }
+        return;
+      }
+
       if (isDraggingRef.current && dragElementIdRef.current) {
         const runtime = runtimeRef.current;
         if (!runtime) {
@@ -278,6 +310,23 @@ export function App() {
     };
 
     const endPan = () => {
+      if (isResizingRef.current) {
+        const runtime = runtimeRef.current;
+        const id = resizeElementIdRef.current;
+        if (runtime && id) {
+          const from = resizeStartSizeRef.current;
+          const selected = runtime.getElementById(id);
+          const to = selected
+            ? { width: selected.layout.width, height: selected.layout.height }
+            : from;
+          executeResizeCommand(id, from, to, 'handle-resize');
+        }
+
+        isResizingRef.current = false;
+        resizeElementIdRef.current = null;
+        canvas.classList.remove('is-resizing');
+      }
+
       if (isDraggingRef.current) {
         const runtime = runtimeRef.current;
         const id = dragElementIdRef.current;
@@ -330,6 +379,7 @@ export function App() {
       canvas.removeEventListener('wheel', onWheel);
       canvas.classList.remove('is-panning');
       canvas.classList.remove('is-dragging');
+      canvas.classList.remove('is-resizing');
     };
   }, []);
 
@@ -418,6 +468,47 @@ export function App() {
   };
 
   const origin = worldToScreen({ x: 0, y: 0 }, cameraView);
+  const selectedScreenRect = selectedElement
+    ? {
+        x: (selectedElement.layout.x - cameraView.x) * cameraView.zoom,
+        y: (selectedElement.layout.y - cameraView.y) * cameraView.zoom,
+        width: Math.max(8, selectedElement.layout.width * cameraView.zoom),
+        height: Math.max(8, selectedElement.layout.height * cameraView.zoom)
+      }
+    : null;
+
+  const onResizeHandlePointerDown = (event: PointerEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const runtime = runtimeRef.current;
+    const canvas = canvasRef.current;
+    const id = selectedIdRef.current;
+    if (!runtime || !canvas || !id) {
+      return;
+    }
+
+    const selected = runtime.getElementById(id);
+    if (!selected) {
+      return;
+    }
+
+    const rect = canvas.getBoundingClientRect();
+    const point = {
+      x: event.clientX - rect.left - canvas.clientLeft,
+      y: event.clientY - rect.top - canvas.clientTop
+    };
+    const world = screenToWorld(point, cameraRef.current);
+
+    isResizingRef.current = true;
+    resizeElementIdRef.current = id;
+    resizeStartSizeRef.current = {
+      width: selected.layout.width,
+      height: selected.layout.height
+    };
+    resizeStartWorldRef.current = world;
+    canvas.classList.add('is-resizing');
+  };
 
   return (
     <main className="designer-shell">
@@ -431,7 +522,27 @@ export function App() {
         <div className="origin">Selected: {selectedId ?? 'none'}</div>
       </aside>
       <section className="canvas-wrap">
-        <canvas className="canvas" ref={canvasRef} />
+        <div className="viewport-layer">
+          <canvas className="canvas" ref={canvasRef} />
+          {selectedScreenRect ? (
+            <div
+              className="selection-rect"
+              style={{
+                left: `${selectedScreenRect.x}px`,
+                top: `${selectedScreenRect.y}px`,
+                width: `${selectedScreenRect.width}px`,
+                height: `${selectedScreenRect.height}px`
+              }}
+            >
+              <button
+                className="resize-handle"
+                type="button"
+                aria-label="Resize selected element"
+                onPointerDown={onResizeHandlePointerDown}
+              />
+            </div>
+          ) : null}
+        </div>
       </section>
       <aside className="inspector">
         <h2>Inspector</h2>
