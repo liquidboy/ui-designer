@@ -2,6 +2,7 @@ import { parseXaml } from '@ui-designer/xaml-parser';
 import {
   buildDrawCommands,
   buildUiTree,
+  findElementById,
   hitTest,
   runLayout,
   type UiElement
@@ -68,6 +69,14 @@ export class RuntimeHost {
     }
     this.canvas.removeEventListener('pointermove', this.pointerMoveHandler);
     this.canvas.removeEventListener('pointerdown', this.pointerDownHandler);
+  }
+
+  getElementById(id: string): UiElement | null {
+    if (!this.root) {
+      return null;
+    }
+
+    return findElementById(this.root, id);
   }
 
   private layoutAndRender(): void {

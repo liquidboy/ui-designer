@@ -14,7 +14,8 @@ module.exports = {
     alias: {
       '@ui-designer/designer-core': path.resolve(__dirname, '../../packages/designer-core/src/index.ts'),
       '@ui-designer/designer-widgets': path.resolve(__dirname, '../../packages/designer-widgets/src/index.ts'),
-      '@ui-designer/webgpu-renderer': path.resolve(__dirname, '../../packages/webgpu-renderer/src/index.ts')
+      '@ui-designer/webgpu-renderer': path.resolve(__dirname, '../../packages/webgpu-renderer/src/index.ts'),
+      '@ui-designer/ui-runtime-web': path.resolve(__dirname, '../../packages/ui-runtime-web/src/index.ts')
     }
   },
   module: {

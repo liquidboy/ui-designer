@@ -462,3 +462,22 @@ export function hitTest(root: UiElement, point: Point): UiElement | null {
 
   return walk(root);
 }
+
+export function findElementById(root: UiElement, id: string): UiElement | null {
+  function walk(node: UiElement): UiElement | null {
+    if (node.id === id) {
+      return node;
+    }
+
+    for (const child of node.children) {
+      const found = walk(child);
+      if (found) {
+        return found;
+      }
+    }
+
+    return null;
+  }
+
+  return walk(root);
+}

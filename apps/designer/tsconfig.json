@@ -9,6 +9,7 @@
   "references": [
     { "path": "../../packages/designer-core" },
     { "path": "../../packages/designer-widgets" },
-    { "path": "../../packages/webgpu-renderer" }
+    { "path": "../../packages/webgpu-renderer" },
+    { "path": "../../packages/ui-runtime-web" }
   ]
 }
