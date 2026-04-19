@@ -77,6 +77,7 @@ export function App() {
   const [heightInput, setHeightInput] = useState('');
   const [colorInput, setColorInput] = useState('#67c7ff');
   const [snapEnabled, setSnapEnabled] = useState(true);
+  const [historyVersion, setHistoryVersion] = useState(0);
   const [cameraView, setCameraView] = useState<CameraState>(() => createCameraState());
   const cameraRef = useRef<CameraState>(cameraView);
   const commandStackRef = useRef(new CommandStack());
@@ -151,6 +152,7 @@ export function App() {
     };
 
     commandStackRef.current.execute(command);
+    setHistoryVersion((value) => value + 1);
     syncSelectedElement();
   };
 
@@ -180,6 +182,7 @@ export function App() {
     };
 
     commandStackRef.current.execute(command);
+    setHistoryVersion((value) => value + 1);
     syncSelectedElement();
   };
 
@@ -217,6 +220,50 @@ export function App() {
     };
 
     commandStackRef.current.execute(command);
+    setHistoryVersion((value) => value + 1);
+    syncSelectedElement();
+  };
+
+  const executeResetOverridesCommand = (elementId: string) => {
+    const runtime = runtimeRef.current;
+    if (!runtime) {
+      return;
+    }
+
+    const offset = runtime.getElementOffsetOverride(elementId);
+    const size = runtime.getElementSizeOverride(elementId);
+    const color = runtime.getElementColor(elementId);
+
+    if (!offset && !size && !color) {
+      return;
+    }
+
+    const command: DesignerCommand = {
+      id: 'reset-overrides',
+      apply: () => {
+        runtime.clearElementOverrides(elementId);
+      },
+      undo: () => {
+        if (offset) runtime.setElementOffset(elementId, offset);
+        if (size) runtime.setElementSize(elementId, size);
+        if (color) runtime.setElementColor(elementId, color);
+      }
+    };
+
+    commandStackRef.current.execute(command);
+    setHistoryVersion((value) => value + 1);
+    syncSelectedElement();
+  };
+
+  const performUndo = () => {
+    commandStackRef.current.undo();
+    setHistoryVersion((value) => value + 1);
+    syncSelectedElement();
+  };
+
+  const performRedo = () => {
+    commandStackRef.current.redo();
+    setHistoryVersion((value) => value + 1);
     syncSelectedElement();
   };
 
@@ -527,15 +574,13 @@ export function App() {
 
       if (isUndo) {
         event.preventDefault();
-        commandStackRef.current.undo();
-        syncSelectedElement();
+        performUndo();
         return;
       }
 
       if (isRedoMac || isRedoWin) {
         event.preventDefault();
-        commandStackRef.current.redo();
-        syncSelectedElement();
+        performRedo();
         return;
       }
 
@@ -570,7 +615,7 @@ export function App() {
     return () => {
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [snapEnabled]);
+  }, [snapEnabled, historyVersion]);
 
   const commitInspectorPosition = () => {
     const runtime = runtimeRef.current;
@@ -648,6 +693,8 @@ export function App() {
   };
 
   const origin = worldToScreen({ x: 0, y: 0 }, cameraView);
+  const canUndo = commandStackRef.current.canUndo();
+  const canRedo = commandStackRef.current.canRedo();
   const selectedScreenRect = selectedElement
     ? {
         x: (selectedElement.layout.x - cameraView.x) * cameraView.zoom,
@@ -702,6 +749,14 @@ export function App() {
         <div className="origin">Camera: {cameraView.x.toFixed(0)}, {cameraView.y.toFixed(0)}</div>
         <div className="origin">Zoom: {(cameraView.zoom * 100).toFixed(0)}%</div>
         <div className="origin">Snap: {snapEnabled ? `On (${GRID_SIZE}px)` : 'Off'} (toggle: G)</div>
+        <div className="toolbar-row">
+          <button className="toolbar-btn" type="button" onClick={performUndo} disabled={!canUndo}>
+            Undo
+          </button>
+          <button className="toolbar-btn" type="button" onClick={performRedo} disabled={!canRedo}>
+            Redo
+          </button>
+        </div>
         <div className="origin">Hover: {hoveredId ?? 'none'}</div>
         <div className="origin">Selected: {selectedId ?? 'none'}</div>
       </aside>
@@ -810,6 +865,18 @@ export function App() {
                 }}
               />
             </label>
+            <button
+              className="toolbar-btn full-width"
+              type="button"
+              onClick={() => {
+                const id = selectedIdRef.current;
+                if (id) {
+                  executeResetOverridesCommand(id);
+                }
+              }}
+            >
+              Reset Element Overrides
+            </button>
           </section>
         ) : null}
         {sections.map((section: PropertySection) => (

@@ -44,6 +44,33 @@ body,
   font-size: 0.9rem;
 }
 
+.toolbar-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.toolbar-btn {
+  border: 1px solid #35516e;
+  border-radius: 6px;
+  padding: 6px 8px;
+  background: #0f1926;
+  color: #d7e6f8;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.toolbar-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.toolbar-btn.full-width {
+  width: 100%;
+  margin-top: 6px;
+}
+
 .selection-label {
   margin: 0 0 12px;
   color: #91a6c0;

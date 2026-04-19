@@ -121,8 +121,16 @@ export class RuntimeHost {
     return this.elementOffsets.get(id) ?? { x: 0, y: 0 };
   }
 
+  getElementOffsetOverride(id: string): Point | null {
+    return this.elementOffsets.get(id) ?? null;
+  }
+
   setElementOffset(id: string, offset: Point): void {
     this.elementOffsets.set(id, { x: offset.x, y: offset.y });
+  }
+
+  clearElementOffset(id: string): void {
+    this.elementOffsets.delete(id);
   }
 
   moveElementBy(id: string, delta: Point): void {
@@ -142,11 +150,19 @@ export class RuntimeHost {
     return current;
   }
 
+  getElementSizeOverride(id: string): { width: number; height: number } | null {
+    return this.elementSizeOverrides.get(id) ?? null;
+  }
+
   setElementSize(id: string, size: { width: number; height: number }): void {
     this.elementSizeOverrides.set(id, {
       width: Math.max(1, size.width),
       height: Math.max(1, size.height)
     });
+  }
+
+  clearElementSize(id: string): void {
+    this.elementSizeOverrides.delete(id);
   }
 
   getElementColor(id: string): ColorRgba | null {
@@ -160,6 +176,16 @@ export class RuntimeHost {
     }
 
     this.elementColorOverrides.set(id, color);
+  }
+
+  clearElementColor(id: string): void {
+    this.elementColorOverrides.delete(id);
+  }
+
+  clearElementOverrides(id: string): void {
+    this.elementOffsets.delete(id);
+    this.elementSizeOverrides.delete(id);
+    this.elementColorOverrides.delete(id);
   }
 
   pickElementAtScreenPoint(point: Point): string | null {
