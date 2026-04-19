@@ -2,18 +2,23 @@
   "name": "ui-designer",
   "version": "0.1.0",
   "private": true,
-  "description": "Preact + TypeScript + Webpack WebGPU starter",
+  "description": "XAML-inspired UI framework and designer targeting WebGPU",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
-    "dev": "webpack serve --config webpack.config.js --mode development",
-    "build": "webpack --config webpack.config.js --mode production",
-    "typecheck": "tsc --noEmit"
+    "dev:playground": "npm run dev --workspace @ui-designer/playground",
+    "dev:designer": "npm run dev --workspace @ui-designer/designer",
+    "build": "tsc -b",
+    "typecheck": "tsc -b --pretty false"
   },
   "dependencies": {
     "preact": "^10.26.9"
   },
   "devDependencies": {
-    "@webgpu/types": "^0.1.64",
     "@types/node": "^24.9.0",
+    "@webgpu/types": "^0.1.64",
     "css-loader": "^7.1.2",
     "html-webpack-plugin": "^5.6.4",
     "style-loader": "^4.0.0",

@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "include": ["src"],
+  "references": [
+    { "path": "../../packages/xaml-schema" },
+    { "path": "../../packages/xaml-parser" },
+    { "path": "../../packages/ui-core" },
+    { "path": "../../packages/webgpu-renderer" },
+    { "path": "../../packages/ui-runtime-web" }
+  ]
+}

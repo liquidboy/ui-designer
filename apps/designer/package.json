@@ -1,0 +1,10 @@
+{
+  "name": "@ui-designer/designer",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "webpack serve --config webpack.config.js --mode development",
+    "build": "webpack --config webpack.config.js --mode production",
+    "typecheck": "tsc --project tsconfig.json --noEmit"
+  }
+}

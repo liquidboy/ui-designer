@@ -1,0 +1,55 @@
+:root {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  background: radial-gradient(circle at 15% 20%, #17222b, #06090d 70%);
+  color: #eaf2ff;
+  font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  width: 100%;
+  height: 100%;
+}
+
+.top-bar {
+  padding: 12px 16px;
+  border-bottom: 1px solid #23303f;
+  background: linear-gradient(180deg, #121922, #0e141c);
+}
+
+.top-bar h1 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.top-bar p {
+  margin: 4px 0 0;
+  color: #91a4c0;
+  font-size: 0.85rem;
+}
+
+.viewport-wrap {
+  padding: 12px;
+  min-height: 0;
+}
+
+.viewport {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border: 1px solid #2e3e52;
+  border-radius: 10px;
+}

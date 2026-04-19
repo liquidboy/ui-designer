@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact",
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node", "@webgpu/types"],
+    "baseUrl": ".",
+    "paths": {
+      "@ui-designer/xaml-schema": ["packages/xaml-schema/src/index.ts"],
+      "@ui-designer/xaml-parser": ["packages/xaml-parser/src/index.ts"],
+      "@ui-designer/ui-core": ["packages/ui-core/src/index.ts"],
+      "@ui-designer/webgpu-renderer": ["packages/webgpu-renderer/src/index.ts"],
+      "@ui-designer/ui-runtime-web": ["packages/ui-runtime-web/src/index.ts"],
+      "@ui-designer/designer-core": ["packages/designer-core/src/index.ts"],
+      "@ui-designer/designer-widgets": ["packages/designer-widgets/src/index.ts"]
+    }
+  }
+}

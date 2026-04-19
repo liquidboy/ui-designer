@@ -1,18 +1,22 @@
-# WebGPU UI Designer Starter
+# UI Designer
 
-A minimal WebGPU-first web app using:
+XAML-inspired UI framework targeting WebGPU, with an infinite-canvas visual designer.
 
-- TypeScript
-- Webpack
-- Preact
+## Workspace Layout
 
-## Scripts
+- `packages/` shared framework and designer libraries
+- `apps/playground` runtime sandbox
+- `apps/designer` visual editor shell
+- `docs/` architecture and roadmap documentation
 
-- `npm run dev` starts the dev server on port `5173`
-- `npm run build` creates a production bundle in `dist/`
-- `npm run typecheck` runs TypeScript checks
+## Getting Started
 
-## Notes
+1. `npm run dev:playground`
+2. `npm run dev:designer`
+3. `npm run typecheck`
 
-- WebGPU currently works best in modern Chromium-based browsers.
-- If your browser does not support WebGPU, the app shows an initialization error message.
+## Documentation
+
+- [Architecture](./docs/architecture.md)
+- [XAML Subset v1](./docs/xaml-subset-v1.md)
+- [Milestone Plan](./docs/milestone-plan.md)
