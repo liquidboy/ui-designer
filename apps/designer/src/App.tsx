@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import {
   CommandStack,
-  applyOverrideSnapshotToDocument,
   buildDesignerTree,
+  cloneXamlDocument,
   createCameraState,
+  findDocumentNodeById,
   parseDesignerDocument,
   screenToWorld,
   serializeDesignerDocument,
+  updateDocumentNodeAttributes,
   worldToScreen,
   type CameraState,
   type DesignerDocument,
@@ -68,6 +70,31 @@ function parseHexColor(input: string): ColorRgba | null {
   return { r, g, b, a: 1 };
 }
 
+function asFiniteNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
+function inferColorAttribute(node: { type: string; attributes: Record<string, unknown> }): 'Background' | 'Fill' {
+  if ('Background' in node.attributes) {
+    return 'Background';
+  }
+
+  if ('Fill' in node.attributes) {
+    return 'Fill';
+  }
+
+  return node.type.toLowerCase() === 'rectangle' ? 'Fill' : 'Background';
+}
+
 function readDraftXaml(): string | null {
   try {
     const xaml = localStorage.getItem(DRAFT_STORAGE_KEY);
@@ -107,13 +134,15 @@ export function App() {
   const dragStartOffsetRef = useRef<Point>({ x: 0, y: 0 });
   const dragStartElementPositionRef = useRef<Point>({ x: 0, y: 0 });
   const dragStartWorldRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
-  const dragLastWorldRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const dragStartDocumentRef = useRef<DesignerDocument | null>(null);
   const resizeElementIdRef = useRef<string | null>(null);
   const resizeStartSizeRef = useRef<{ width: number; height: number }>({ width: 0, height: 0 });
   const resizeStartWorldRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const resizeStartDocumentRef = useRef<DesignerDocument | null>(null);
   const panOriginRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const panStartCameraRef = useRef<CameraState>(cameraView);
   const baseDocumentRef = useRef<DesignerDocument | null>(null);
+  const documentRef = useRef<DesignerDocument | null>(null);
   const snapEnabledRef = useRef(snapEnabled);
 
   const snapValue = (value: number, enabled = snapEnabledRef.current) => {
@@ -124,184 +153,220 @@ export function App() {
     return Math.round(value / GRID_SIZE) * GRID_SIZE;
   };
 
-  const syncSelectedElement = () => {
+  const clearInspectorState = () => {
+    setSelectedElement(null);
+    setXInput('');
+    setYInput('');
+    setWidthInput('');
+    setHeightInput('');
+    setColorInput('#67c7ff');
+  };
+
+  const getDocumentColorValue = (
+    id: string | null,
+    document: DesignerDocument | null = documentRef.current
+  ): string | null => {
+    if (!id || !document) {
+      return null;
+    }
+
+    const node = findDocumentNodeById(document, id);
+    if (!node) {
+      return null;
+    }
+
+    const attribute = inferColorAttribute(node);
+    const value = node.attributes[attribute];
+    return typeof value === 'string' && value.trim() ? value : null;
+  };
+
+  const readDocumentOffset = (document: DesignerDocument, id: string): Point => {
+    const node = findDocumentNodeById(document, id);
+    if (!node) {
+      return { x: 0, y: 0 };
+    }
+
+    return {
+      x: asFiniteNumber(node.attributes['Designer.OffsetX']) ?? 0,
+      y: asFiniteNumber(node.attributes['Designer.OffsetY']) ?? 0
+    };
+  };
+
+  const applyRenderedDocument = (document: DesignerDocument, commit: boolean) => {
     const runtime = runtimeRef.current;
-    const id = selectedIdRef.current;
+    const nextXaml = serializeDesignerDocument(document);
+
+    if (commit) {
+      documentRef.current = cloneXamlDocument(document);
+      setDocumentXaml(nextXaml);
+      setTreeItems(buildDesignerTree(document));
+    }
+
+    if (!runtime) {
+      return;
+    }
+
+    runtime.clearAllOverrides();
+    runtime.setXaml(nextXaml);
+
+    const currentSelectionId = selectedIdRef.current;
+    const nextSelectionId =
+      currentSelectionId && runtime.getElementById(currentSelectionId) ? currentSelectionId : null;
+    runtime.setSelectedElement(nextSelectionId);
+  };
+
+  const applyCommittedDocument = (document: DesignerDocument, options?: { setAsBase?: boolean }) => {
+    const committedDocument = cloneXamlDocument(document);
+
+    if (options?.setAsBase) {
+      baseDocumentRef.current = cloneXamlDocument(committedDocument);
+    }
+
+    applyRenderedDocument(committedDocument, true);
+  };
+
+  const previewDocument = (document: DesignerDocument) => {
+    applyRenderedDocument(document, false);
+  };
+
+  const syncSelectedElement = (id: string | null = selectedIdRef.current) => {
+    const runtime = runtimeRef.current;
 
     if (!runtime || !id) {
-      setSelectedElement(null);
-      setXInput('');
-      setYInput('');
-      setWidthInput('');
-      setHeightInput('');
-      setColorInput('#67c7ff');
+      clearInspectorState();
       return;
     }
 
     const element = runtime.getElementById(id);
+    if (!element) {
+      clearInspectorState();
+      return;
+    }
+
     setSelectedElement(element);
-
-    if (element) {
-      setXInput(element.layout.x.toFixed(0));
-      setYInput(element.layout.y.toFixed(0));
-      setWidthInput(element.layout.width.toFixed(0));
-      setHeightInput(element.layout.height.toFixed(0));
-      setColorInput(colorToHex(runtime.getElementColor(id)) ?? '#67c7ff');
-    }
+    setXInput(element.layout.x.toFixed(0));
+    setYInput(element.layout.y.toFixed(0));
+    setWidthInput(element.layout.width.toFixed(0));
+    setHeightInput(element.layout.height.toFixed(0));
+    setColorInput(getDocumentColorValue(id) ?? '#67c7ff');
   };
 
-  const executeMoveCommand = (elementId: string, from: Point, to: Point, label: string) => {
-    if (from.x === to.x && from.y === to.y) {
+  const executeDocumentCommand = (label: string, nextDocument: DesignerDocument) => {
+    const currentDocument = documentRef.current;
+    if (!currentDocument) {
       return;
     }
 
-    const runtime = runtimeRef.current;
-    if (!runtime) {
+    const beforeDocument = cloneXamlDocument(currentDocument);
+    const afterDocument = cloneXamlDocument(nextDocument);
+    const beforeXaml = serializeDesignerDocument(beforeDocument);
+    const afterXaml = serializeDesignerDocument(afterDocument);
+
+    if (beforeXaml === afterXaml) {
       return;
     }
 
     const command: DesignerCommand = {
       id: label,
       apply: () => {
-        runtime.setElementOffset(elementId, to);
+        applyCommittedDocument(afterDocument);
       },
       undo: () => {
-        runtime.setElementOffset(elementId, from);
+        applyCommittedDocument(beforeDocument);
       }
     };
 
     commandStackRef.current.execute(command);
     setHistoryVersion((value) => value + 1);
-    syncSelectedElement();
   };
 
-  const executeResizeCommand = (
+  const buildMoveDocument = (document: DesignerDocument, elementId: string, offset: Point) =>
+    updateDocumentNodeAttributes(document, elementId, {
+      'Designer.OffsetX': Math.round(offset.x) === 0 ? null : Math.round(offset.x),
+      'Designer.OffsetY': Math.round(offset.y) === 0 ? null : Math.round(offset.y)
+    });
+
+  const buildResizeDocument = (
+    document: DesignerDocument,
     elementId: string,
-    from: { width: number; height: number },
-    to: { width: number; height: number },
-    label: string
-  ) => {
-    if (from.width === to.width && from.height === to.height) {
-      return;
+    size: { width: number; height: number }
+  ) =>
+    updateDocumentNodeAttributes(document, elementId, {
+      Width: Math.max(24, Math.round(size.width)),
+      Height: Math.max(24, Math.round(size.height))
+    });
+
+  const buildColorDocument = (document: DesignerDocument, elementId: string, color: string) => {
+    const node = findDocumentNodeById(document, elementId);
+    if (!node) {
+      return document;
     }
 
-    const runtime = runtimeRef.current;
-    if (!runtime) {
-      return;
-    }
-
-    const command: DesignerCommand = {
-      id: label,
-      apply: () => {
-        runtime.setElementSize(elementId, to);
-      },
-      undo: () => {
-        runtime.setElementSize(elementId, from);
-      }
-    };
-
-    commandStackRef.current.execute(command);
-    setHistoryVersion((value) => value + 1);
-    syncSelectedElement();
+    return updateDocumentNodeAttributes(document, elementId, {
+      [inferColorAttribute(node)]: color
+    });
   };
 
-  const executeColorCommand = (
-    elementId: string,
-    from: ColorRgba | null,
-    to: ColorRgba | null,
-    label: string
+  const buildResetDocument = (
+    document: DesignerDocument,
+    baseDocument: DesignerDocument,
+    elementId: string
   ) => {
-    const same =
-      from === to ||
-      (from &&
-        to &&
-        from.r === to.r &&
-        from.g === to.g &&
-        from.b === to.b &&
-        from.a === to.a);
-    if (same) {
-      return;
+    const currentNode = findDocumentNodeById(document, elementId);
+    const baseNode = findDocumentNodeById(baseDocument, elementId);
+    if (!currentNode || !baseNode) {
+      return document;
     }
 
-    const runtime = runtimeRef.current;
-    if (!runtime) {
-      return;
-    }
-
-    const command: DesignerCommand = {
-      id: label,
-      apply: () => {
-        runtime.setElementColor(elementId, to);
-      },
-      undo: () => {
-        runtime.setElementColor(elementId, from);
-      }
+    const patch: Record<string, string | number | boolean | null> = {
+      'Designer.OffsetX': baseNode.attributes['Designer.OffsetX'] ?? null,
+      'Designer.OffsetY': baseNode.attributes['Designer.OffsetY'] ?? null,
+      Width: baseNode.attributes.Width ?? null,
+      Height: baseNode.attributes.Height ?? null
     };
 
-    commandStackRef.current.execute(command);
-    setHistoryVersion((value) => value + 1);
-    syncSelectedElement();
+    for (const key of ['Background', 'Fill'] as const) {
+      if (key in currentNode.attributes || key in baseNode.attributes) {
+        patch[key] = baseNode.attributes[key] ?? null;
+      }
+    }
+
+    return updateDocumentNodeAttributes(document, elementId, patch);
   };
 
-  const executeResetOverridesCommand = (elementId: string) => {
-    const runtime = runtimeRef.current;
-    if (!runtime) {
+  const executeResetElementCommand = (elementId: string) => {
+    const currentDocument = documentRef.current;
+    const baseDocument = baseDocumentRef.current;
+    if (!currentDocument || !baseDocument) {
       return;
     }
 
-    const offset = runtime.getElementOffsetOverride(elementId);
-    const size = runtime.getElementSizeOverride(elementId);
-    const color = runtime.getElementColor(elementId);
-
-    if (!offset && !size && !color) {
-      return;
-    }
-
-    const command: DesignerCommand = {
-      id: 'reset-overrides',
-      apply: () => {
-        runtime.clearElementOverrides(elementId);
-      },
-      undo: () => {
-        if (offset) runtime.setElementOffset(elementId, offset);
-        if (size) runtime.setElementSize(elementId, size);
-        if (color) runtime.setElementColor(elementId, color);
-      }
-    };
-
-    commandStackRef.current.execute(command);
-    setHistoryVersion((value) => value + 1);
-    syncSelectedElement();
+    executeDocumentCommand('reset-element-edits', buildResetDocument(currentDocument, baseDocument, elementId));
   };
 
   const performUndo = () => {
-    commandStackRef.current.undo();
-    setHistoryVersion((value) => value + 1);
-    syncSelectedElement();
-  };
-
-  const performRedo = () => {
-    commandStackRef.current.redo();
-    setHistoryVersion((value) => value + 1);
-    syncSelectedElement();
-  };
-
-  const refreshDocumentDraft = () => {
-    const runtime = runtimeRef.current;
-    const baseDocument = baseDocumentRef.current;
-    if (!runtime || !baseDocument) {
+    if (!commandStackRef.current.canUndo()) {
       return;
     }
 
-    const draftDocument = applyOverrideSnapshotToDocument(baseDocument, runtime.exportOverridesSnapshot());
-    const nextXaml = serializeDesignerDocument(draftDocument);
-    setDocumentXaml(nextXaml);
-    setTreeItems(buildDesignerTree(draftDocument));
+    commandStackRef.current.undo();
+    setHistoryVersion((value) => value + 1);
+  };
+
+  const performRedo = () => {
+    if (!commandStackRef.current.canRedo()) {
+      return;
+    }
+
+    commandStackRef.current.redo();
+    setHistoryVersion((value) => value + 1);
   };
 
   const saveDraftToStorage = () => {
     try {
-      localStorage.setItem(DRAFT_STORAGE_KEY, documentXaml);
+      const currentDocument = documentRef.current;
+      const xaml = currentDocument ? serializeDesignerDocument(currentDocument) : documentXaml;
+      localStorage.setItem(DRAFT_STORAGE_KEY, xaml);
     } catch {
       // Best-effort local persistence.
     }
@@ -318,20 +383,26 @@ export function App() {
       return;
     }
 
-    const nextDocument = parseDesignerDocument(draftXaml);
-    baseDocumentRef.current = nextDocument;
-    setDocumentXaml(draftXaml);
-    setTreeItems(buildDesignerTree(nextDocument));
-    runtime.clearAllOverrides();
-    runtime.setXaml(draftXaml);
-    runtime.setSelectedElement(null);
-    commandStackRef.current.clear();
-    setHistoryVersion((value) => value + 1);
-    syncSelectedElement();
+    try {
+      const nextDocument = parseDesignerDocument(draftXaml);
+      selectedIdRef.current = null;
+      setSelectedId(null);
+      applyCommittedDocument(nextDocument, { setAsBase: true });
+      commandStackRef.current.clear();
+      setHistoryVersion((value) => value + 1);
+    } catch (error: unknown) {
+      const reason = error instanceof Error ? error.message : String(error);
+      setStatus(`Failed to load draft: ${reason}`);
+      runtime.setSelectedElement(selectedIdRef.current);
+    }
   };
 
   const clearDraftFromStorage = () => {
-    localStorage.removeItem(DRAFT_STORAGE_KEY);
+    try {
+      localStorage.removeItem(DRAFT_STORAGE_KEY);
+    } catch {
+      // Best-effort local persistence cleanup.
+    }
   };
 
   const selectElement = (id: string | null) => {
@@ -357,9 +428,16 @@ export function App() {
       return;
     }
 
-    const initialXaml = readDraftXaml() ?? sampleXaml;
-    const initialDocument = parseDesignerDocument(initialXaml);
-    baseDocumentRef.current = initialDocument;
+    let initialDocument: DesignerDocument;
+    try {
+      initialDocument = parseDesignerDocument(readDraftXaml() ?? sampleXaml);
+    } catch {
+      initialDocument = parseDesignerDocument(sampleXaml);
+    }
+
+    const initialXaml = serializeDesignerDocument(initialDocument);
+    documentRef.current = cloneXamlDocument(initialDocument);
+    baseDocumentRef.current = cloneXamlDocument(initialDocument);
     setDocumentXaml(initialXaml);
     setTreeItems(buildDesignerTree(initialDocument));
 
@@ -375,21 +453,7 @@ export function App() {
         onSelectedElementChange: (id: string | null) => {
           selectedIdRef.current = id;
           setSelectedId(id);
-          setSelectedElement(id ? runtime.getElementById(id) : null);
-          if (id) {
-            const element = runtime.getElementById(id);
-            setXInput(element ? element.layout.x.toFixed(0) : '');
-            setYInput(element ? element.layout.y.toFixed(0) : '');
-            setWidthInput(element ? element.layout.width.toFixed(0) : '');
-            setHeightInput(element ? element.layout.height.toFixed(0) : '');
-            setColorInput(colorToHex(runtime.getElementColor(id)) ?? '#67c7ff');
-          } else {
-            setXInput('');
-            setYInput('');
-            setWidthInput('');
-            setHeightInput('');
-            setColorInput('#67c7ff');
-          }
+          syncSelectedElement(id);
         }
       })
       .then(() => {
@@ -406,10 +470,6 @@ export function App() {
       runtimeRef.current = null;
     };
   }, []);
-
-  useEffect(() => {
-    refreshDocumentDraft();
-  }, [historyVersion]);
 
   useEffect(() => {
     saveDraftToStorage();
@@ -432,25 +492,26 @@ export function App() {
     const onPointerDown = (event: PointerEvent) => {
       if (event.button === 0) {
         const runtime = runtimeRef.current;
+        const currentDocument = documentRef.current;
         if (!runtime) {
           return;
         }
 
         const point = toCanvasPoint(event);
         const id = runtime.pickElementAtScreenPoint(point);
-        if (!id) {
+        if (!id || !currentDocument) {
           return;
         }
 
         isDraggingRef.current = true;
         dragElementIdRef.current = id;
-        dragStartOffsetRef.current = runtime.getElementOffset(id);
+        dragStartOffsetRef.current = readDocumentOffset(currentDocument, id);
         const selected = runtime.getElementById(id);
         dragStartElementPositionRef.current = selected
           ? { x: selected.layout.x, y: selected.layout.y }
           : { x: 0, y: 0 };
         dragStartWorldRef.current = screenToWorld(point, cameraRef.current);
-        dragLastWorldRef.current = screenToWorld(point, cameraRef.current);
+        dragStartDocumentRef.current = cloneXamlDocument(currentDocument);
         canvas.classList.add('is-dragging');
         canvas.setPointerCapture(event.pointerId);
         return;
@@ -469,8 +530,8 @@ export function App() {
 
     const onPointerMove = (event: PointerEvent) => {
       if (isResizingRef.current && resizeElementIdRef.current) {
-        const runtime = runtimeRef.current;
-        if (!runtime) {
+        const startDocument = resizeStartDocumentRef.current;
+        if (!startDocument) {
           return;
         }
 
@@ -483,63 +544,40 @@ export function App() {
         const nextWidth = Math.max(24, snapValue(rawWidth, snapEnabledRef.current && !event.altKey));
         const nextHeight = Math.max(24, snapValue(rawHeight, snapEnabledRef.current && !event.altKey));
 
-        runtime.setElementSize(resizeElementIdRef.current, { width: nextWidth, height: nextHeight });
-
-        if (selectedIdRef.current === resizeElementIdRef.current) {
-          const updated = runtime.getElementById(resizeElementIdRef.current);
-          setSelectedElement(updated ?? null);
-          if (updated) {
-            setXInput(updated.layout.x.toFixed(0));
-            setYInput(updated.layout.y.toFixed(0));
-            setWidthInput(updated.layout.width.toFixed(0));
-            setHeightInput(updated.layout.height.toFixed(0));
-            setColorInput(colorToHex(runtime.getElementColor(resizeElementIdRef.current)) ?? '#67c7ff');
-          }
-        }
+        previewDocument(
+          buildResizeDocument(startDocument, resizeElementIdRef.current, {
+            width: nextWidth,
+            height: nextHeight
+          })
+        );
         return;
       }
 
       if (isDraggingRef.current && dragElementIdRef.current) {
-        const runtime = runtimeRef.current;
-        if (!runtime) {
+        const startDocument = dragStartDocumentRef.current;
+        if (!startDocument) {
           return;
         }
 
         const point = toCanvasPoint(event);
         const world = screenToWorld(point, cameraRef.current);
-        const previous = dragLastWorldRef.current;
-        const dx = world.x - previous.x;
-        const dy = world.y - previous.y;
-
         const id = dragElementIdRef.current;
-        runtime.moveElementBy(id, { x: dx, y: dy });
-        dragLastWorldRef.current = world;
+        const startWorld = dragStartWorldRef.current;
+        const startOffset = dragStartOffsetRef.current;
+        const startPosition = dragStartElementPositionRef.current;
+        const offsetDelta = {
+          x: startOffset.x + (world.x - startWorld.x),
+          y: startOffset.y + (world.y - startWorld.y)
+        };
+        const nextOffset =
+          snapEnabledRef.current && !event.altKey
+            ? {
+                x: startOffset.x + (snapValue(startPosition.x + (world.x - startWorld.x), true) - startPosition.x),
+                y: startOffset.y + (snapValue(startPosition.y + (world.y - startWorld.y), true) - startPosition.y)
+              }
+            : offsetDelta;
 
-        if (snapEnabledRef.current && !event.altKey) {
-          const startWorld = dragStartWorldRef.current;
-          const startOffset = dragStartOffsetRef.current;
-          const startPosition = dragStartElementPositionRef.current;
-          const unsnappedX = startPosition.x + (world.x - startWorld.x);
-          const unsnappedY = startPosition.y + (world.y - startWorld.y);
-          const snappedX = snapValue(unsnappedX, true);
-          const snappedY = snapValue(unsnappedY, true);
-
-          runtime.setElementOffset(id, {
-            x: startOffset.x + (snappedX - startPosition.x),
-            y: startOffset.y + (snappedY - startPosition.y)
-          });
-        }
-
-        if (selectedIdRef.current === id) {
-          const updated = runtime.getElementById(id);
-          setSelectedElement(updated ?? null);
-          if (updated) {
-            setXInput(updated.layout.x.toFixed(0));
-            setYInput(updated.layout.y.toFixed(0));
-            setWidthInput(updated.layout.width.toFixed(0));
-            setHeightInput(updated.layout.height.toFixed(0));
-          }
-        }
+        previewDocument(buildMoveDocument(startDocument, id, nextOffset));
         return;
       }
 
@@ -564,31 +602,39 @@ export function App() {
       if (isResizingRef.current) {
         const runtime = runtimeRef.current;
         const id = resizeElementIdRef.current;
-        if (runtime && id) {
-          const from = resizeStartSizeRef.current;
+        const startDocument = resizeStartDocumentRef.current;
+        if (runtime && id && startDocument) {
           const selected = runtime.getElementById(id);
           const to = selected
             ? { width: selected.layout.width, height: selected.layout.height }
-            : from;
-          executeResizeCommand(id, from, to, 'handle-resize');
+            : resizeStartSizeRef.current;
+          executeDocumentCommand('handle-resize', buildResizeDocument(startDocument, id, to));
         }
 
         isResizingRef.current = false;
         resizeElementIdRef.current = null;
+        resizeStartDocumentRef.current = null;
         canvas.classList.remove('is-resizing');
       }
 
       if (isDraggingRef.current) {
         const runtime = runtimeRef.current;
         const id = dragElementIdRef.current;
-        if (runtime && id) {
-          const from = dragStartOffsetRef.current;
-          const to = runtime.getElementOffset(id);
-          executeMoveCommand(id, from, to, 'drag-move');
+        const startDocument = dragStartDocumentRef.current;
+        if (runtime && id && startDocument) {
+          const selected = runtime.getElementById(id);
+          const to = selected
+            ? {
+                x: dragStartOffsetRef.current.x + (selected.layout.x - dragStartElementPositionRef.current.x),
+                y: dragStartOffsetRef.current.y + (selected.layout.y - dragStartElementPositionRef.current.y)
+              }
+            : dragStartOffsetRef.current;
+          executeDocumentCommand('drag-move', buildMoveDocument(startDocument, id, to));
         }
 
         isDraggingRef.current = false;
         dragElementIdRef.current = null;
+        dragStartDocumentRef.current = null;
         canvas.classList.remove('is-dragging');
       }
 
@@ -675,9 +721,9 @@ export function App() {
       }
 
       if (isArrow) {
-        const runtime = runtimeRef.current;
+        const currentDocument = documentRef.current;
         const id = selectedIdRef.current;
-        if (!runtime || !id) {
+        if (!currentDocument || !id) {
           return;
         }
 
@@ -695,9 +741,9 @@ export function App() {
         if (arrowKey === 'ArrowUp') dy = -step;
         if (arrowKey === 'ArrowDown') dy = step;
 
-        const from = runtime.getElementOffset(id);
+        const from = readDocumentOffset(currentDocument, id);
         const to = { x: from.x + dx, y: from.y + dy };
-        executeMoveCommand(id, from, to, 'nudge-move');
+        executeDocumentCommand('nudge-move', buildMoveDocument(currentDocument, id, to));
       }
     };
 
@@ -708,10 +754,10 @@ export function App() {
   }, [snapEnabled, historyVersion]);
 
   const commitInspectorPosition = () => {
-    const runtime = runtimeRef.current;
+    const currentDocument = documentRef.current;
     const id = selectedIdRef.current;
 
-    if (!runtime || !id || !selectedElement) {
+    if (!currentDocument || !id || !selectedElement) {
       return;
     }
 
@@ -724,7 +770,7 @@ export function App() {
       return;
     }
 
-    const currentOffset = runtime.getElementOffset(id);
+    const currentOffset = readDocumentOffset(currentDocument, id);
     const deltaX = nextX - selectedElement.layout.x;
     const deltaY = nextY - selectedElement.layout.y;
     const rawOffset = {
@@ -736,14 +782,14 @@ export function App() {
       y: snapValue(rawOffset.y)
     };
 
-    executeMoveCommand(id, currentOffset, nextOffset, 'inspector-move');
+    executeDocumentCommand('inspector-move', buildMoveDocument(currentDocument, id, nextOffset));
   };
 
   const commitInspectorSize = () => {
-    const runtime = runtimeRef.current;
+    const currentDocument = documentRef.current;
     const id = selectedIdRef.current;
 
-    if (!runtime || !id || !selectedElement) {
+    if (!currentDocument || !id || !selectedElement) {
       return;
     }
 
@@ -756,30 +802,30 @@ export function App() {
       return;
     }
 
-    executeResizeCommand(
-      id,
-      { width: selectedElement.layout.width, height: selectedElement.layout.height },
-      { width: Math.max(24, snapValue(nextWidth)), height: Math.max(24, snapValue(nextHeight)) },
-      'inspector-resize'
+    executeDocumentCommand(
+      'inspector-resize',
+      buildResizeDocument(currentDocument, id, {
+        width: Math.max(24, snapValue(nextWidth)),
+        height: Math.max(24, snapValue(nextHeight))
+      })
     );
   };
 
   const commitInspectorColor = () => {
-    const runtime = runtimeRef.current;
+    const currentDocument = documentRef.current;
     const id = selectedIdRef.current;
 
-    if (!runtime || !id || !selectedElement) {
+    if (!currentDocument || !id || !selectedElement) {
       return;
     }
 
     const next = parseHexColor(colorInput);
     if (!next) {
-      setColorInput(colorToHex(runtime.getElementColor(id)) ?? '#67c7ff');
+      setColorInput(getDocumentColorValue(id) ?? '#67c7ff');
       return;
     }
 
-    const from = runtime.getElementColor(id);
-    executeColorCommand(id, from, next, 'inspector-color');
+    executeDocumentCommand('inspector-color', buildColorDocument(currentDocument, id, colorToHex(next) ?? '#67c7ff'));
   };
 
   const origin = worldToScreen({ x: 0, y: 0 }, cameraView);
@@ -802,9 +848,10 @@ export function App() {
     event.stopPropagation();
 
     const runtime = runtimeRef.current;
+    const currentDocument = documentRef.current;
     const canvas = canvasRef.current;
     const id = selectedIdRef.current;
-    if (!runtime || !canvas || !id) {
+    if (!runtime || !canvas || !id || !currentDocument) {
       return;
     }
 
@@ -827,6 +874,7 @@ export function App() {
       height: selected.layout.height
     };
     resizeStartWorldRef.current = world;
+    resizeStartDocumentRef.current = cloneXamlDocument(currentDocument);
     canvas.classList.add('is-resizing');
   };
 
@@ -989,11 +1037,11 @@ export function App() {
               onClick={() => {
                 const id = selectedIdRef.current;
                 if (id) {
-                  executeResetOverridesCommand(id);
+                  executeResetElementCommand(id);
                 }
               }}
             >
-              Reset Element Overrides
+              Reset Element Edits
             </button>
           </section>
         ) : null}

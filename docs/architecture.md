@@ -53,6 +53,7 @@ Owns runtime-independent UI behavior.
 Responsibilities:
 - scene graph construction
 - measure/arrange layout pipeline
+- persisted authoring offsets via `Designer.OffsetX` and `Designer.OffsetY`
 - hit-test and event routing contracts
 - binding and invalidation entry points
 
@@ -73,6 +74,7 @@ Responsibilities:
 - resize loop and frame scheduling
 - input and IME integration surface
 - bootstrapping from XAML documents
+- rebuilding the rendered tree from updated XAML without owning editor state
 
 ### `packages/designer-core`
 Editor-domain logic for the visual design surface.
@@ -81,6 +83,7 @@ Responsibilities:
 - world-space camera model (pan/zoom)
 - selection state and transform handles
 - snapping guides and command stack
+- document parsing, cloning, tree inspection, and targeted attribute updates
 - serialization hooks back to XAML
 
 ### `packages/designer-widgets`
@@ -112,11 +115,44 @@ Visual editor shell with infinite canvas viewport and authoring panels.
 ## Designer Pipeline
 
 1. Load or create XAML document.
-2. Parse and materialize the scene graph.
-3. Project scene into world coordinates.
-4. Render viewport (content pass) and editor overlays (handles, guides).
-5. Apply command-based edits.
-6. Serialize updates back to XAML.
+2. Parse into a working XAML AST plus a base document snapshot.
+3. Materialize the scene graph for preview rendering.
+4. Project scene into world coordinates.
+5. Render viewport content plus editor overlays (selection, handles, grid).
+6. Build transient preview documents during drag and resize interactions.
+7. Commit edits through undoable document commands.
+8. Serialize the committed document back to XAML and persist local drafts.
+
+## Designer Document Model
+
+The designer is now document-backed rather than override-backed.
+
+Key concepts:
+- Base document: the loaded or opened XAML document used as the reset target for element-level edits.
+- Working document: the committed in-memory XAML AST that represents the current designer state.
+- Preview document: a temporary AST generated during pointer interactions so drag and resize can feel live without polluting undo history.
+- Runtime host: used as the renderer and hit-test surface only. It receives XAML strings from the designer and does not own authoritative edit state.
+
+Persisted editable attributes:
+- `Designer.OffsetX` and `Designer.OffsetY` store freeform movement independently of container layout rules.
+- `Width` and `Height` store explicit sizing changes.
+- `Background` or `Fill` store visual color edits depending on the control type.
+
+Reset behavior:
+- Reset actions compare the working document against the base document for the selected node.
+- Editable attributes are restored from the base document, which makes reset deterministic even after multiple undo/redo cycles.
+
+## Current MVP Editing Loop
+
+```mermaid
+flowchart LR
+  Source["Committed XAML Document"] --> Preview["Designer Mutation Helpers"]
+  Preview --> Temp["Preview XAML Document"]
+  Temp --> Host["ui-runtime-web setXaml()"]
+  Host --> View["WebGPU Viewport + Hit Testing"]
+  View --> Commit["Command Stack Commit"]
+  Commit --> Source
+```
 
 ## Non-Goals for MVP
 

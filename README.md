@@ -15,6 +15,15 @@ XAML-inspired UI framework targeting WebGPU, with an infinite-canvas visual desi
 2. `npm run dev:designer`
 3. `npm run typecheck`
 
+## Current MVP
+
+- XAML parsing into a shared schema and scene graph
+- WebGPU-backed rectangle rendering in the browser runtime
+- Infinite-canvas designer with pan, zoom, selection, snapping, drag-move, and resize handles
+- Inspector-driven editing for position, size, and color with undo/redo
+- Component tree browsing plus serialized XAML draft preview
+- Document-backed designer edits persisted as XAML drafts in local storage
+
 ## Documentation
 
 - [Architecture](./docs/architecture.md)
