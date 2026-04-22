@@ -229,10 +229,12 @@ function layoutBorderChild(element: UiElement): void {
 
 function layoutElement(element: UiElement, availableRect: LayoutRect): void {
   const own = computeOwnSize(element, { width: availableRect.width, height: availableRect.height });
+  const offsetX = propNumber(element.props, 'Designer.OffsetX') ?? 0;
+  const offsetY = propNumber(element.props, 'Designer.OffsetY') ?? 0;
 
   element.layout = {
-    x: availableRect.x,
-    y: availableRect.y,
+    x: availableRect.x + offsetX,
+    y: availableRect.y + offsetY,
     width: own.width,
     height: own.height
   };

@@ -55,8 +55,7 @@ export class RuntimeHost {
   }
 
   async boot(options: RuntimeBootOptions): Promise<void> {
-    const xamlDocument = parseXaml(options.xaml);
-    this.root = buildUiTree(xamlDocument.root);
+    this.setXaml(options.xaml);
     this.onHoveredElementChange = options.onHoveredElementChange;
     this.onSelectedElementChange = options.onSelectedElementChange;
 
@@ -198,6 +197,18 @@ export class RuntimeHost {
     this.elementOffsets.clear();
     this.elementSizeOverrides.clear();
     this.elementColorOverrides.clear();
+  }
+
+  setXaml(xaml: string): void {
+    const xamlDocument = parseXaml(xaml);
+    this.root = buildUiTree(xamlDocument.root);
+  }
+
+  setSelectedElement(id: string | null): void {
+    this.selectedElementId = id;
+    if (this.onSelectedElementChange) {
+      this.onSelectedElementChange(id);
+    }
   }
 
   exportOverridesSnapshot(): RuntimeOverridesSnapshot {

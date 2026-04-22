@@ -1,14 +1,18 @@
-import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import {
   CommandStack,
+  applyOverrideSnapshotToDocument,
+  buildDesignerTree,
   createCameraState,
+  parseDesignerDocument,
   screenToWorld,
+  serializeDesignerDocument,
   worldToScreen,
   type CameraState,
+  type DesignerDocument,
   type DesignerCommand
 } from '@ui-designer/designer-core';
-import { createPropertySections, type PropertyField, type PropertySection } from '@ui-designer/designer-widgets';
-import { RuntimeHost, type RuntimeOverridesSnapshot } from '@ui-designer/ui-runtime-web';
+import { RuntimeHost } from '@ui-designer/ui-runtime-web';
 import type { ColorRgba, Point, UiElement } from '@ui-designer/ui-core';
 
 const sampleXaml = `
@@ -27,7 +31,7 @@ const sampleXaml = `
 </Canvas>
 `;
 const GRID_SIZE = 8;
-const DRAFT_STORAGE_KEY = 'ui-designer:overrides-draft:v1';
+const DRAFT_STORAGE_KEY = 'ui-designer:document-draft:v1';
 
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
@@ -64,13 +68,13 @@ function parseHexColor(input: string): ColorRgba | null {
   return { r, g, b, a: 1 };
 }
 
-function readDraftSnapshot(): RuntimeOverridesSnapshot | null {
+function readDraftXaml(): string | null {
   try {
-    const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
-    if (!raw) {
+    const xaml = localStorage.getItem(DRAFT_STORAGE_KEY);
+    if (!xaml) {
       return null;
     }
-    return JSON.parse(raw) as RuntimeOverridesSnapshot;
+    return xaml;
   } catch {
     return null;
   }
@@ -84,6 +88,8 @@ export function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selectedIdRef = useRef<string | null>(null);
   const [selectedElement, setSelectedElement] = useState<UiElement | null>(null);
+  const [documentXaml, setDocumentXaml] = useState(sampleXaml);
+  const [treeItems, setTreeItems] = useState<ReturnType<typeof buildDesignerTree>>([]);
   const [xInput, setXInput] = useState('');
   const [yInput, setYInput] = useState('');
   const [widthInput, setWidthInput] = useState('');
@@ -107,7 +113,7 @@ export function App() {
   const resizeStartWorldRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const panOriginRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const panStartCameraRef = useRef<CameraState>(cameraView);
-  const sections = useMemo(() => createPropertySections(), []);
+  const baseDocumentRef = useRef<DesignerDocument | null>(null);
   const snapEnabledRef = useRef(snapEnabled);
 
   const snapValue = (value: number, enabled = snapEnabledRef.current) => {
@@ -280,15 +286,22 @@ export function App() {
     syncSelectedElement();
   };
 
-  const saveDraftToStorage = () => {
+  const refreshDocumentDraft = () => {
     const runtime = runtimeRef.current;
-    if (!runtime) {
+    const baseDocument = baseDocumentRef.current;
+    if (!runtime || !baseDocument) {
       return;
     }
 
+    const draftDocument = applyOverrideSnapshotToDocument(baseDocument, runtime.exportOverridesSnapshot());
+    const nextXaml = serializeDesignerDocument(draftDocument);
+    setDocumentXaml(nextXaml);
+    setTreeItems(buildDesignerTree(draftDocument));
+  };
+
+  const saveDraftToStorage = () => {
     try {
-      const snapshot = runtime.exportOverridesSnapshot();
-      localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(snapshot));
+      localStorage.setItem(DRAFT_STORAGE_KEY, documentXaml);
     } catch {
       // Best-effort local persistence.
     }
@@ -300,13 +313,34 @@ export function App() {
       return;
     }
 
-    const snapshot = readDraftSnapshot();
-    runtime.importOverridesSnapshot(snapshot);
+    const draftXaml = readDraftXaml();
+    if (!draftXaml) {
+      return;
+    }
+
+    const nextDocument = parseDesignerDocument(draftXaml);
+    baseDocumentRef.current = nextDocument;
+    setDocumentXaml(draftXaml);
+    setTreeItems(buildDesignerTree(nextDocument));
+    runtime.clearAllOverrides();
+    runtime.setXaml(draftXaml);
+    runtime.setSelectedElement(null);
+    commandStackRef.current.clear();
+    setHistoryVersion((value) => value + 1);
     syncSelectedElement();
   };
 
   const clearDraftFromStorage = () => {
     localStorage.removeItem(DRAFT_STORAGE_KEY);
+  };
+
+  const selectElement = (id: string | null) => {
+    const runtime = runtimeRef.current;
+    if (!runtime) {
+      return;
+    }
+
+    runtime.setSelectedElement(id);
   };
 
   const applyCamera = (cameraState: CameraState) => {
@@ -323,13 +357,19 @@ export function App() {
       return;
     }
 
+    const initialXaml = readDraftXaml() ?? sampleXaml;
+    const initialDocument = parseDesignerDocument(initialXaml);
+    baseDocumentRef.current = initialDocument;
+    setDocumentXaml(initialXaml);
+    setTreeItems(buildDesignerTree(initialDocument));
+
     const runtime = new RuntimeHost(canvas);
     runtimeRef.current = runtime;
     runtime.setCamera(cameraRef.current);
 
     runtime
       .boot({
-        xaml: sampleXaml,
+        xaml: initialXaml,
         canvas,
         onHoveredElementChange: setHoveredId,
         onSelectedElementChange: (id: string | null) => {
@@ -353,7 +393,6 @@ export function App() {
         }
       })
       .then(() => {
-        runtime.importOverridesSnapshot(readDraftSnapshot());
         setStatus('Design surface online. Left-drag to move, handle-drag to resize, middle-drag to pan.');
         runtime.start();
       })
@@ -369,8 +408,12 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    saveDraftToStorage();
+    refreshDocumentDraft();
   }, [historyVersion]);
+
+  useEffect(() => {
+    saveDraftToStorage();
+  }, [documentXaml]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -815,6 +858,23 @@ export function App() {
         <button className="toolbar-btn full-width" type="button" onClick={clearDraftFromStorage}>
           Clear Draft Storage
         </button>
+        <section className="tree-panel">
+          <h2>Component Tree</h2>
+          <div className="tree-list" role="tree">
+            {treeItems.map((item) => (
+              <button
+                key={item.id}
+                className={`tree-item ${selectedId === item.id ? 'is-selected' : ''}`}
+                style={{ paddingLeft: `${12 + item.depth * 16}px` }}
+                type="button"
+                onClick={() => selectElement(item.id)}
+              >
+                <span className="tree-type">{item.type}</span>
+                <span className="tree-label">{item.label}</span>
+              </button>
+            ))}
+          </div>
+        </section>
         <div className="origin">Hover: {hoveredId ?? 'none'}</div>
         <div className="origin">Selected: {selectedId ?? 'none'}</div>
       </aside>
@@ -937,17 +997,10 @@ export function App() {
             </button>
           </section>
         ) : null}
-        {sections.map((section: PropertySection) => (
-          <section key={section.id} className="inspector-group">
-            <h3>{section.title}</h3>
-            {section.fields.map((field: PropertyField) => (
-              <label key={field.key} className="field">
-                <span>{field.label}</span>
-                <input readOnly value={String(field.value)} />
-              </label>
-            ))}
-          </section>
-        ))}
+        <section className="inspector-group">
+          <h3>XAML Draft</h3>
+          <textarea className="source-preview" readOnly value={documentXaml} />
+        </section>
       </aside>
     </main>
   );
