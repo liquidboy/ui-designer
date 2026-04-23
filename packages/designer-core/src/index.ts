@@ -169,6 +169,49 @@ function findParentEntryByPath(root: XamlNode, path: number[]): { parent: XamlNo
   return { parent, index };
 }
 
+function pathStartsWith(path: number[], prefix: number[]): boolean {
+  if (prefix.length > path.length) {
+    return false;
+  }
+
+  for (let index = 0; index < prefix.length; index += 1) {
+    if (path[index] !== prefix[index]) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function pathsEqual(a: number[], b: number[]): boolean {
+  return a.length === b.length && a.every((segment, index) => segment === b[index]);
+}
+
+function adjustPathAfterRemoval(path: number[], removedPath: number[]): number[] {
+  if (removedPath.length === 0) {
+    return [...path];
+  }
+
+  const compareDepth = removedPath.length - 1;
+  const sharesParent = removedPath.slice(0, compareDepth).every((segment, index) => path[index] === segment);
+
+  if (!sharesParent || path.length <= compareDepth) {
+    return [...path];
+  }
+
+  const next = [...path];
+  const removedIndex = removedPath[compareDepth];
+  if (next[compareDepth] > removedIndex) {
+    next[compareDepth] -= 1;
+  }
+
+  return next;
+}
+
+function documentIdFromPath(path: number[]): string {
+  return ['root', '0', ...path.map(String)].join('.');
+}
+
 function inferTreeLabel(node: XamlNode): string {
   const text = node.attributes.Text;
   if (typeof text === 'string' && text.trim()) {
@@ -273,6 +316,49 @@ export function removeDocumentNode(document: XamlDocument, id: string): XamlDocu
 
   entry.parent.children.splice(entry.index, 1);
   return next;
+}
+
+export function moveDocumentNode(
+  document: XamlDocument,
+  sourceId: string,
+  targetParentId: string,
+  targetIndex: number
+): { document: XamlDocument; movedId: string } | null {
+  const sourcePath = parseDocumentPath(sourceId);
+  const targetParentPath = parseDocumentPath(targetParentId);
+  if (!sourcePath || !targetParentPath || sourcePath.length === 0) {
+    return null;
+  }
+
+  if (pathStartsWith(targetParentPath, sourcePath)) {
+    return null;
+  }
+
+  const sourceNode = findDocumentNodeById(document, sourceId);
+  if (!sourceNode) {
+    return null;
+  }
+
+  const sourceParentPath = sourcePath.slice(0, -1);
+  const sourceIndex = sourcePath[sourcePath.length - 1];
+  const sameParent = pathsEqual(sourceParentPath, targetParentPath);
+  const adjustedTargetIndex = sameParent && sourceIndex < targetIndex ? targetIndex - 1 : targetIndex;
+  const nextTargetParentPath = adjustPathAfterRemoval(targetParentPath, sourcePath);
+
+  const withoutSource = removeDocumentNode(document, sourceId);
+  const next = cloneXamlDocument(withoutSource);
+  const targetParent = findNodeByPath(next.root, nextTargetParentPath);
+  if (!targetParent) {
+    return null;
+  }
+
+  const boundedIndex = Math.max(0, Math.min(targetParent.children.length, Math.floor(adjustedTargetIndex)));
+  targetParent.children.splice(boundedIndex, 0, cloneXamlNode(sourceNode));
+
+  return {
+    document: next,
+    movedId: documentIdFromPath([...nextTargetParentPath, boundedIndex])
+  };
 }
 
 function formatPrimitive(value: XamlPrimitive): string {

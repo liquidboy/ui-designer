@@ -1,3 +1,4 @@
+import type { JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import {
   CommandStack,
@@ -7,6 +8,7 @@ import {
   createCameraState,
   findDocumentNodeById,
   insertDocumentChild,
+  moveDocumentNode,
   parseDesignerDocument,
   removeDocumentNode,
   screenToWorld,
@@ -38,9 +40,184 @@ const sampleXaml = `
 `;
 const GRID_SIZE = 8;
 const DRAFT_STORAGE_KEY = 'ui-designer:document-draft:v1';
-const NEW_ELEMENT_TYPES = ['Rectangle', 'TextBlock', 'Button', 'Border', 'StackPanel', 'Grid'] as const;
-type NewElementType = (typeof NEW_ELEMENT_TYPES)[number];
 const DEFAULT_NODE_COLORS = ['#3472ff', '#ff8157', '#3fca9d', '#ffd166', '#6fd3ff', '#b88cff'];
+const DEFAULT_FILE_NAME = 'designer-document.xaml';
+
+type TreeDropIntent = 'before' | 'inside' | 'after';
+
+type PaletteTemplateId =
+  | 'accent-rectangle'
+  | 'text-label'
+  | 'primary-button'
+  | 'content-stack'
+  | 'metric-card'
+  | 'swatch-grid'
+  | 'section-frame';
+
+interface PaletteTemplate {
+  id: PaletteTemplateId;
+  title: string;
+  description: string;
+  accent: string;
+  parentTypes?: readonly string[];
+  build(index: number): XamlNode;
+}
+
+function xamlNode(
+  type: string,
+  attributes: Record<string, string | number | boolean>,
+  children: XamlNode[] = []
+): XamlNode {
+  return {
+    type,
+    attributes,
+    children
+  };
+}
+
+const PALETTE_TEMPLATES: readonly PaletteTemplate[] = [
+  {
+    id: 'accent-rectangle',
+    title: 'Accent Rectangle',
+    description: 'Simple visual block for wireframes, artwork, or emphasis.',
+    accent: '#3472ff',
+    build: (index) =>
+      xamlNode('Rectangle', {
+        Width: 160,
+        Height: 96,
+        Fill: DEFAULT_NODE_COLORS[index % DEFAULT_NODE_COLORS.length]
+      })
+  },
+  {
+    id: 'text-label',
+    title: 'Text Label',
+    description: 'Single-line copy block for headings or supporting text.',
+    accent: '#6fd3ff',
+    build: (index) =>
+      xamlNode('TextBlock', {
+        Text: `Label ${index + 1}`
+      })
+  },
+  {
+    id: 'primary-button',
+    title: 'Primary Button',
+    description: 'Action button with a strong default size and call-to-action label.',
+    accent: '#3fca9d',
+    build: (index) =>
+      xamlNode('Button', {
+        Content: `Action ${index + 1}`,
+        Width: 152,
+        Height: 40
+      })
+  },
+  {
+    id: 'content-stack',
+    title: 'Content Stack',
+    description: 'Headline, supporting copy, and a primary action in a vertical rhythm.',
+    accent: '#b88cff',
+    build: (index) =>
+      xamlNode(
+        'StackPanel',
+        {
+          Width: 260,
+          Spacing: 10,
+          Background: '#18222e'
+        },
+        [
+          xamlNode('TextBlock', { Text: `Section ${index + 1}` }),
+          xamlNode('TextBlock', { Text: 'Concise supporting copy for the selected design block.' }),
+          xamlNode('Button', { Content: 'Continue', Width: 148, Height: 40 })
+        ]
+      )
+  },
+  {
+    id: 'metric-card',
+    title: 'Metric Card',
+    description: 'A bordered summary tile with a label and a large value.',
+    accent: '#ff8157',
+    build: (index) =>
+      xamlNode(
+        'Border',
+        {
+          Width: 240,
+          Height: 132,
+          Background: '#18222e',
+          Padding: 16
+        },
+        [
+          xamlNode('StackPanel', { Spacing: 10 }, [
+            xamlNode('TextBlock', { Text: `Metric ${index + 1}` }),
+            xamlNode('TextBlock', { Text: '128' })
+          ])
+        ]
+      )
+  },
+  {
+    id: 'swatch-grid',
+    title: 'Swatch Grid',
+    description: 'A compact 2x2 composition for testing nested layout and color systems.',
+    accent: '#ffd166',
+    build: (index) =>
+      xamlNode(
+        'Grid',
+        {
+          Width: 280,
+          Height: 180,
+          Rows: 2,
+          Columns: 2,
+          Background: '#18222e'
+        },
+        [
+          xamlNode('Rectangle', {
+            'Grid.Row': 0,
+            'Grid.Column': 0,
+            Fill: DEFAULT_NODE_COLORS[index % DEFAULT_NODE_COLORS.length]
+          }),
+          xamlNode('Rectangle', {
+            'Grid.Row': 0,
+            'Grid.Column': 1,
+            Fill: DEFAULT_NODE_COLORS[(index + 1) % DEFAULT_NODE_COLORS.length]
+          }),
+          xamlNode('Rectangle', {
+            'Grid.Row': 1,
+            'Grid.Column': 0,
+            Fill: DEFAULT_NODE_COLORS[(index + 2) % DEFAULT_NODE_COLORS.length]
+          }),
+          xamlNode('Rectangle', {
+            'Grid.Row': 1,
+            'Grid.Column': 1,
+            Fill: DEFAULT_NODE_COLORS[(index + 3) % DEFAULT_NODE_COLORS.length]
+          })
+        ]
+      )
+  },
+  {
+    id: 'section-frame',
+    title: 'Section Frame',
+    description: 'Container block with a heading and room for nested content or imagery.',
+    accent: '#6fd3ff',
+    build: (index) =>
+      xamlNode(
+        'Border',
+        {
+          Width: 280,
+          Height: 180,
+          Background: '#111923',
+          Padding: 18
+        },
+        [
+          xamlNode('StackPanel', { Spacing: 12 }, [
+            xamlNode('TextBlock', { Text: `Frame ${index + 1}` }),
+            xamlNode('Rectangle', {
+              Width: 220,
+              Height: 88,
+              Fill: DEFAULT_NODE_COLORS[(index + 4) % DEFAULT_NODE_COLORS.length]
+            })
+          ])
+        ]
+      )
+  }
+] as const;
 
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
@@ -131,72 +308,76 @@ function canHostAdditionalChildren(node: XamlNode | null): boolean {
   }
 }
 
-function createDefaultNode(type: NewElementType, index: number): XamlNode {
-  const accent = DEFAULT_NODE_COLORS[index % DEFAULT_NODE_COLORS.length];
-
-  switch (type) {
-    case 'Rectangle':
-      return {
-        type,
-        attributes: {
-          Width: 160,
-          Height: 96,
-          Fill: accent
-        },
-        children: []
-      };
-    case 'TextBlock':
-      return {
-        type,
-        attributes: {
-          Text: `Label ${index + 1}`
-        },
-        children: []
-      };
-    case 'Button':
-      return {
-        type,
-        attributes: {
-          Content: `Action ${index + 1}`,
-          Width: 152,
-          Height: 40
-        },
-        children: []
-      };
-    case 'Border':
-      return {
-        type,
-        attributes: {
-          Width: 220,
-          Height: 120,
-          Background: accent,
-          Padding: 16
-        },
-        children: []
-      };
-    case 'StackPanel':
-      return {
-        type,
-        attributes: {
-          Width: 240,
-          Spacing: 12,
-          Background: '#18222e'
-        },
-        children: []
-      };
-    case 'Grid':
-      return {
-        type,
-        attributes: {
-          Width: 280,
-          Height: 180,
-          Rows: 2,
-          Columns: 2,
-          Background: '#18222e'
-        },
-        children: []
-      };
+function canInsertTemplateIntoParent(template: PaletteTemplate, parentNode: XamlNode | null): boolean {
+  if (!parentNode || !canHostAdditionalChildren(parentNode)) {
+    return false;
   }
+
+  if (!template.parentTypes) {
+    return true;
+  }
+
+  return template.parentTypes.includes(parentNode.type.toLowerCase());
+}
+
+function applyContainerPlacement(parentNode: XamlNode, node: XamlNode, index: number): XamlNode {
+  const next = cloneXamlNode(node);
+  const parentType = parentNode.type.toLowerCase();
+
+  delete next.attributes['Designer.OffsetX'];
+  delete next.attributes['Designer.OffsetY'];
+  delete next.attributes.X;
+  delete next.attributes.Y;
+  delete next.attributes['Canvas.Left'];
+  delete next.attributes['Canvas.Top'];
+  delete next.attributes.Left;
+  delete next.attributes.Top;
+  delete next.attributes['Grid.Row'];
+  delete next.attributes['Grid.Column'];
+
+  if (parentType === 'canvas') {
+    next.attributes.X = 72 + (index % 4) * 196;
+    next.attributes.Y = 72 + Math.floor(index / 4) * 144;
+    return next;
+  }
+
+  if (parentType === 'grid') {
+    const columns = Math.max(1, asFiniteNumber(parentNode.attributes.Columns) ?? 1);
+    next.attributes['Grid.Row'] = Math.floor(index / columns);
+    next.attributes['Grid.Column'] = index % columns;
+  }
+
+  return next;
+}
+
+function createTemplateNode(template: PaletteTemplate, parentNode: XamlNode, index: number): XamlNode {
+  return applyContainerPlacement(parentNode, template.build(index), index);
+}
+
+function findPaletteTemplate(templateId: PaletteTemplateId): PaletteTemplate {
+  return PALETTE_TEMPLATES.find((template) => template.id === templateId) ?? PALETTE_TEMPLATES[0];
+}
+
+function normalizeFileName(fileName: string | null | undefined): string {
+  const value = fileName?.trim();
+  return value ? value : DEFAULT_FILE_NAME;
+}
+
+function inferDropIntent(itemId: string, rect: DOMRect, clientY: number): TreeDropIntent {
+  if (itemId === 'root.0') {
+    return 'inside';
+  }
+
+  const relativeY = (clientY - rect.top) / Math.max(rect.height, 1);
+  if (relativeY <= 0.28) {
+    return 'before';
+  }
+
+  if (relativeY >= 0.72) {
+    return 'after';
+  }
+
+  return 'inside';
 }
 
 function getNodeIndexFromId(id: string): number | null {
@@ -211,6 +392,7 @@ function getNodeIndexFromId(id: string): number | null {
 
 export function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const runtimeRef = useRef<RuntimeHost | null>(null);
   const [status, setStatus] = useState('Initializing designer viewport...');
   const [hoveredId, setHoveredId] = useState<string | null>(null);
@@ -218,11 +400,15 @@ export function App() {
   const selectedIdRef = useRef<string | null>(null);
   const [selectedElement, setSelectedElement] = useState<UiElement | null>(null);
   const [documentXaml, setDocumentXaml] = useState(sampleXaml);
+  const [documentFileName, setDocumentFileName] = useState(DEFAULT_FILE_NAME);
   const [treeItems, setTreeItems] = useState<ReturnType<typeof buildDesignerTree>>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<PaletteTemplateId>('metric-card');
   const [sourceDraft, setSourceDraft] = useState(sampleXaml);
   const [sourceDirty, setSourceDirty] = useState(false);
   const [sourceError, setSourceError] = useState<string | null>(null);
-  const [newElementType, setNewElementType] = useState<NewElementType>('Rectangle');
+  const [treeDragSourceId, setTreeDragSourceId] = useState<string | null>(null);
+  const [treeDropTargetId, setTreeDropTargetId] = useState<string | null>(null);
+  const [treeDropIntent, setTreeDropIntent] = useState<TreeDropIntent | null>(null);
   const [xInput, setXInput] = useState('');
   const [yInput, setYInput] = useState('');
   const [widthInput, setWidthInput] = useState('');
@@ -489,21 +675,60 @@ export function App() {
       return;
     }
 
+    if (
+      loadDocumentFromText(nextSource, {
+        fileName: documentFileName,
+        successStatus: 'Applied XAML source and reset the designer history baseline.',
+        failurePrefix: 'XAML apply failed',
+        setAsBase: true,
+        clearHistory: true,
+        resetSelection: true,
+        reflectErrorInSourcePane: true
+      })
+    ) {
+      return;
+    }
+  };
+
+  const loadDocumentFromText = (
+    xaml: string,
+    options: {
+      fileName?: string;
+      successStatus: string;
+      failurePrefix: string;
+      setAsBase?: boolean;
+      clearHistory?: boolean;
+      resetSelection?: boolean;
+      reflectErrorInSourcePane?: boolean;
+    }
+  ): boolean => {
     try {
-      const nextDocument = parseDesignerDocument(nextSource);
+      const nextDocument = parseDesignerDocument(xaml);
       const normalizedXaml = serializeDesignerDocument(nextDocument);
 
-      commandStackRef.current.clear();
-      setHistoryVersion((value) => value + 1);
+      if (options.fileName) {
+        setDocumentFileName(normalizeFileName(options.fileName));
+      }
+      if (options.clearHistory) {
+        commandStackRef.current.clear();
+        setHistoryVersion((value) => value + 1);
+      }
       setSourceError(null);
       setSourceDirty(false);
       setSourceDraft(normalizedXaml);
-      applyCommittedDocument(nextDocument, { setAsBase: true, selectionId: null });
-      setStatus('Applied XAML source and reset the designer history baseline.');
+      applyCommittedDocument(nextDocument, {
+        setAsBase: options.setAsBase ?? true,
+        selectionId: options.resetSelection === false ? selectedIdRef.current : null
+      });
+      setStatus(options.successStatus);
+      return true;
     } catch (error: unknown) {
       const reason = error instanceof Error ? error.message : String(error);
-      setSourceError(reason);
-      setStatus(`XAML apply failed: ${reason}`);
+      if (options.reflectErrorInSourcePane) {
+        setSourceError(reason);
+      }
+      setStatus(`${options.failurePrefix}: ${reason}`);
+      return false;
     }
   };
 
@@ -511,6 +736,107 @@ export function App() {
     setSourceDraft(documentXaml);
     setSourceDirty(false);
     setSourceError(null);
+  };
+
+  const saveDocumentToFile = async () => {
+    const xaml = documentRef.current ? serializeDesignerDocument(documentRef.current) : documentXaml;
+    const nextFileName = normalizeFileName(documentFileName);
+    const platformWindow = window as Window & {
+      showSaveFilePicker?: (options?: unknown) => Promise<{
+        name?: string;
+        createWritable: () => Promise<{
+          write: (data: string) => Promise<void>;
+          close: () => Promise<void>;
+        }>;
+      }>;
+    };
+
+    if (platformWindow.showSaveFilePicker) {
+      try {
+        const handle = await platformWindow.showSaveFilePicker({
+          suggestedName: nextFileName,
+          types: [
+            {
+              description: 'XAML Documents',
+              accept: {
+                'application/xml': ['.xaml', '.xml'],
+                'text/plain': ['.txt']
+              }
+            }
+          ]
+        });
+        const writable = await handle.createWritable();
+        await writable.write(xaml);
+        await writable.close();
+        setDocumentFileName(normalizeFileName(handle.name ?? nextFileName));
+        setStatus(`Saved XAML to ${normalizeFileName(handle.name ?? nextFileName)}.`);
+        return;
+      } catch (error: unknown) {
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          return;
+        }
+      }
+    }
+
+    const blob = new Blob([xaml], { type: 'application/xml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = nextFileName;
+    link.click();
+    URL.revokeObjectURL(url);
+    setStatus(`Exported XAML as ${nextFileName}.`);
+  };
+
+  const openDocumentFilePicker = () => {
+    fileInputRef.current?.click();
+  };
+
+  const loadDocumentFromFile = async (file: File) => {
+    const xaml = await file.text();
+    loadDocumentFromText(xaml, {
+      fileName: file.name,
+      successStatus: `Loaded XAML from ${file.name}.`,
+      failurePrefix: `Failed to load ${file.name}`,
+      setAsBase: true,
+      clearHistory: true,
+      resetSelection: true
+    });
+  };
+
+  const handleDocumentFileChange = async (event: JSX.TargetedEvent<HTMLInputElement, Event>) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    await loadDocumentFromFile(file);
+    input.value = '';
+  };
+
+  const insertTemplateAt = (parentId: string, insertIndex: number, previousSelectionId: string | null, modeLabel: string) => {
+    const currentDocument = documentRef.current;
+    if (!currentDocument) {
+      return;
+    }
+
+    const parentNode = findDocumentNodeById(currentDocument, parentId);
+    const selectedTemplate = findPaletteTemplate(selectedTemplateId);
+    if (!parentNode || !canInsertTemplateIntoParent(selectedTemplate, parentNode)) {
+      setStatus(`The ${selectedTemplate.title} template cannot be inserted into that container.`);
+      return;
+    }
+
+    const nextNode = createTemplateNode(selectedTemplate, parentNode, insertIndex);
+    const nextDocument = insertDocumentChild(currentDocument, parentId, nextNode, insertIndex);
+    const nextSelectionId = `${parentId}.${insertIndex}`;
+
+    executeDocumentCommand(`palette-${modeLabel}`, nextDocument, {
+      nextSelectionId,
+      previousSelectionId
+    });
+    setStatus(`Inserted ${selectedTemplate.title} as a ${modeLabel}.`);
   };
 
   const createChildElement = () => {
@@ -523,21 +849,14 @@ export function App() {
       treeItems.find((item) => item.id === selectedIdRef.current) ?? treeItems.find((item) => item.id === 'root.0') ?? null;
     const parentId = selectedTreeItem?.id ?? 'root.0';
     const parentNode = findDocumentNodeById(currentDocument, parentId);
-    if (!parentNode || !canHostAdditionalChildren(parentNode)) {
+    const selectedTemplate = findPaletteTemplate(selectedTemplateId);
+    if (!parentNode || !canInsertTemplateIntoParent(selectedTemplate, parentNode)) {
       setStatus('The selected element cannot host more children.');
       return;
     }
 
     const insertIndex = parentNode.children.length;
-    const nextNode = createDefaultNode(newElementType, insertIndex);
-    const nextDocument = insertDocumentChild(currentDocument, parentId, nextNode, insertIndex);
-    const nextSelectionId = `${parentId}.${insertIndex}`;
-
-    executeDocumentCommand('tree-add-child', nextDocument, {
-      nextSelectionId,
-      previousSelectionId: selectedIdRef.current
-    });
-    setStatus(`Added ${newElementType} under ${parentNode.type}.`);
+    insertTemplateAt(parentId, insertIndex, selectedIdRef.current, 'child');
   };
 
   const createSiblingElement = () => {
@@ -549,7 +868,8 @@ export function App() {
     }
 
     const parentNode = findDocumentNodeById(currentDocument, selectedTreeItem.parentId);
-    if (!parentNode || !canHostAdditionalChildren(parentNode)) {
+    const selectedTemplate = findPaletteTemplate(selectedTemplateId);
+    if (!canInsertTemplateIntoParent(selectedTemplate, parentNode)) {
       setStatus('The selected element parent cannot host additional children.');
       return;
     }
@@ -560,15 +880,7 @@ export function App() {
     }
 
     const insertIndex = selectedIndex + 1;
-    const nextNode = createDefaultNode(newElementType, parentNode.children.length);
-    const nextDocument = insertDocumentChild(currentDocument, selectedTreeItem.parentId, nextNode, insertIndex);
-    const nextSelectionId = `${selectedTreeItem.parentId}.${insertIndex}`;
-
-    executeDocumentCommand('tree-add-sibling', nextDocument, {
-      nextSelectionId,
-      previousSelectionId: selectedTreeItem.id
-    });
-    setStatus(`Added ${newElementType} beside ${selectedTreeItem.type}.`);
+    insertTemplateAt(selectedTreeItem.parentId, insertIndex, selectedTreeItem.id, 'sibling');
   };
 
   const deleteSelectedElement = () => {
@@ -655,6 +967,117 @@ export function App() {
     setStatus(`Moved ${selectedTreeItem.type} out of ${parentTreeItem.type}.`);
   };
 
+  const clearTreeDragState = () => {
+    setTreeDragSourceId(null);
+    setTreeDropTargetId(null);
+    setTreeDropIntent(null);
+  };
+
+  const resolveTreeDropTarget = (sourceId: string, targetId: string, intent: TreeDropIntent) => {
+    const currentDocument = documentRef.current;
+    if (!currentDocument || sourceId === 'root.0') {
+      return null;
+    }
+
+    const targetTreeItem = treeItems.find((item) => item.id === targetId) ?? null;
+    if (!targetTreeItem) {
+      return null;
+    }
+
+    if (intent === 'inside') {
+      const targetNode = findDocumentNodeById(currentDocument, targetId);
+      if (!targetNode || !canHostAdditionalChildren(targetNode)) {
+        return null;
+      }
+
+      const next = moveDocumentNode(currentDocument, sourceId, targetId, targetNode.children.length);
+      if (!next) {
+        return null;
+      }
+
+      return { ...next, parentId: targetId, index: targetNode.children.length };
+    }
+
+    if (!targetTreeItem.parentId) {
+      return null;
+    }
+
+    const targetIndex = getNodeIndexFromId(targetId);
+    if (targetIndex == null) {
+      return null;
+    }
+
+    const insertionIndex = targetIndex + (intent === 'after' ? 1 : 0);
+    const next = moveDocumentNode(currentDocument, sourceId, targetTreeItem.parentId, insertionIndex);
+    if (!next) {
+      return null;
+    }
+
+    return {
+      ...next,
+      parentId: targetTreeItem.parentId,
+      index: insertionIndex
+    };
+  };
+
+  const handleTreeDragStart = (itemId: string, event: JSX.TargetedDragEvent<HTMLButtonElement>) => {
+    if (itemId === 'root.0') {
+      event.preventDefault();
+      return;
+    }
+
+    setTreeDragSourceId(itemId);
+    setTreeDropTargetId(null);
+    setTreeDropIntent(null);
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', itemId);
+    }
+    selectElement(itemId);
+  };
+
+  const handleTreeDragOver = (itemId: string, event: JSX.TargetedDragEvent<HTMLButtonElement>) => {
+    if (!treeDragSourceId) {
+      return;
+    }
+
+    event.preventDefault();
+    const intent = inferDropIntent(itemId, event.currentTarget.getBoundingClientRect(), event.clientY);
+    const resolved = resolveTreeDropTarget(treeDragSourceId, itemId, intent);
+
+    setTreeDropTargetId(itemId);
+    setTreeDropIntent(resolved ? intent : null);
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = resolved ? 'move' : 'none';
+    }
+  };
+
+  const handleTreeDrop = (itemId: string, event: JSX.TargetedDragEvent<HTMLButtonElement>) => {
+    if (!treeDragSourceId) {
+      return;
+    }
+
+    event.preventDefault();
+    const intent = inferDropIntent(itemId, event.currentTarget.getBoundingClientRect(), event.clientY);
+    const resolved = resolveTreeDropTarget(treeDragSourceId, itemId, intent);
+    if (!resolved) {
+      clearTreeDragState();
+      setStatus('That drop target is not valid for the selected node.');
+      return;
+    }
+
+    executeDocumentCommand('tree-drag-move', resolved.document, {
+      nextSelectionId: resolved.movedId,
+      previousSelectionId: treeDragSourceId
+    });
+    clearTreeDragState();
+    setStatus(`Moved element to ${intent === 'inside' ? 'inside' : intent} ${itemId}.`);
+  };
+
+  const handleTreeDragEnd = () => {
+    clearTreeDragState();
+  };
+
   const performUndo = () => {
     if (!commandStackRef.current.canUndo()) {
       return;
@@ -694,21 +1117,14 @@ export function App() {
       return;
     }
 
-    try {
-      const nextDocument = parseDesignerDocument(draftXaml);
-      const normalizedXaml = serializeDesignerDocument(nextDocument);
-      selectedIdRef.current = null;
-      setSelectedId(null);
-      setSourceDraft(normalizedXaml);
-      setSourceDirty(false);
-      setSourceError(null);
-      applyCommittedDocument(nextDocument, { setAsBase: true, selectionId: null });
-      commandStackRef.current.clear();
-      setHistoryVersion((value) => value + 1);
-      setStatus('Loaded the saved XAML draft.');
-    } catch (error: unknown) {
-      const reason = error instanceof Error ? error.message : String(error);
-      setStatus(`Failed to load draft: ${reason}`);
+    if (!loadDocumentFromText(draftXaml, {
+      fileName: documentFileName,
+      successStatus: 'Loaded the saved XAML draft.',
+      failurePrefix: 'Failed to load draft',
+      setAsBase: true,
+      clearHistory: true,
+      resetSelection: true
+    })) {
       runtime.setSelectedElement(selectedIdRef.current);
     }
   };
@@ -1155,6 +1571,7 @@ export function App() {
   const selectedTreeItem = selectedId ? treeItems.find((item) => item.id === selectedId) ?? null : null;
   const selectedTreeNode =
     selectedTreeItem && documentRef.current ? findDocumentNodeById(documentRef.current, selectedTreeItem.id) : null;
+  const selectedTemplate = findPaletteTemplate(selectedTemplateId);
   const parentTreeItem =
     selectedTreeItem?.parentId ? treeItems.find((item) => item.id === selectedTreeItem.parentId) ?? null : null;
   const selectedTreeIndex = selectedTreeItem ? getNodeIndexFromId(selectedTreeItem.id) : null;
@@ -1171,12 +1588,14 @@ export function App() {
     selectedTreeItem?.parentId && documentRef.current
       ? findDocumentNodeById(documentRef.current, selectedTreeItem.parentId)
       : null;
-  const canAddChild = canHostAdditionalChildren(selectedOrRootNode);
-  const canAddSibling = !!selectedTreeItem?.parentId && canHostAdditionalChildren(siblingParentNode);
+  const canAddChild = canInsertTemplateIntoParent(selectedTemplate, selectedOrRootNode);
+  const canAddSibling = !!selectedTreeItem?.parentId && canInsertTemplateIntoParent(selectedTemplate, siblingParentNode);
   const canDeleteSelected = !!selectedTreeItem && selectedTreeItem.id !== 'root.0';
   const canReparentIn = !!selectedTreeItem && !!previousSiblingNode && canHostAdditionalChildren(previousSiblingNode);
   const canReparentOut = !!selectedTreeItem && !!parentTreeItem?.parentId;
   const canApplySource = sourceDirty && sourceDraft.trim().length > 0;
+  const childTargetLabel = selectedOrRootNode ? selectedOrRootNode.type : 'Canvas';
+  const siblingTargetLabel = siblingParentNode ? siblingParentNode.type : 'Unavailable';
   const origin = worldToScreen({ x: 0, y: 0 }, cameraView);
   const canUndo = commandStackRef.current.canUndo();
   const canRedo = commandStackRef.current.canRedo();
@@ -1229,6 +1648,13 @@ export function App() {
 
   return (
     <main className="designer-shell">
+      <input
+        ref={fileInputRef}
+        className="visually-hidden"
+        type="file"
+        accept=".xaml,.xml,.txt,text/plain,application/xml"
+        onChange={handleDocumentFileChange}
+      />
       <aside className="left-rail">
         <h1>Designer</h1>
         <p>{status}</p>
@@ -1236,6 +1662,7 @@ export function App() {
         <div className="origin">Camera: {cameraView.x.toFixed(0)}, {cameraView.y.toFixed(0)}</div>
         <div className="origin">Zoom: {(cameraView.zoom * 100).toFixed(0)}%</div>
         <div className="origin">Snap: {snapEnabled ? `On (${GRID_SIZE}px)` : 'Off'} (toggle: G)</div>
+        <div className="origin">File: {documentFileName}</div>
         <div className="toolbar-row">
           <button className="toolbar-btn" type="button" onClick={performUndo} disabled={!canUndo}>
             Undo
@@ -1252,28 +1679,54 @@ export function App() {
             Load Draft
           </button>
         </div>
+        <div className="toolbar-row">
+          <button className="toolbar-btn" type="button" onClick={openDocumentFilePicker}>
+            Import File
+          </button>
+          <button className="toolbar-btn" type="button" onClick={() => void saveDocumentToFile()}>
+            Export File
+          </button>
+        </div>
         <button className="toolbar-btn full-width" type="button" onClick={clearDraftFromStorage}>
           Clear Draft Storage
         </button>
+        <section className="palette-panel">
+          <h2>Palette</h2>
+          <p className="tree-caption">
+            Pick a template, then insert it as a child or sibling. Placement adapts automatically for `Canvas` and `Grid` containers.
+          </p>
+          <div className="palette-grid">
+            {PALETTE_TEMPLATES.map((template) => {
+              const childEnabled = canInsertTemplateIntoParent(template, selectedOrRootNode);
+              const siblingEnabled = !!selectedTreeItem?.parentId && canInsertTemplateIntoParent(template, siblingParentNode);
+
+              return (
+                <button
+                  key={template.id}
+                  className={`palette-card ${selectedTemplateId === template.id ? 'is-selected' : ''}`}
+                  type="button"
+                  onClick={() => setSelectedTemplateId(template.id)}
+                >
+                  <span className="palette-swatch" style={{ background: template.accent }} />
+                  <span className="palette-title">{template.title}</span>
+                  <span className="palette-description">{template.description}</span>
+                  <span className="palette-meta">
+                    {childEnabled ? 'Child OK' : 'Child blocked'} | {siblingEnabled ? 'Sibling OK' : 'Sibling blocked'}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
         <section className="tree-panel">
           <h2>Component Tree</h2>
           <p className="tree-caption">
             Target: {selectedTreeNode ? `${selectedTreeNode.type} (${selectedTreeItem?.id})` : 'Root canvas'}
           </p>
+          <p className="tree-caption">
+            Template: {selectedTemplate.title} | Child target: {childTargetLabel} | Sibling target: {siblingTargetLabel}
+          </p>
           <div className="tree-toolbar">
-            <label className="field compact-field">
-              <span>New Element</span>
-              <select
-                value={newElementType}
-                onInput={(event) => setNewElementType((event.target as HTMLSelectElement).value as NewElementType)}
-              >
-                {NEW_ELEMENT_TYPES.map((type) => (
-                  <option key={type} value={type}>
-                    {type}
-                  </option>
-                ))}
-              </select>
-            </label>
             <div className="toolbar-row">
               <button className="toolbar-btn" type="button" onClick={createChildElement} disabled={!canAddChild}>
                 Add Child
@@ -1298,10 +1751,19 @@ export function App() {
             {treeItems.map((item) => (
               <button
                 key={item.id}
-                className={`tree-item ${selectedId === item.id ? 'is-selected' : ''}`}
+                className={`tree-item ${selectedId === item.id ? 'is-selected' : ''} ${
+                  treeDragSourceId === item.id ? 'is-drag-source' : ''
+                } ${treeDropTargetId === item.id && treeDropIntent === 'before' ? 'drop-before' : ''} ${
+                  treeDropTargetId === item.id && treeDropIntent === 'inside' ? 'drop-inside' : ''
+                } ${treeDropTargetId === item.id && treeDropIntent === 'after' ? 'drop-after' : ''}`}
                 style={{ paddingLeft: `${12 + item.depth * 16}px` }}
                 type="button"
+                draggable={item.id !== 'root.0'}
                 onClick={() => selectElement(item.id)}
+                onDragStart={(event) => handleTreeDragStart(item.id, event)}
+                onDragOver={(event) => handleTreeDragOver(item.id, event)}
+                onDrop={(event) => handleTreeDrop(item.id, event)}
+                onDragEnd={handleTreeDragEnd}
               >
                 <span className="tree-type">{item.type}</span>
                 <span className="tree-label">{item.label}</span>

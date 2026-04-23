@@ -83,7 +83,7 @@ Responsibilities:
 - world-space camera model (pan/zoom)
 - selection state and transform handles
 - snapping guides and command stack
-- document parsing, cloning, tree inspection, and targeted attribute updates
+- document parsing, cloning, tree inspection, targeted attribute updates, and structural node moves
 - serialization hooks back to XAML
 
 ### `packages/designer-widgets`
@@ -122,7 +122,9 @@ Visual editor shell with infinite canvas viewport and authoring panels.
 6. Build transient preview documents during drag and resize interactions.
 7. Commit inspector, tree, and source edits through undoable document commands where applicable.
 8. Allow direct source editing with parse/apply validation for document-level changes.
-9. Serialize the committed document back to XAML and persist local drafts.
+9. Insert richer template nodes from a designer palette with container-aware placement rules.
+10. Reorder and reparent document nodes through tree drag/drop and structural commands.
+11. Serialize the committed document back to XAML and persist local drafts or export files.
 
 ## Designer Document Model
 
@@ -134,6 +136,8 @@ Key concepts:
 - Preview document: a temporary AST generated during pointer interactions so drag and resize can feel live without polluting undo history.
 - Runtime host: used as the renderer and hit-test surface only. It receives XAML strings from the designer and does not own authoritative edit state.
 - Tree actions: structural edits such as create, delete, and reparent that operate on AST structure and then reselect the moved node by its new document path.
+- Palette templates: richer starter nodes that can expand into nested XAML subtrees rather than only single controls.
+- File interchange: the designer can now import and export XAML files in addition to local draft persistence.
 
 Persisted editable attributes:
 - `Designer.OffsetX` and `Designer.OffsetY` store freeform movement independently of container layout rules.
@@ -144,6 +148,7 @@ Reset behavior:
 - Reset actions compare the working document against the base document for the selected node.
 - Editable attributes are restored from the base document, which makes reset deterministic even after multiple undo/redo cycles.
 - Applying raw XAML source replaces the working and base documents together, because source edits redefine the current authoring baseline.
+- Importing a XAML file also replaces the working and base documents together, so the imported file becomes the new reset and undo baseline.
 
 ## Current MVP Editing Loop
 
