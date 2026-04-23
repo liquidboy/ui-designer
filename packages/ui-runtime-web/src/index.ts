@@ -4,6 +4,7 @@ import {
   type ColorRgba,
   buildUiTree,
   type DrawCommand,
+  preloadUiAssets,
   findElementById,
   runLayout,
   type Point,
@@ -44,8 +45,10 @@ export class RuntimeHost {
   private readonly renderer: WebGPUCanvasRenderer;
   private readonly canvas: HTMLCanvasElement;
   private root: UiElement | null = null;
+  private rendererReady = false;
   private isRunning = false;
   private frameHandle = 0;
+  private sceneWarmupVersion = 0;
   private camera: RuntimeCamera = { x: 0, y: 0, zoom: 1 };
   private screenCommands: DrawCommand[] = [];
   private readonly elementOffsets = new Map<string, Point>();
@@ -71,8 +74,9 @@ export class RuntimeHost {
     this.onRenderDiagnostics = options.onRenderDiagnostics;
 
     await this.renderer.initialize();
+    this.rendererReady = true;
     await this.renderer.registerFontFaces(options.fontFaces ?? []);
-    await this.preloadSceneResources();
+    await this.warmSceneResources();
     this.canvas.addEventListener('pointermove', this.pointerMoveHandler);
     this.canvas.addEventListener('pointerdown', this.pointerDownHandler);
     this.layoutAndRender();
@@ -95,6 +99,7 @@ export class RuntimeHost {
 
   stop(): void {
     this.isRunning = false;
+    this.rendererReady = false;
     if (this.frameHandle) {
       cancelAnimationFrame(this.frameHandle);
       this.frameHandle = 0;
@@ -215,6 +220,9 @@ export class RuntimeHost {
   setXaml(xaml: string): void {
     const xamlDocument = parseXaml(xaml);
     this.root = buildUiTree(xamlDocument.root);
+    if (this.rendererReady) {
+      this.scheduleSceneWarmup();
+    }
   }
 
   setSelectedElement(id: string | null): void {
@@ -502,5 +510,22 @@ export class RuntimeHost {
     }
 
     await this.renderer.preloadResources(this.projectCommands(worldCommands));
+  }
+
+  private async warmSceneResources(): Promise<void> {
+    await preloadUiAssets(this.root);
+    await this.preloadSceneResources();
+  }
+
+  private scheduleSceneWarmup(): void {
+    const version = ++this.sceneWarmupVersion;
+
+    void this.warmSceneResources().then(() => {
+      if (version !== this.sceneWarmupVersion) {
+        return;
+      }
+
+      this.layoutAndRender();
+    });
   }
 }

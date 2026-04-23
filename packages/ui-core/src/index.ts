@@ -54,6 +54,8 @@ export type TextWrapMode = 'none' | 'wrap';
 
 export type TextOverflowMode = 'visible' | 'clip' | 'ellipsis';
 
+export type TextDirection = 'auto' | 'ltr' | 'rtl';
+
 export type ImageStretchMode = 'fill' | 'uniform' | 'uniformToFill' | 'none';
 
 export interface DrawTextCommand {
@@ -72,6 +74,7 @@ export interface DrawTextCommand {
   lineHeight: number;
   align: TextHorizontalAlign;
   verticalAlign: TextVerticalAlign;
+  direction: TextDirection;
   wrapping: TextWrapMode;
   overflow: TextOverflowMode;
 }
@@ -126,6 +129,7 @@ interface TextRenderConfig {
   style: TextStyle;
   align: TextHorizontalAlign;
   verticalAlign: TextVerticalAlign;
+  direction: TextDirection;
   wrapping: TextWrapMode;
   overflow: TextOverflowMode;
   insets: Insets;
@@ -150,6 +154,8 @@ const DEFAULT_TEXT_FONT_STYLE = 'normal';
 const DEFAULT_IMAGE_SIZE = { width: 220, height: 140 };
 
 let measurementContext: CanvasRenderingContext2D | null | undefined;
+const imageNaturalSizeCache = new Map<string, Size>();
+const pendingImageNaturalSizeLoads = new Map<string, Promise<Size | null>>();
 
 function toUiElement(node: XamlNode, idPrefix: string, index: number): UiElement {
   const id = `${idPrefix}.${index}`;
@@ -199,6 +205,120 @@ function propNumber(props: Record<string, unknown>, key: string): number | null 
 function stringProp(props: Record<string, unknown>, key: string): string | null {
   const value = props[key];
   return typeof value === 'string' ? value : null;
+}
+
+export function inferTextDirection(text: string): Exclude<TextDirection, 'auto'> {
+  for (const character of text) {
+    const codePoint = character.codePointAt(0) ?? 0;
+    if (
+      (codePoint >= 0x0590 && codePoint <= 0x08ff) ||
+      (codePoint >= 0xfb1d && codePoint <= 0xfdff) ||
+      (codePoint >= 0xfe70 && codePoint <= 0xfefc)
+    ) {
+      return 'rtl';
+    }
+
+    if (
+      (codePoint >= 0x0041 && codePoint <= 0x005a) ||
+      (codePoint >= 0x0061 && codePoint <= 0x007a) ||
+      (codePoint >= 0x00c0 && codePoint <= 0x02af) ||
+      (codePoint >= 0x0370 && codePoint <= 0x058f) ||
+      (codePoint >= 0x0900 && codePoint <= 0x1fff) ||
+      (codePoint >= 0x2c00 && codePoint <= 0xd7ff)
+    ) {
+      return 'ltr';
+    }
+  }
+
+  return 'ltr';
+}
+
+function resolveTextDirection(text: string, direction: TextDirection): Exclude<TextDirection, 'auto'> {
+  return direction === 'auto' ? inferTextDirection(text) : direction;
+}
+
+export function getImageNaturalSize(source: string): Size | null {
+  const value = imageNaturalSizeCache.get(source);
+  return value ? { ...value } : null;
+}
+
+export function setImageNaturalSize(source: string, size: Size | null): void {
+  if (!source.trim()) {
+    return;
+  }
+
+  if (!size || size.width <= 0 || size.height <= 0) {
+    imageNaturalSizeCache.delete(source);
+    return;
+  }
+
+  imageNaturalSizeCache.set(source, {
+    width: size.width,
+    height: size.height
+  });
+}
+
+export async function ensureImageNaturalSize(source: string): Promise<Size | null> {
+  const normalized = source.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  const cached = getImageNaturalSize(normalized);
+  if (cached) {
+    return cached;
+  }
+
+  const pending = pendingImageNaturalSizeLoads.get(normalized);
+  if (pending) {
+    return pending;
+  }
+
+  if (typeof Image === 'undefined') {
+    return null;
+  }
+
+  const task = new Promise<Size | null>((resolve) => {
+    const image = new Image();
+    image.decoding = 'async';
+    image.onload = () => {
+      const next =
+        image.naturalWidth > 0 && image.naturalHeight > 0
+          ? { width: image.naturalWidth, height: image.naturalHeight }
+          : null;
+      setImageNaturalSize(normalized, next);
+      resolve(next);
+    };
+    image.onerror = () => resolve(null);
+    image.src = normalized;
+  }).finally(() => {
+    pendingImageNaturalSizeLoads.delete(normalized);
+  });
+
+  pendingImageNaturalSizeLoads.set(normalized, task);
+  return task;
+}
+
+export async function preloadUiAssets(root: UiElement | null): Promise<void> {
+  if (!root) {
+    return;
+  }
+
+  const sources = new Set<string>();
+  const walk = (node: UiElement) => {
+    const image = imageRenderConfigForElement(node.type, node.props);
+    if (image?.source) {
+      sources.add(image.source);
+    }
+
+    for (const child of node.children) {
+      walk(child);
+    }
+  };
+
+  walk(root);
+
+  await Promise.allSettled(Array.from(sources, (source) => ensureImageNaturalSize(source)));
 }
 
 function getMeasurementContext(): CanvasRenderingContext2D | null {
@@ -304,13 +424,28 @@ function textStyleFromProps(
   };
 }
 
-function measureTextWidth(text: string, style: TextStyle, context: CanvasRenderingContext2D | null): number {
+function applyMeasurementContextStyle(
+  context: CanvasRenderingContext2D,
+  style: TextStyle,
+  direction: TextDirection,
+  text: string
+): void {
+  context.font = fontString(style);
+  context.direction = resolveTextDirection(text, direction);
+}
+
+function measureTextWidth(
+  text: string,
+  style: TextStyle,
+  context: CanvasRenderingContext2D | null,
+  direction: TextDirection
+): number {
   if (!text) {
     return 0;
   }
 
   if (context) {
-    context.font = fontString(style);
+    applyMeasurementContextStyle(context, style, direction, text);
     return context.measureText(text).width;
   }
 
@@ -321,7 +456,8 @@ function splitLongToken(
   token: string,
   style: TextStyle,
   maxWidth: number,
-  context: CanvasRenderingContext2D | null
+  context: CanvasRenderingContext2D | null,
+  direction: TextDirection
 ): string[] {
   if (!token) {
     return [''];
@@ -332,7 +468,7 @@ function splitLongToken(
 
   for (const character of [...token]) {
     const candidate = current + character;
-    if (current && measureTextWidth(candidate, style, context) > maxWidth) {
+    if (current && measureTextWidth(candidate, style, context, direction) > maxWidth) {
       parts.push(current);
       current = character;
       continue;
@@ -352,7 +488,8 @@ function wrapParagraph(
   paragraph: string,
   style: TextStyle,
   maxWidth: number,
-  context: CanvasRenderingContext2D | null
+  context: CanvasRenderingContext2D | null,
+  direction: TextDirection
 ): string[] {
   if (maxWidth <= 0) {
     return paragraph ? [paragraph] : [''];
@@ -376,8 +513,8 @@ function wrapParagraph(
       continue;
     }
 
-    if (!current && measureTextWidth(normalizedToken, style, context) > maxWidth) {
-      const pieces = splitLongToken(normalizedToken, style, maxWidth, context);
+    if (!current && measureTextWidth(normalizedToken, style, context, direction) > maxWidth) {
+      const pieces = splitLongToken(normalizedToken, style, maxWidth, context, direction);
       for (let index = 0; index < pieces.length; index += 1) {
         const piece = pieces[index];
         if (index === pieces.length - 1) {
@@ -390,7 +527,7 @@ function wrapParagraph(
     }
 
     const candidate = current + normalizedToken;
-    if (!current || measureTextWidth(candidate, style, context) <= maxWidth) {
+    if (!current || measureTextWidth(candidate, style, context, direction) <= maxWidth) {
       current = candidate;
       continue;
     }
@@ -403,12 +540,12 @@ function wrapParagraph(
       continue;
     }
 
-    if (measureTextWidth(trimmedToken, style, context) <= maxWidth) {
+    if (measureTextWidth(trimmedToken, style, context, direction) <= maxWidth) {
       current = trimmedToken;
       continue;
     }
 
-    const pieces = splitLongToken(trimmedToken, style, maxWidth, context);
+    const pieces = splitLongToken(trimmedToken, style, maxWidth, context, direction);
     for (let index = 0; index < pieces.length; index += 1) {
       const piece = pieces[index];
       if (index === pieces.length - 1) {
@@ -426,7 +563,12 @@ function wrapParagraph(
   return lines;
 }
 
-function measureTextBlock(text: string, style: TextStyle, options: TextMeasureOptions): MeasuredTextBlock {
+function measureTextBlock(
+  text: string,
+  style: TextStyle,
+  options: TextMeasureOptions,
+  direction: TextDirection
+): MeasuredTextBlock {
   const paragraphs = text.split(/\r?\n/);
   const context = getMeasurementContext();
 
@@ -435,7 +577,7 @@ function measureTextBlock(text: string, style: TextStyle, options: TextMeasureOp
   let descent = Math.ceil(style.fontSize * 0.2);
 
   if (context) {
-    context.font = fontString(style);
+    applyMeasurementContextStyle(context, style, direction, text || 'Hg');
     const probe = context.measureText('Hg');
     ascent = Math.max(ascent, Math.ceil(probe.actualBoundingBoxAscent || style.fontSize * 0.8));
     descent = Math.max(descent, Math.ceil(probe.actualBoundingBoxDescent || style.fontSize * 0.2));
@@ -443,11 +585,13 @@ function measureTextBlock(text: string, style: TextStyle, options: TextMeasureOp
 
   const lines =
     options.wrapping === 'wrap' && Number.isFinite(options.maxWidth)
-      ? paragraphs.flatMap((paragraph) => wrapParagraph(paragraph, style, Math.max(0, options.maxWidth ?? 0), context))
+      ? paragraphs.flatMap((paragraph) =>
+          wrapParagraph(paragraph, style, Math.max(0, options.maxWidth ?? 0), context, direction)
+        )
       : paragraphs;
 
   for (const line of lines) {
-    width = Math.max(width, measureTextWidth(line || ' ', style, context));
+    width = Math.max(width, measureTextWidth(line || ' ', style, context, direction));
   }
 
   const measuredLineHeight = Math.max(style.lineHeight, ascent + descent);
@@ -475,6 +619,26 @@ function textAlignFromProps(props: Record<string, unknown>, fallback: TextHorizo
       return 'right';
     default:
       return 'left';
+  }
+}
+
+function textDirectionFromProps(props: Record<string, unknown>, fallback: TextDirection): TextDirection {
+  const value = stringProp(props, 'FlowDirection') ?? stringProp(props, 'Direction');
+  if (!value) {
+    return fallback;
+  }
+
+  switch (value.trim().toLowerCase()) {
+    case 'rtl':
+    case 'righttoleft':
+      return 'rtl';
+    case 'ltr':
+    case 'lefttoright':
+      return 'ltr';
+    case 'auto':
+      return 'auto';
+    default:
+      return fallback;
   }
 }
 
@@ -561,6 +725,7 @@ function textRenderConfigForElement(type: string, props: Record<string, unknown>
       }),
       align: textAlignFromProps(props, 'left'),
       verticalAlign: 'top',
+      direction: textDirectionFromProps(props, 'auto'),
       wrapping: textWrapFromProps(props, 'none'),
       overflow: textOverflowFromProps(props, 'clip'),
       insets: { top: 4, right: 0, bottom: 4, left: 0 },
@@ -579,6 +744,7 @@ function textRenderConfigForElement(type: string, props: Record<string, unknown>
       }),
       align: textAlignFromProps(props, 'center'),
       verticalAlign: 'middle',
+      direction: textDirectionFromProps(props, 'auto'),
       wrapping: textWrapFromProps(props, 'none'),
       overflow: textOverflowFromProps(props, 'ellipsis'),
       insets: { top: 6, right: 14, bottom: 6, left: 14 },
@@ -599,7 +765,7 @@ function measureTextElementSize(config: TextRenderConfig, widthConstraint?: numb
   const measured = measureTextBlock(config.text, config.style, {
     maxWidth: textBoxWidth,
     wrapping: config.wrapping === 'wrap' && textBoxWidth != null ? 'wrap' : 'none'
-  });
+  }, config.direction);
 
   return {
     width: Math.max(
@@ -607,6 +773,57 @@ function measureTextElementSize(config: TextRenderConfig, widthConstraint?: numb
       widthConstraint ?? Math.ceil(measured.width + config.insets.left + config.insets.right)
     ),
     height: Math.max(config.minSize.height, Math.ceil(measured.height + config.insets.top + config.insets.bottom))
+  };
+}
+
+function resolveAspectRatio(width: number, height: number): number {
+  if (width > 0 && height > 0) {
+    return width / height;
+  }
+
+  return DEFAULT_IMAGE_SIZE.width / DEFAULT_IMAGE_SIZE.height;
+}
+
+function resolveImageSize(
+  config: ImageRenderConfig,
+  explicitWidth: number | null,
+  explicitHeight: number | null,
+  available: Size
+): Size {
+  const natural = getImageNaturalSize(config.source) ?? config.minSize;
+  const aspectRatio = resolveAspectRatio(natural.width, natural.height);
+
+  let width = explicitWidth;
+  let height = explicitHeight;
+  let preserveAspect = false;
+
+  if (width == null && height == null) {
+    width = natural.width;
+    height = natural.height;
+    preserveAspect = true;
+  } else if (width != null && height == null) {
+    height = width / aspectRatio;
+    preserveAspect = true;
+  } else if (width == null && height != null) {
+    width = height * aspectRatio;
+    preserveAspect = true;
+  } else {
+    width = width ?? natural.width;
+    height = height ?? natural.height;
+  }
+
+  width = Math.max(1, width ?? natural.width);
+  height = Math.max(1, height ?? natural.height);
+
+  if (preserveAspect) {
+    const scale = Math.min(available.width / width, available.height / height, 1);
+    width *= scale;
+    height *= scale;
+  }
+
+  return {
+    width: clampSize(Math.min(width, available.width)),
+    height: clampSize(Math.min(height, available.height))
   };
 }
 
@@ -637,6 +854,7 @@ function computeOwnSize(element: UiElement, available: Size): Size {
   const explicitWidth = propNumber(element.props, 'Width');
   const explicitHeight = propNumber(element.props, 'Height');
   const textConfig = textRenderConfigForElement(element.type, element.props);
+  const imageConfig = imageRenderConfigForElement(element.type, element.props);
 
   if (textConfig) {
     const widthConstraint = explicitWidth ?? (textConfig.wrapping === 'wrap' ? available.width : undefined);
@@ -648,6 +866,10 @@ function computeOwnSize(element: UiElement, available: Size): Size {
       width: clampSize(Math.min(width, available.width)),
       height: clampSize(Math.min(height, available.height))
     };
+  }
+
+  if (imageConfig) {
+    return resolveImageSize(imageConfig, explicitWidth, explicitHeight, available);
   }
 
   const fallback = defaultSizeFor(element.type, element.props);
@@ -918,6 +1140,7 @@ function pushText(
   style: TextStyle,
   align: TextHorizontalAlign,
   verticalAlign: TextVerticalAlign,
+  direction: TextDirection,
   wrapping: TextWrapMode,
   overflow: TextOverflowMode
 ): void {
@@ -941,6 +1164,7 @@ function pushText(
     lineHeight: style.lineHeight,
     align,
     verticalAlign,
+    direction,
     wrapping,
     overflow
   });
@@ -1058,6 +1282,7 @@ function emitElementCommands(commands: DrawCommand[], element: UiElement, option
       textConfig.style,
       textConfig.align,
       textConfig.verticalAlign,
+      textConfig.direction,
       textConfig.wrapping,
       textConfig.overflow
     );

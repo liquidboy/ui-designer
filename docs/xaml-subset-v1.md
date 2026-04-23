@@ -39,11 +39,13 @@ Supported on `TextBlock` and button labels where applicable:
 9. `TextWrapping`
 10. `TextOverflow`
 11. `TextTrimming`
+12. `FlowDirection` / `Direction`
 
 Runtime notes:
 
 1. `FontFamily` values are treated as CSS font-family lists and the runtime appends a sane fallback chain when the declaration does not include one.
 2. Browser font loading is warmed before first paint when possible, then refreshed during subsequent renders as new text styles appear.
+3. Text direction defaults to `Auto`, which currently infers left-to-right or right-to-left layout from the first strong script characters in the string.
 
 ## Image Properties
 
@@ -53,6 +55,11 @@ Supported on `Image`:
 2. `Stretch`
 3. `Opacity`
 4. `Background`
+
+Runtime notes:
+
+1. Image natural size is cached from the source asset when possible and now participates in default layout sizing.
+2. When only one dimension is explicit, the runtime preserves the natural aspect ratio while resolving the other dimension.
 
 ## Events
 

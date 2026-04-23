@@ -78,6 +78,7 @@ Responsibilities:
 - bootstrapping from XAML documents
 - rebuilding the rendered tree from updated XAML without owning editor state
 - font-face registration and resource warmup before first paint
+- image natural-size warmup so layout can respond to asset metadata
 
 ### `packages/designer-core`
 Editor-domain logic for the visual design surface.
@@ -105,6 +106,12 @@ Reference runtime host for quickly validating the framework behavior.
 ### `apps/designer`
 Visual editor shell with infinite canvas viewport and authoring panels.
 
+Current editor-side authoring surfaces include:
+- palette and component tree for structural editing
+- asset library for image-backed elements
+- font library for text styling presets
+- inspector groups for geometry, image properties, typography, and raw XAML
+
 ## Runtime Pipeline
 
 1. Read XAML document text.
@@ -131,16 +138,16 @@ This split matters in the designer because a `TextBlock` can now participate in 
 The current text path is intentionally simple and practical:
 
 1. `ui-core` measures `TextBlock` and `Button` label content with a shared 2D canvas context so default sizing is based on real font metrics rather than character-count heuristics.
-2. `ui-core` normalizes `FontFamily` declarations into fallback-aware CSS font lists so text still resolves cleanly when the preferred face is unavailable.
+2. `ui-core` normalizes `FontFamily` declarations into fallback-aware CSS font lists and carries `FlowDirection` through to draw commands.
 3. `ui-runtime-web` can register explicit browser `FontFace` definitions and asks the renderer to warm font and image resources before the first render.
-4. Text content is emitted as `text` draw commands with a layout box, font metadata, wrapping, and overflow behavior.
-5. `webgpu-renderer` lazily rasterizes grapheme-based glyph segments into a bitmap atlas on a hidden 2D canvas.
-6. The atlas is uploaded to a GPU texture when new glyphs appear.
+4. Text content is emitted as `text` draw commands with a layout box, font metadata, direction, wrapping, and overflow behavior.
+5. `webgpu-renderer` measures and rasterizes full line runs into a bitmap atlas so browser shaping can handle ligatures and bidi ordering more faithfully than per-codepoint rendering.
+6. The atlas is uploaded to a GPU texture when new text runs appear.
 7. Text commands are expanded into clipped textured quads in screen space and composited in a second render pass with alpha blending.
 
 Current MVP constraints:
 
-- text shaping is grapheme-aware with browser-measured advances, but it is not HarfBuzz-class shaping
+- text shaping is line-run based with browser-measured advances and explicit RTL/LTR support, but it is not HarfBuzz-class shaping
 - wrapping is greedy and whitespace-aware rather than full paragraph layout
 - ellipsis is line-based and not typographically aware
 - atlas eviction is not implemented yet
@@ -150,14 +157,14 @@ Current MVP constraints:
 The first image path mirrors the text pipeline in spirit:
 
 1. `ui-core` emits `image` draw commands from `Image` elements with `Source`, `Opacity`, and `Stretch`.
-2. `webgpu-renderer` loads image sources asynchronously into `ImageBitmap` objects.
-3. Ready bitmaps are uploaded into GPU textures and cached by source string.
-4. Image commands are grouped by source and rendered as textured quads in a dedicated pass.
-5. `Stretch="Fill"`, `Uniform`, `UniformToFill`, and `None` are resolved in the renderer so the scene graph stays lightweight.
+2. `ui-core` also caches image natural sizes when sources become available so image layout can use real asset dimensions by default.
+3. `webgpu-renderer` loads image sources asynchronously into `ImageBitmap` objects.
+4. Ready bitmaps are uploaded into GPU textures and cached by source string.
+5. Image commands are grouped by source and rendered as textured quads in a dedicated pass.
+6. `Stretch="Fill"`, `Uniform`, `UniformToFill`, and `None` are resolved in the renderer so the scene graph stays lightweight.
 
 Current MVP constraints:
 
-- natural image size does not participate in layout yet
 - image caching is source-string based and does not evict
 - remote image loading depends on normal browser fetch/CORS behavior
 

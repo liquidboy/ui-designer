@@ -1,4 +1,4 @@
-import type { ColorRgba, DrawCommand, DrawImageCommand, DrawTextCommand } from '@ui-designer/ui-core';
+import { inferTextDirection, type ColorRgba, type DrawCommand, type DrawImageCommand, type DrawTextCommand, type TextDirection } from '@ui-designer/ui-core';
 
 interface AtlasTextStyle {
   fontFamily: string;
@@ -26,15 +26,16 @@ interface FontMetrics {
   lineHeight: number;
 }
 
-interface GlyphRunItem {
+interface TextWrapToken {
   text: string;
-  glyph: GlyphEntry;
-  advance: number;
+  width: number;
+  isWhitespace: boolean;
 }
 
 interface TextLayoutLine {
-  items: GlyphRunItem[];
+  text: string;
   width: number;
+  direction: Exclude<TextDirection, 'auto'>;
 }
 
 interface ClipRect {
@@ -160,6 +161,10 @@ const graphemeSegmenter =
   typeof Intl !== 'undefined' && 'Segmenter' in Intl
     ? new Intl.Segmenter(undefined, { granularity: 'grapheme' })
     : null;
+const wordSegmenter =
+  typeof Intl !== 'undefined' && 'Segmenter' in Intl
+    ? new Intl.Segmenter(undefined, { granularity: 'word' })
+    : null;
 
 function segmentText(text: string): string[] {
   if (!text) {
@@ -171,6 +176,21 @@ function segmentText(text: string): string[] {
   }
 
   return [...text];
+}
+
+function tokenizeWords(text: string): string[] {
+  if (!text) {
+    return [];
+  }
+
+  if (wordSegmenter) {
+    const segments = Array.from(wordSegmenter.segment(text), (segment) => segment.segment);
+    if (segments.length > 0) {
+      return segments;
+    }
+  }
+
+  return text.match(/\s+|\S+/g) ?? [];
 }
 
 function normalizeFontFaceStyle(value: string | undefined): FontFaceDescriptors['style'] | undefined {
@@ -286,33 +306,19 @@ class GlyphAtlas {
     return next;
   }
 
-  shapeTextRun(style: AtlasTextStyle, text: string): GlyphRunItem[] {
-    const segments = segmentText(text);
-    if (segments.length === 0) {
-      return [];
+  measureTextWidth(style: AtlasTextStyle, text: string, direction: Exclude<TextDirection, 'auto'>): number {
+    if (!text) {
+      return 0;
     }
 
     const fontMetrics = this.getFontMetrics(style);
-    let prefix = '';
-    let previousWidth = 0;
-
-    return segments.map((segment) => {
-      this.context.font = fontMetrics.font;
-      prefix += segment;
-      const measuredWidth = this.context.measureText(prefix).width;
-      const advance = Math.max(0, measuredWidth - previousWidth);
-      previousWidth = measuredWidth;
-
-      return {
-        text: segment,
-        glyph: this.getGlyph(style, segment),
-        advance
-      };
-    });
+    this.context.font = fontMetrics.font;
+    this.context.direction = direction;
+    return this.context.measureText(text).width;
   }
 
-  getGlyph(style: AtlasTextStyle, text: string): GlyphEntry {
-    const key = `${this.fontKey(style)}\u0000${text}`;
+  getGlyph(style: AtlasTextStyle, text: string, direction: Exclude<TextDirection, 'auto'>): GlyphEntry {
+    const key = `${this.fontKey(style)}|${direction}\u0000${text}`;
     const existing = this.glyphs.get(key);
     if (existing) {
       return existing;
@@ -320,6 +326,7 @@ class GlyphAtlas {
 
     const fontMetrics = this.getFontMetrics(style);
     this.context.font = fontMetrics.font;
+    this.context.direction = direction;
 
     const measurement = this.context.measureText(text || ' ');
     const advance = measurement.width;
@@ -357,6 +364,7 @@ class GlyphAtlas {
 
     this.context.clearRect(slot.x, slot.y, allocationWidth, allocationHeight);
     this.context.font = fontMetrics.font;
+    this.context.direction = direction;
     this.context.fillStyle = '#ffffff';
     this.context.fillText(text, slot.x + this.padding + left, slot.y + this.padding + ascent);
 
@@ -1100,25 +1108,23 @@ export class WebGPUCanvasRenderer {
     }
 
     const style = this.normalizeTextStyle(command);
+    const lines = this.layoutTextLines(command, style);
     const fontMetrics = this.textAtlas.getFontMetrics(style);
     const lineHeight = Math.max(style.lineHeight, fontMetrics.lineHeight);
     const clipRect = command.overflow === 'visible' ? null : command;
-    const lines = this.applyOverflowToLines(command, style, this.layoutTextLines(command, style), lineHeight);
-    const totalHeight = lineHeight * Math.max(lines.length, 1);
+    const visibleLines = this.applyOverflowToLines(command, style, lines, lineHeight);
+    const totalHeight = lineHeight * Math.max(visibleLines.length, 1);
     let lineTop = this.resolveVerticalOrigin(command, totalHeight);
 
-    for (const line of lines) {
-      let penX = this.resolveHorizontalOrigin(command, line.width);
+    for (const line of visibleLines) {
+      const glyph = line.text ? this.textAtlas.getGlyph(style, line.text, line.direction) : null;
       const baselineY = lineTop + (lineHeight - fontMetrics.lineHeight) / 2 + fontMetrics.ascent;
+      const originX = this.resolveHorizontalOrigin(command, line.width);
 
-      for (const item of line.items) {
-        if (item.glyph.visible && item.glyph.width > 0 && item.glyph.height > 0) {
-          const x = penX - item.glyph.left;
-          const y = baselineY - item.glyph.ascent;
-          this.pushGlyphQuad(target, x, y, item.glyph.width, item.glyph.height, item.glyph, command.color, clipRect);
-        }
-
-        penX += item.advance;
+      if (glyph && glyph.visible && glyph.width > 0 && glyph.height > 0) {
+        const x = originX - glyph.left;
+        const y = baselineY - glyph.ascent;
+        this.pushGlyphQuad(target, x, y, glyph.width, glyph.height, glyph, command.color, clipRect);
       }
 
       lineTop += lineHeight;
@@ -1150,47 +1156,69 @@ export class WebGPUCanvasRenderer {
     const paragraphs = command.text.replace(/\t/g, '    ').split(/\r?\n/);
     const maxWidth = Math.max(0, command.width);
     const lines = paragraphs.flatMap((paragraph) =>
-      this.layoutParagraphItems(this.createGlyphRunItems(style, paragraph), maxWidth, command.wrapping)
+      this.layoutParagraphText(
+        paragraph,
+        maxWidth,
+        command.wrapping,
+        style,
+        this.resolveCommandTextDirection(command, paragraph)
+      )
     );
 
-    return lines.length > 0 ? lines : [{ items: [], width: 0 }];
+    return lines.length > 0
+      ? lines
+      : [{ text: '', width: 0, direction: this.resolveCommandTextDirection(command, command.text) }];
   }
 
-  private createGlyphRunItems(style: AtlasTextStyle, text: string): GlyphRunItem[] {
-    if (!this.textAtlas) {
-      return [];
-    }
-
-    return this.textAtlas.shapeTextRun(style, text);
-  }
-
-  private layoutParagraphItems(
-    items: GlyphRunItem[],
+  private layoutParagraphText(
+    paragraph: string,
     maxWidth: number,
-    wrapping: DrawTextCommand['wrapping']
+    wrapping: DrawTextCommand['wrapping'],
+    style: AtlasTextStyle,
+    direction: Exclude<TextDirection, 'auto'>
   ): TextLayoutLine[] {
-    if (items.length === 0) {
-      return [{ items: [], width: 0 }];
+    if (!paragraph) {
+      return [{ text: '', width: 0, direction }];
     }
 
     if (wrapping !== 'wrap' || maxWidth <= 0) {
-      const trimmed = this.trimTrailingWhitespaceItems(items);
-      return [{ items: trimmed, width: this.sumAdvance(trimmed) }];
+      const trimmed = paragraph.trimEnd();
+      return [
+        {
+          text: trimmed,
+          width: this.measureTextWidth(style, trimmed, direction),
+          direction
+        }
+      ];
     }
 
+    const items = this.tokenizeWrapTokens(style, paragraph, maxWidth, direction);
     const lines: TextLayoutLine[] = [];
     let remaining = items.slice();
 
     while (remaining.length > 0) {
-      let width = 0;
+      let current = '';
+      let currentWidth = 0;
       let end = 0;
       let lastBreak = -1;
 
       while (end < remaining.length) {
         const item = remaining[end];
-        const nextWidth = width + item.advance;
+        if (item.isWhitespace && current.length === 0) {
+          end += 1;
+          continue;
+        }
 
-        if (this.isBreakCharacter(item.text)) {
+        const text = current.length === 0 ? item.text.replace(/^\s+/, '') : item.text;
+        if (!text) {
+          end += 1;
+          continue;
+        }
+
+        const candidate = current + text;
+        const nextWidth = this.measureTextWidth(style, candidate, direction);
+
+        if (item.isWhitespace) {
           lastBreak = end;
         }
 
@@ -1198,23 +1226,32 @@ export class WebGPUCanvasRenderer {
           break;
         }
 
-        width = nextWidth;
+        current = candidate;
+        currentWidth = nextWidth;
         end += 1;
       }
 
       if (end >= remaining.length) {
-        const trimmed = this.trimTrailingWhitespaceItems(remaining);
-        lines.push({ items: trimmed, width: this.sumAdvance(trimmed) });
+        const text = current.trimEnd();
+        lines.push({
+          text,
+          width: text ? this.measureTextWidth(style, text, direction) : currentWidth,
+          direction
+        });
         break;
       }
 
       const lineEnd = lastBreak >= 0 ? lastBreak + 1 : Math.max(1, end);
-      const lineItems = this.trimTrailingWhitespaceItems(remaining.slice(0, lineEnd));
-      lines.push({ items: lineItems, width: this.sumAdvance(lineItems) });
-      remaining = this.trimLeadingWhitespaceItems(remaining.slice(lineEnd));
+      const lineText = this.concatenateTokens(remaining.slice(0, lineEnd)).trimEnd();
+      lines.push({
+        text: lineText,
+        width: this.measureTextWidth(style, lineText, direction),
+        direction
+      });
+      remaining = this.trimLeadingWhitespaceTokens(remaining.slice(lineEnd));
     }
 
-    return lines.length > 0 ? lines : [{ items: [], width: 0 }];
+    return lines.length > 0 ? lines : [{ text: '', width: 0, direction }];
   }
 
   private applyOverflowToLines(
@@ -1240,78 +1277,149 @@ export class WebGPUCanvasRenderer {
         return line;
       }
 
-      return this.fitLineWithEllipsis(line.items, command.width, style, shouldForceEllipsis);
+      return this.fitLineWithEllipsis(line.text, command.width, style, line.direction, shouldForceEllipsis);
     });
   }
 
   private fitLineWithEllipsis(
-    items: GlyphRunItem[],
+    text: string,
     maxWidth: number,
     style: AtlasTextStyle,
+    direction: Exclude<TextDirection, 'auto'>,
     forceEllipsis: boolean
   ): TextLayoutLine {
-    const trimmed = this.trimTrailingWhitespaceItems(items);
-    const width = this.sumAdvance(trimmed);
+    const trimmed = text.trimEnd();
+    const width = this.measureTextWidth(style, trimmed, direction);
     if (!forceEllipsis && width <= maxWidth) {
-      return { items: trimmed, width };
+      return { text: trimmed, width, direction };
     }
 
-    const ellipsisItem = this.createGlyphRunItems(style, '…')[0];
-    if (!ellipsisItem || maxWidth <= 0) {
-      return { items: [], width: 0 };
+    const ellipsis = '…';
+    const ellipsisWidth = this.measureTextWidth(style, ellipsis, direction);
+    if (ellipsisWidth <= 0 || ellipsisWidth > maxWidth) {
+      return { text: '', width: 0, direction };
     }
 
-    const result: GlyphRunItem[] = [];
-    let resultWidth = 0;
+    let result = '';
 
-    for (const item of trimmed) {
-      const nextWidth = resultWidth + item.advance + ellipsisItem.advance;
+    for (const segment of segmentText(trimmed)) {
+      const candidate = result + segment;
+      const nextWidth = this.measureTextWidth(style, `${candidate}${ellipsis}`, direction);
       if (result.length > 0 && nextWidth > maxWidth) {
         break;
       }
 
-      if (result.length === 0 && ellipsisItem.advance > maxWidth) {
+      if (result.length === 0 && nextWidth > maxWidth) {
         break;
       }
 
-      if (nextWidth > maxWidth) {
-        break;
-      }
-
-      result.push(item);
-      resultWidth += item.advance;
+      result = candidate;
     }
 
+    const nextText = result ? `${result.trimEnd()}${ellipsis}` : ellipsis;
     return {
-      items: [...result, ellipsisItem],
-      width: resultWidth + ellipsisItem.advance
+      text: nextText,
+      width: this.measureTextWidth(style, nextText, direction),
+      direction
     };
   }
 
-  private trimLeadingWhitespaceItems(items: GlyphRunItem[]): GlyphRunItem[] {
+  private tokenizeWrapTokens(
+    style: AtlasTextStyle,
+    text: string,
+    maxWidth: number,
+    direction: Exclude<TextDirection, 'auto'>
+  ): TextWrapToken[] {
+    const tokens: TextWrapToken[] = [];
+
+    for (const segment of tokenizeWords(text)) {
+      if (!segment) {
+        continue;
+      }
+
+      const isWhitespace = /^\s+$/.test(segment);
+      const width = this.measureTextWidth(style, segment, direction);
+      if (!isWhitespace && maxWidth > 0 && width > maxWidth) {
+        tokens.push(...this.splitLongToken(style, segment, maxWidth, direction));
+        continue;
+      }
+
+      tokens.push({
+        text: segment,
+        width,
+        isWhitespace
+      });
+    }
+
+    return tokens;
+  }
+
+  private splitLongToken(
+    style: AtlasTextStyle,
+    token: string,
+    maxWidth: number,
+    direction: Exclude<TextDirection, 'auto'>
+  ): TextWrapToken[] {
+    const parts: TextWrapToken[] = [];
+    let current = '';
+
+    for (const segment of segmentText(token)) {
+      const candidate = current + segment;
+      const width = this.measureTextWidth(style, candidate, direction);
+      if (current && width > maxWidth) {
+        parts.push({
+          text: current,
+          width: this.measureTextWidth(style, current, direction),
+          isWhitespace: false
+        });
+        current = segment;
+        continue;
+      }
+
+      current = candidate;
+    }
+
+    if (current) {
+      parts.push({
+        text: current,
+        width: this.measureTextWidth(style, current, direction),
+        isWhitespace: false
+      });
+    }
+
+    return parts;
+  }
+
+  private trimLeadingWhitespaceTokens(items: TextWrapToken[]): TextWrapToken[] {
     let start = 0;
-    while (start < items.length && this.isBreakCharacter(items[start].text)) {
+    while (start < items.length && items[start].isWhitespace) {
       start += 1;
     }
 
     return items.slice(start);
   }
 
-  private trimTrailingWhitespaceItems(items: GlyphRunItem[]): GlyphRunItem[] {
-    let end = items.length;
-    while (end > 0 && this.isBreakCharacter(items[end - 1].text)) {
-      end -= 1;
+  private concatenateTokens(items: TextWrapToken[]): string {
+    return items.map((item) => item.text).join('');
+  }
+
+  private measureTextWidth(
+    style: AtlasTextStyle,
+    text: string,
+    direction: Exclude<TextDirection, 'auto'>
+  ): number {
+    if (!this.textAtlas || !text) {
+      return text.length * style.fontSize * 0.58;
     }
 
-    return items.slice(0, end);
+    return this.textAtlas.measureTextWidth(style, text, direction);
   }
 
-  private sumAdvance(items: GlyphRunItem[]): number {
-    return items.reduce((sum, item) => sum + item.advance, 0);
-  }
-
-  private isBreakCharacter(text: string): boolean {
-    return /^\s+$/.test(text);
+  private resolveCommandTextDirection(
+    command: DrawTextCommand,
+    text: string
+  ): Exclude<TextDirection, 'auto'> {
+    return command.direction === 'auto' ? inferTextDirection(text) : command.direction;
   }
 
   private pushGlyphQuad(

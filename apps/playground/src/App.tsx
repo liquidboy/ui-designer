@@ -1,8 +1,25 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { RuntimeHost } from '@ui-designer/ui-runtime-web';
 
-const SAMPLE_IMAGE_SOURCE =
-  'data:image/svg+xml;utf8,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 320 200%27%3E%3Cdefs%3E%3ClinearGradient id=%27g%27 x1=%270%27 x2=%271%27 y1=%270%27 y2=%271%27%3E%3Cstop offset=%270%25%27 stop-color=%27%230d1b2a%27/%3E%3Cstop offset=%27100%25%27 stop-color=%27%232256d6%27/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width=%27320%27 height=%27200%27 rx=%2724%27 fill=%27url(%23g)%27/%3E%3Ccircle cx=%27250%27 cy=%2756%27 r=%2734%27 fill=%27%23ffd166%27 fill-opacity=%270.88%27/%3E%3Cpath d=%27M44 152C84 96 132 76 198 88C232 94 260 112 286 144%27 fill=%27none%27 stroke=%27%23f8fafc%27 stroke-width=%2718%27 stroke-linecap=%27round%27/%3E%3Crect x=%2748%27 y=%2742%27 width=%27108%27 height=%2718%27 rx=%279%27 fill=%27%23f8fafc%27 fill-opacity=%270.4%27/%3E%3Crect x=%2748%27 y=%2772%27 width=%2782%27 height=%2714%27 rx=%277%27 fill=%27%23f8fafc%27 fill-opacity=%270.28%27/%3E%3C/svg%3E';
+function svgDataUri(svg: string): string {
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
+const SAMPLE_IMAGE_SOURCE = svgDataUri(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200">
+  <defs>
+    <linearGradient id="sky" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#0d1b2a" />
+      <stop offset="100%" stop-color="#2256d6" />
+    </linearGradient>
+  </defs>
+  <rect width="320" height="200" rx="24" fill="url(#sky)" />
+  <circle cx="250" cy="56" r="34" fill="#ffd166" fill-opacity="0.88" />
+  <path d="M44 152C84 96 132 76 198 88C232 94 260 112 286 144" fill="none" stroke="#f8fafc" stroke-width="18" stroke-linecap="round" />
+  <rect x="48" y="42" width="108" height="18" rx="9" fill="#f8fafc" fill-opacity="0.4" />
+  <rect x="48" y="72" width="82" height="14" rx="7" fill="#f8fafc" fill-opacity="0.28" />
+</svg>
+`);
 
 const sampleXaml = `
 <Canvas Width="1280" Height="720">
@@ -15,6 +32,12 @@ const sampleXaml = `
           FontStyle="Italic"
           FontFamily="Georgia"
           Text="Hello WebGPU XAML now supports wrapped text, fallback-aware font loading, and styled glyph rendering."
+        />
+        <TextBlock
+          Width="220"
+          TextWrapping="Wrap"
+          FlowDirection="RightToLeft"
+          Text="مرحبا بالنص عبر WebGPU مع اتجاه من اليمين إلى اليسار."
         />
         <Button Width="176" TextTrimming="CharacterEllipsis" Content="Launch a much longer action label" />
       </StackPanel>
