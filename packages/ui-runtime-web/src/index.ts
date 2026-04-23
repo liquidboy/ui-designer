@@ -9,11 +9,16 @@ import {
   type Point,
   type UiElement
 } from '@ui-designer/ui-core';
-import { WebGPUCanvasRenderer, type RendererDebugSnapshot } from '@ui-designer/webgpu-renderer';
+import {
+  WebGPUCanvasRenderer,
+  type RendererDebugSnapshot,
+  type RendererFontFaceDefinition
+} from '@ui-designer/webgpu-renderer';
 
 export interface RuntimeBootOptions {
   xaml: string;
   canvas: HTMLCanvasElement;
+  fontFaces?: readonly RendererFontFaceDefinition[];
   onHoveredElementChange?: (elementId: string | null) => void;
   onSelectedElementChange?: (elementId: string | null) => void;
   onRenderDiagnostics?: (diagnostics: RuntimeRenderDiagnostics) => void;
@@ -66,6 +71,8 @@ export class RuntimeHost {
     this.onRenderDiagnostics = options.onRenderDiagnostics;
 
     await this.renderer.initialize();
+    await this.renderer.registerFontFaces(options.fontFaces ?? []);
+    await this.preloadSceneResources();
     this.canvas.addEventListener('pointermove', this.pointerMoveHandler);
     this.canvas.addEventListener('pointerdown', this.pointerDownHandler);
     this.layoutAndRender();
@@ -293,17 +300,7 @@ export class RuntimeHost {
       return;
     }
 
-    runLayout(this.root, {
-      width: this.canvas.clientWidth,
-      height: this.canvas.clientHeight
-    });
-
-    const commands = buildDrawCommands(this.root, {
-      hoveredElementId: this.hoveredElementId,
-      selectedElementId: this.selectedElementId
-    });
-
-    const worldCommands = this.applyElementColors(this.applyElementSizes(this.applyElementOffsets(commands)));
+    const worldCommands = this.buildWorldCommands();
     this.screenCommands = this.projectCommands(worldCommands);
     this.renderer.render(this.screenCommands);
 
@@ -478,5 +475,32 @@ export class RuntimeHost {
       point.x <= rect.x + rect.width &&
       point.y <= rect.y + rect.height
     );
+  }
+
+  private buildWorldCommands(): DrawCommand[] {
+    if (!this.root) {
+      return [];
+    }
+
+    runLayout(this.root, {
+      width: this.canvas.clientWidth,
+      height: this.canvas.clientHeight
+    });
+
+    const commands = buildDrawCommands(this.root, {
+      hoveredElementId: this.hoveredElementId,
+      selectedElementId: this.selectedElementId
+    });
+
+    return this.applyElementColors(this.applyElementSizes(this.applyElementOffsets(commands)));
+  }
+
+  private async preloadSceneResources(): Promise<void> {
+    const worldCommands = this.buildWorldCommands();
+    if (worldCommands.length === 0) {
+      return;
+    }
+
+    await this.renderer.preloadResources(this.projectCommands(worldCommands));
   }
 }

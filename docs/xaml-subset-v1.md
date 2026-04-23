@@ -40,6 +40,20 @@ Supported on `TextBlock` and button labels where applicable:
 10. `TextOverflow`
 11. `TextTrimming`
 
+Runtime notes:
+
+1. `FontFamily` values are treated as CSS font-family lists and the runtime appends a sane fallback chain when the declaration does not include one.
+2. Browser font loading is warmed before first paint when possible, then refreshed during subsequent renders as new text styles appear.
+
+## Image Properties
+
+Supported on `Image`:
+
+1. `Source`
+2. `Stretch`
+3. `Opacity`
+4. `Background`
+
 ## Events
 
 1. `PointerDown`

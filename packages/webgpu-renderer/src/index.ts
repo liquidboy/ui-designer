@@ -1,4 +1,4 @@
-import type { ColorRgba, DrawCommand, DrawTextCommand } from '@ui-designer/ui-core';
+import type { ColorRgba, DrawCommand, DrawImageCommand, DrawTextCommand } from '@ui-designer/ui-core';
 
 interface AtlasTextStyle {
   fontFamily: string;
@@ -27,7 +27,7 @@ interface FontMetrics {
 }
 
 interface GlyphRunItem {
-  character: string;
+  text: string;
   glyph: GlyphEntry;
   advance: number;
 }
@@ -44,12 +44,33 @@ interface ClipRect {
   height: number;
 }
 
+interface ImageTextureEntry {
+  texture: GPUTexture;
+  bindGroup: GPUBindGroup;
+  width: number;
+  height: number;
+}
+
+export interface RendererFontFaceDefinition {
+  family: string;
+  source: string;
+  weight?: string | number;
+  style?: string;
+  stretch?: string;
+  display?: string;
+  unicodeRange?: string;
+}
+
 export interface RendererDebugSnapshot {
   rectCommands: number;
   textCommands: number;
+  imageCommands: number;
   textGlyphs: number;
   atlasGlyphs: number;
   atlasUploads: number;
+  imageTextures: number;
+  pendingImageLoads: number;
+  pendingFontLoads: number;
   lastError: string | null;
 }
 
@@ -106,6 +127,90 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
 }
 `;
 
+const imageShaderSource = `
+struct VertexOut {
+  @builtin(position) position : vec4<f32>,
+  @location(0) uv : vec2<f32>,
+  @location(1) color : vec4<f32>,
+};
+
+@group(0) @binding(0) var imageSampler : sampler;
+@group(0) @binding(1) var imageTexture : texture_2d<f32>;
+
+@vertex
+fn vs_main(
+  @location(0) position: vec2<f32>,
+  @location(1) uv: vec2<f32>,
+  @location(2) color: vec4<f32>
+) -> VertexOut {
+  var out: VertexOut;
+  out.position = vec4<f32>(position, 0.0, 1.0);
+  out.uv = uv;
+  out.color = color;
+  return out;
+}
+
+@fragment
+fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
+  return textureSample(imageTexture, imageSampler, in.uv) * in.color;
+}
+`;
+
+const graphemeSegmenter =
+  typeof Intl !== 'undefined' && 'Segmenter' in Intl
+    ? new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+    : null;
+
+function segmentText(text: string): string[] {
+  if (!text) {
+    return [];
+  }
+
+  if (graphemeSegmenter) {
+    return Array.from(graphemeSegmenter.segment(text), (segment) => segment.segment);
+  }
+
+  return [...text];
+}
+
+function normalizeFontFaceStyle(value: string | undefined): FontFaceDescriptors['style'] | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'italic' || normalized === 'oblique' || normalized === 'normal') {
+    return normalized;
+  }
+
+  return undefined;
+}
+
+function normalizeFontFaceWeight(value: string | number | undefined): FontFaceDescriptors['weight'] | undefined {
+  if (value == null) {
+    return undefined;
+  }
+
+  return `${value}`;
+}
+
+function normalizeFontFaceDisplay(value: string | undefined): FontFaceDescriptors['display'] | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  switch (value.trim().toLowerCase()) {
+    case 'auto':
+    case 'block':
+    case 'swap':
+    case 'fallback':
+    case 'optional':
+      return value.trim().toLowerCase() as FontDisplay;
+    default:
+      return undefined;
+  }
+}
+
 class GlyphAtlas {
   readonly width: number;
   readonly height: number;
@@ -148,10 +253,6 @@ class GlyphAtlas {
     this.dirty = false;
   }
 
-  getCanvas(): HTMLCanvasElement {
-    return this.canvas;
-  }
-
   getImageData(): ImageData {
     return this.context.getImageData(0, 0, this.width, this.height);
   }
@@ -185,8 +286,33 @@ class GlyphAtlas {
     return next;
   }
 
-  getGlyph(style: AtlasTextStyle, character: string): GlyphEntry {
-    const key = `${this.fontKey(style)}\u0000${character}`;
+  shapeTextRun(style: AtlasTextStyle, text: string): GlyphRunItem[] {
+    const segments = segmentText(text);
+    if (segments.length === 0) {
+      return [];
+    }
+
+    const fontMetrics = this.getFontMetrics(style);
+    let prefix = '';
+    let previousWidth = 0;
+
+    return segments.map((segment) => {
+      this.context.font = fontMetrics.font;
+      prefix += segment;
+      const measuredWidth = this.context.measureText(prefix).width;
+      const advance = Math.max(0, measuredWidth - previousWidth);
+      previousWidth = measuredWidth;
+
+      return {
+        text: segment,
+        glyph: this.getGlyph(style, segment),
+        advance
+      };
+    });
+  }
+
+  getGlyph(style: AtlasTextStyle, text: string): GlyphEntry {
+    const key = `${this.fontKey(style)}\u0000${text}`;
     const existing = this.glyphs.get(key);
     if (existing) {
       return existing;
@@ -195,7 +321,7 @@ class GlyphAtlas {
     const fontMetrics = this.getFontMetrics(style);
     this.context.font = fontMetrics.font;
 
-    const measurement = this.context.measureText(character || ' ');
+    const measurement = this.context.measureText(text || ' ');
     const advance = measurement.width;
     const left = Number.isFinite(measurement.actualBoundingBoxLeft) ? measurement.actualBoundingBoxLeft : 0;
     const right = Number.isFinite(measurement.actualBoundingBoxRight)
@@ -232,7 +358,7 @@ class GlyphAtlas {
     this.context.clearRect(slot.x, slot.y, allocationWidth, allocationHeight);
     this.context.font = fontMetrics.font;
     this.context.fillStyle = '#ffffff';
-    this.context.fillText(character, slot.x + this.padding + left, slot.y + this.padding + ascent);
+    this.context.fillText(text, slot.x + this.padding + left, slot.y + this.padding + ascent);
 
     const glyph = {
       atlasX: slot.x + this.padding,
@@ -293,17 +419,30 @@ export class WebGPUCanvasRenderer {
   private format: GPUTextureFormat | null = null;
   private rectPipeline: GPURenderPipeline | null = null;
   private textPipeline: GPURenderPipeline | null = null;
+  private imagePipeline: GPURenderPipeline | null = null;
   private textAtlas: GlyphAtlas | null = null;
   private textTexture: GPUTexture | null = null;
   private textSampler: GPUSampler | null = null;
   private textBindGroup: GPUBindGroup | null = null;
+  private imageSampler: GPUSampler | null = null;
+  private readonly imageTextures = new Map<string, ImageTextureEntry>();
+  private readonly pendingImageLoads = new Map<string, Promise<void>>();
+  private readonly pendingFontLoads = new Map<string, Promise<void>>();
+  private readonly pendingFontFaceRegistrations = new Map<string, Promise<void>>();
+  private readonly resolvedFontLoads = new Set<string>();
+  private readonly registeredFontFaces = new Set<string>();
   private atlasUploadCount = 0;
+  private lastResourceError: string | null = null;
   private debugSnapshot: RendererDebugSnapshot = {
     rectCommands: 0,
     textCommands: 0,
+    imageCommands: 0,
     textGlyphs: 0,
     atlasGlyphs: 0,
     atlasUploads: 0,
+    imageTextures: 0,
+    pendingImageLoads: 0,
+    pendingFontLoads: 0,
     lastError: null
   };
 
@@ -339,7 +478,9 @@ export class WebGPUCanvasRenderer {
 
     this.rectPipeline = this.createRectPipeline();
     this.textPipeline = this.createTextPipeline();
+    this.imagePipeline = this.createImagePipeline();
     this.initializeTextResources();
+    this.initializeImageResources();
   }
 
   resize(): void {
@@ -353,14 +494,40 @@ export class WebGPUCanvasRenderer {
     }
   }
 
+  async registerFontFaces(fontFaces: readonly RendererFontFaceDefinition[] = []): Promise<void> {
+    const tasks = fontFaces.map((definition) => this.registerFontFace(definition));
+    if (tasks.length === 0) {
+      return;
+    }
+
+    await Promise.allSettled(tasks);
+  }
+
+  async preloadResources(commands: DrawCommand[]): Promise<void> {
+    const tasks = [
+      ...this.collectFontLoadTasks(commands),
+      ...this.collectImageLoadTasks(commands)
+    ];
+
+    if (tasks.length === 0) {
+      return;
+    }
+
+    await Promise.allSettled(tasks);
+  }
+
   render(commands: DrawCommand[], clearColor: ColorRgba = { r: 0.08, g: 0.1, b: 0.14, a: 1 }): void {
     if (!this.device || !this.context || !this.rectPipeline) {
       return;
     }
 
+    this.queueResourceLoads(commands);
+
     const rectVertices = this.buildRectVertexArray(commands);
     let textVertices: Float32Array<ArrayBufferLike> = new Float32Array(0);
     let textError: string | null = null;
+    let imageBatches = new Map<string, Float32Array<ArrayBufferLike>>();
+    let imageError: string | null = null;
 
     try {
       textVertices = this.buildTextVertexArray(commands);
@@ -372,13 +539,24 @@ export class WebGPUCanvasRenderer {
       textVertices = new Float32Array(0);
     }
 
+    try {
+      imageBatches = this.buildImageVertexBatches(commands);
+    } catch (error) {
+      imageError = error instanceof Error ? error.message : String(error);
+      imageBatches = new Map<string, Float32Array<ArrayBufferLike>>();
+    }
+
     this.debugSnapshot = {
       rectCommands: commands.filter((command) => command.kind === 'rect').length,
       textCommands: commands.filter((command) => command.kind === 'text').length,
+      imageCommands: commands.filter((command) => command.kind === 'image').length,
       textGlyphs: textVertices.length / 48,
       atlasGlyphs: this.textAtlas?.getGlyphCount() ?? 0,
       atlasUploads: this.atlasUploadCount,
-      lastError: textError
+      imageTextures: this.imageTextures.size,
+      pendingImageLoads: this.pendingImageLoads.size,
+      pendingFontLoads: this.pendingFontLoads.size + this.pendingFontFaceRegistrations.size,
+      lastError: imageError ?? textError ?? this.lastResourceError
     };
 
     const encoder = this.device.createCommandEncoder();
@@ -408,6 +586,22 @@ export class WebGPUCanvasRenderer {
       pass.setBindGroup(0, this.textBindGroup);
       pass.setVertexBuffer(0, vertexBuffer);
       pass.draw(textVertices.length / 8);
+    }
+
+    if (imageBatches.size > 0 && this.imagePipeline) {
+      pass.setPipeline(this.imagePipeline);
+
+      for (const [source, vertices] of imageBatches) {
+        const entry = this.imageTextures.get(source);
+        if (!entry || vertices.length === 0) {
+          continue;
+        }
+
+        const vertexBuffer = this.createVertexBuffer(vertices);
+        pass.setBindGroup(0, entry.bindGroup);
+        pass.setVertexBuffer(0, vertexBuffer);
+        pass.draw(vertices.length / 8);
+      }
     }
 
     pass.end();
@@ -449,6 +643,17 @@ export class WebGPUCanvasRenderer {
           resource: this.textTexture.createView()
         }
       ]
+    });
+  }
+
+  private initializeImageResources(): void {
+    if (!this.device) {
+      throw new Error('Cannot initialize image resources before the renderer is ready.');
+    }
+
+    this.imageSampler = this.device.createSampler({
+      magFilter: 'linear',
+      minFilter: 'linear'
     });
   }
 
@@ -556,6 +761,47 @@ export class WebGPUCanvasRenderer {
     });
   }
 
+  private createImagePipeline(): GPURenderPipeline {
+    if (!this.device || !this.format) {
+      throw new Error('Cannot create pipeline before renderer is initialized.');
+    }
+
+    const shaderModule = this.device.createShaderModule({
+      code: imageShaderSource
+    });
+
+    return this.device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: shaderModule,
+        entryPoint: 'vs_main',
+        buffers: [
+          {
+            arrayStride: 32,
+            attributes: [
+              { shaderLocation: 0, offset: 0, format: 'float32x2' },
+              { shaderLocation: 1, offset: 8, format: 'float32x2' },
+              { shaderLocation: 2, offset: 16, format: 'float32x4' }
+            ]
+          }
+        ]
+      },
+      fragment: {
+        module: shaderModule,
+        entryPoint: 'fs_main',
+        targets: [
+          {
+            format: this.format,
+            blend: this.createAlphaBlendState()
+          }
+        ]
+      },
+      primitive: {
+        topology: 'triangle-list'
+      }
+    });
+  }
+
   private createAlphaBlendState(): GPUBlendState {
     return {
       color: {
@@ -569,6 +815,211 @@ export class WebGPUCanvasRenderer {
         operation: 'add'
       }
     };
+  }
+
+  private queueResourceLoads(commands: DrawCommand[]): void {
+    for (const task of this.collectFontLoadTasks(commands)) {
+      void task.catch(() => undefined);
+    }
+
+    for (const task of this.collectImageLoadTasks(commands)) {
+      void task.catch(() => undefined);
+    }
+  }
+
+  private collectFontLoadTasks(commands: DrawCommand[]): Promise<void>[] {
+    const tasks: Promise<void>[] = [];
+    const seen = new Set<string>();
+
+    for (const command of commands) {
+      if (command.kind !== 'text') {
+        continue;
+      }
+
+      const style = this.normalizeTextStyle(command);
+      const key = this.fontStyleKey(style);
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+
+      const task = this.ensureFontLoaded(style);
+      if (task) {
+        tasks.push(task);
+      }
+    }
+
+    return tasks;
+  }
+
+  private collectImageLoadTasks(commands: DrawCommand[]): Promise<void>[] {
+    const tasks: Promise<void>[] = [];
+    const seen = new Set<string>();
+
+    for (const command of commands) {
+      if (command.kind !== 'image' || !command.source || seen.has(command.source)) {
+        continue;
+      }
+
+      seen.add(command.source);
+      tasks.push(this.ensureImageLoaded(command.source));
+    }
+
+    return tasks;
+  }
+
+  private ensureFontLoaded(style: AtlasTextStyle): Promise<void> | null {
+    if (typeof document === 'undefined' || !('fonts' in document)) {
+      return null;
+    }
+
+    const key = this.fontStyleKey(style);
+    if (this.resolvedFontLoads.has(key)) {
+      return null;
+    }
+
+    const pending = this.pendingFontLoads.get(key);
+    if (pending) {
+      return pending;
+    }
+
+    const font = this.fontString(style);
+    const task = document.fonts
+      .load(font, 'Hamburgefontsiv')
+      .then(() => undefined)
+      .catch((error: unknown) => {
+        this.lastResourceError = `Font load failed for ${font}: ${error instanceof Error ? error.message : String(error)}`;
+      })
+      .finally(() => {
+        this.pendingFontLoads.delete(key);
+        this.resolvedFontLoads.add(key);
+      });
+
+    this.pendingFontLoads.set(key, task);
+    return task;
+  }
+
+  private async registerFontFace(definition: RendererFontFaceDefinition): Promise<void> {
+    if (typeof document === 'undefined' || typeof FontFace === 'undefined' || !definition.source.trim()) {
+      return;
+    }
+
+    const key = [
+      definition.family,
+      definition.style ?? 'normal',
+      definition.weight ?? '400',
+      definition.stretch ?? 'normal',
+      definition.source
+    ].join('|');
+
+    if (this.registeredFontFaces.has(key)) {
+      return;
+    }
+
+    const pending = this.pendingFontFaceRegistrations.get(key);
+    if (pending) {
+      return pending;
+    }
+
+    const task = (async () => {
+      try {
+        const fontFace = new FontFace(definition.family, definition.source, {
+          style: normalizeFontFaceStyle(definition.style),
+          weight: normalizeFontFaceWeight(definition.weight),
+          stretch: definition.stretch,
+          display: normalizeFontFaceDisplay(definition.display),
+          unicodeRange: definition.unicodeRange
+        });
+        await fontFace.load();
+        document.fonts.add(fontFace);
+        this.registeredFontFaces.add(key);
+      } catch (error) {
+        this.lastResourceError = `Font face registration failed for ${definition.family}: ${
+          error instanceof Error ? error.message : String(error)
+        }`;
+      } finally {
+        this.pendingFontFaceRegistrations.delete(key);
+      }
+    })();
+
+    this.pendingFontFaceRegistrations.set(key, task);
+    return task;
+  }
+
+  private async ensureImageLoaded(source: string): Promise<void> {
+    if (!this.device || !this.imagePipeline || !this.imageSampler) {
+      return;
+    }
+
+    if (this.imageTextures.has(source)) {
+      return;
+    }
+
+    const pending = this.pendingImageLoads.get(source);
+    if (pending) {
+      return pending;
+    }
+
+    const task = (async () => {
+      try {
+        const image = await this.loadImageBitmap(source);
+        const texture = this.device!.createTexture({
+          size: [image.width, image.height, 1],
+          format: 'rgba8unorm',
+          usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST
+        });
+
+        this.device!.queue.copyExternalImageToTexture(
+          { source: image },
+          { texture },
+          { width: image.width, height: image.height }
+        );
+
+        const bindGroup = this.device!.createBindGroup({
+          layout: this.imagePipeline!.getBindGroupLayout(0),
+          entries: [
+            {
+              binding: 0,
+              resource: this.imageSampler!
+            },
+            {
+              binding: 1,
+              resource: texture.createView()
+            }
+          ]
+        });
+
+        this.imageTextures.set(source, {
+          texture,
+          bindGroup,
+          width: image.width,
+          height: image.height
+        });
+
+        image.close();
+      } catch (error) {
+        this.lastResourceError = `Image load failed for ${source}: ${error instanceof Error ? error.message : String(error)}`;
+      } finally {
+        this.pendingImageLoads.delete(source);
+      }
+    })();
+
+    this.pendingImageLoads.set(source, task);
+    return task;
+  }
+
+  private async loadImageBitmap(source: string): Promise<ImageBitmap> {
+    if (typeof createImageBitmap !== 'function') {
+      throw new Error('createImageBitmap is not available in this browser.');
+    }
+
+    const response = await fetch(source);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const blob = await response.blob();
+    return createImageBitmap(blob);
   }
 
   private buildRectVertexArray(commands: DrawCommand[]): Float32Array {
@@ -618,6 +1069,31 @@ export class WebGPUCanvasRenderer {
     return new Float32Array(vertices);
   }
 
+  private buildImageVertexBatches(commands: DrawCommand[]): Map<string, Float32Array> {
+    const batches = new Map<string, number[]>();
+
+    for (const command of commands) {
+      if (command.kind !== 'image' || !command.source) {
+        continue;
+      }
+
+      const image = this.imageTextures.get(command.source);
+      if (!image) {
+        continue;
+      }
+
+      let batch = batches.get(command.source);
+      if (!batch) {
+        batch = [];
+        batches.set(command.source, batch);
+      }
+
+      this.pushImageVertices(batch, command, image);
+    }
+
+    return new Map(Array.from(batches, ([source, vertices]) => [source, new Float32Array(vertices)]));
+  }
+
   private pushTextVertices(target: number[], command: DrawTextCommand): void {
     if (!this.textAtlas) {
       return;
@@ -649,6 +1125,27 @@ export class WebGPUCanvasRenderer {
     }
   }
 
+  private pushImageVertices(target: number[], command: DrawImageCommand, image: ImageTextureEntry): void {
+    const quad = this.resolveImageQuad(command, image);
+    if (!quad) {
+      return;
+    }
+
+    this.pushTexturedQuad(
+      target,
+      quad.x,
+      quad.y,
+      quad.width,
+      quad.height,
+      quad.u1,
+      quad.v1,
+      quad.u2,
+      quad.v2,
+      { r: 1, g: 1, b: 1, a: command.opacity },
+      null
+    );
+  }
+
   private layoutTextLines(command: DrawTextCommand, style: AtlasTextStyle): TextLayoutLine[] {
     const paragraphs = command.text.replace(/\t/g, '    ').split(/\r?\n/);
     const maxWidth = Math.max(0, command.width);
@@ -664,14 +1161,7 @@ export class WebGPUCanvasRenderer {
       return [];
     }
 
-    return [...text].map((character) => {
-      const glyph = this.textAtlas!.getGlyph(style, character);
-      return {
-        character,
-        glyph,
-        advance: glyph.advance
-      };
-    });
+    return this.textAtlas.shapeTextRun(style, text);
   }
 
   private layoutParagraphItems(
@@ -700,7 +1190,7 @@ export class WebGPUCanvasRenderer {
         const item = remaining[end];
         const nextWidth = width + item.advance;
 
-        if (this.isBreakCharacter(item.character)) {
+        if (this.isBreakCharacter(item.text)) {
           lastBreak = end;
         }
 
@@ -760,24 +1250,14 @@ export class WebGPUCanvasRenderer {
     style: AtlasTextStyle,
     forceEllipsis: boolean
   ): TextLayoutLine {
-    if (!this.textAtlas) {
-      return { items: [], width: 0 };
-    }
-
     const trimmed = this.trimTrailingWhitespaceItems(items);
     const width = this.sumAdvance(trimmed);
     if (!forceEllipsis && width <= maxWidth) {
       return { items: trimmed, width };
     }
 
-    const ellipsisGlyph = this.textAtlas.getGlyph(style, '…');
-    const ellipsisItem: GlyphRunItem = {
-      character: '…',
-      glyph: ellipsisGlyph,
-      advance: ellipsisGlyph.advance
-    };
-
-    if (maxWidth <= 0) {
+    const ellipsisItem = this.createGlyphRunItems(style, '…')[0];
+    if (!ellipsisItem || maxWidth <= 0) {
       return { items: [], width: 0 };
     }
 
@@ -810,7 +1290,7 @@ export class WebGPUCanvasRenderer {
 
   private trimLeadingWhitespaceItems(items: GlyphRunItem[]): GlyphRunItem[] {
     let start = 0;
-    while (start < items.length && this.isBreakCharacter(items[start].character)) {
+    while (start < items.length && this.isBreakCharacter(items[start].text)) {
       start += 1;
     }
 
@@ -819,7 +1299,7 @@ export class WebGPUCanvasRenderer {
 
   private trimTrailingWhitespaceItems(items: GlyphRunItem[]): GlyphRunItem[] {
     let end = items.length;
-    while (end > 0 && this.isBreakCharacter(items[end - 1].character)) {
+    while (end > 0 && this.isBreakCharacter(items[end - 1].text)) {
       end -= 1;
     }
 
@@ -830,8 +1310,8 @@ export class WebGPUCanvasRenderer {
     return items.reduce((sum, item) => sum + item.advance, 0);
   }
 
-  private isBreakCharacter(character: string): boolean {
-    return /\s/.test(character);
+  private isBreakCharacter(text: string): boolean {
+    return /^\s+$/.test(text);
   }
 
   private pushGlyphQuad(
@@ -848,44 +1328,71 @@ export class WebGPUCanvasRenderer {
       return;
     }
 
+    this.pushTexturedQuad(
+      target,
+      x,
+      y,
+      width,
+      height,
+      glyph.atlasX / this.textAtlas.width,
+      glyph.atlasY / this.textAtlas.height,
+      (glyph.atlasX + glyph.width) / this.textAtlas.width,
+      (glyph.atlasY + glyph.height) / this.textAtlas.height,
+      color,
+      clipRect
+    );
+  }
+
+  private pushTexturedQuad(
+    target: number[],
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    u1: number,
+    v1: number,
+    u2: number,
+    v2: number,
+    color: ColorRgba,
+    clipRect: ClipRect | null
+  ): void {
+    if (width <= 0 || height <= 0 || color.a <= 0) {
+      return;
+    }
+
     let quadX1 = x;
     let quadY1 = y;
     let quadX2 = x + width;
     let quadY2 = y + height;
-
-    const baseU1 = glyph.atlasX / this.textAtlas.width;
-    const baseV1 = glyph.atlasY / this.textAtlas.height;
-    const baseU2 = (glyph.atlasX + glyph.width) / this.textAtlas.width;
-    const baseV2 = (glyph.atlasY + glyph.height) / this.textAtlas.height;
-    let u1 = baseU1;
-    let v1 = baseV1;
-    let u2 = baseU2;
-    let v2 = baseV2;
+    let nextU1 = u1;
+    let nextV1 = v1;
+    let nextU2 = u2;
+    let nextV2 = v2;
 
     if (clipRect) {
       const clipX1 = clipRect.x;
       const clipY1 = clipRect.y;
       const clipX2 = clipRect.x + clipRect.width;
       const clipY2 = clipRect.y + clipRect.height;
-      const nextX1 = Math.max(quadX1, clipX1);
-      const nextY1 = Math.max(quadY1, clipY1);
-      const nextX2 = Math.min(quadX2, clipX2);
-      const nextY2 = Math.min(quadY2, clipY2);
+      const clippedX1 = Math.max(quadX1, clipX1);
+      const clippedY1 = Math.max(quadY1, clipY1);
+      const clippedX2 = Math.min(quadX2, clipX2);
+      const clippedY2 = Math.min(quadY2, clipY2);
 
-      if (nextX1 >= nextX2 || nextY1 >= nextY2) {
+      if (clippedX1 >= clippedX2 || clippedY1 >= clippedY2) {
         return;
       }
 
-      const du = baseU2 - baseU1;
-      const dv = baseV2 - baseV1;
-      u1 = baseU1 + ((nextX1 - quadX1) / width) * du;
-      v1 = baseV1 + ((nextY1 - quadY1) / height) * dv;
-      u2 = baseU1 + ((nextX2 - quadX1) / width) * du;
-      v2 = baseV1 + ((nextY2 - quadY1) / height) * dv;
-      quadX1 = nextX1;
-      quadY1 = nextY1;
-      quadX2 = nextX2;
-      quadY2 = nextY2;
+      const du = u2 - u1;
+      const dv = v2 - v1;
+      nextU1 = u1 + ((clippedX1 - quadX1) / width) * du;
+      nextV1 = v1 + ((clippedY1 - quadY1) / height) * dv;
+      nextU2 = u1 + ((clippedX2 - quadX1) / width) * du;
+      nextV2 = v1 + ((clippedY2 - quadY1) / height) * dv;
+      quadX1 = clippedX1;
+      quadY1 = clippedY1;
+      quadX2 = clippedX2;
+      quadY2 = clippedY2;
     }
 
     const x1 = this.toNdcX(quadX1);
@@ -893,13 +1400,81 @@ export class WebGPUCanvasRenderer {
     const x2 = this.toNdcX(quadX2);
     const y2 = this.toNdcY(quadY2);
 
-    this.pushTextVertex(target, x1, y1, u1, v1, color);
-    this.pushTextVertex(target, x2, y1, u2, v1, color);
-    this.pushTextVertex(target, x1, y2, u1, v2, color);
+    this.pushTexturedVertex(target, x1, y1, nextU1, nextV1, color);
+    this.pushTexturedVertex(target, x2, y1, nextU2, nextV1, color);
+    this.pushTexturedVertex(target, x1, y2, nextU1, nextV2, color);
 
-    this.pushTextVertex(target, x2, y1, u2, v1, color);
-    this.pushTextVertex(target, x2, y2, u2, v2, color);
-    this.pushTextVertex(target, x1, y2, u1, v2, color);
+    this.pushTexturedVertex(target, x2, y1, nextU2, nextV1, color);
+    this.pushTexturedVertex(target, x2, y2, nextU2, nextV2, color);
+    this.pushTexturedVertex(target, x1, y2, nextU1, nextV2, color);
+  }
+
+  private resolveImageQuad(
+    command: DrawImageCommand,
+    image: ImageTextureEntry
+  ): { x: number; y: number; width: number; height: number; u1: number; v1: number; u2: number; v2: number } | null {
+    const width = Math.max(0, command.width);
+    const height = Math.max(0, command.height);
+    if (width <= 0 || height <= 0 || image.width <= 0 || image.height <= 0) {
+      return null;
+    }
+
+    const imageAspect = image.width / image.height;
+    const boundsAspect = width / height;
+    let drawX = command.x;
+    let drawY = command.y;
+    let drawWidth = width;
+    let drawHeight = height;
+    let u1 = 0;
+    let v1 = 0;
+    let u2 = 1;
+    let v2 = 1;
+
+    switch (command.stretch) {
+      case 'uniform': {
+        const scale = Math.min(width / image.width, height / image.height);
+        drawWidth = image.width * scale;
+        drawHeight = image.height * scale;
+        drawX += (width - drawWidth) / 2;
+        drawY += (height - drawHeight) / 2;
+        break;
+      }
+      case 'uniformToFill': {
+        if (boundsAspect > imageAspect) {
+          const visibleSourceHeight = image.width / boundsAspect;
+          const crop = Math.max(0, (image.height - visibleSourceHeight) / 2);
+          v1 = crop / image.height;
+          v2 = (crop + visibleSourceHeight) / image.height;
+        } else {
+          const visibleSourceWidth = image.height * boundsAspect;
+          const crop = Math.max(0, (image.width - visibleSourceWidth) / 2);
+          u1 = crop / image.width;
+          u2 = (crop + visibleSourceWidth) / image.width;
+        }
+        break;
+      }
+      case 'none': {
+        drawWidth = Math.min(width, image.width);
+        drawHeight = Math.min(height, image.height);
+        u2 = drawWidth / image.width;
+        v2 = drawHeight / image.height;
+        break;
+      }
+      case 'fill':
+      default:
+        break;
+    }
+
+    return {
+      x: drawX,
+      y: drawY,
+      width: drawWidth,
+      height: drawHeight,
+      u1,
+      v1,
+      u2,
+      v2
+    };
   }
 
   private normalizeTextStyle(command: DrawTextCommand): AtlasTextStyle {
@@ -960,8 +1535,16 @@ export class WebGPUCanvasRenderer {
     return offset;
   }
 
-  private pushTextVertex(target: number[], x: number, y: number, u: number, v: number, color: ColorRgba): void {
+  private pushTexturedVertex(target: number[], x: number, y: number, u: number, v: number, color: ColorRgba): void {
     target.push(x, y, u, v, color.r, color.g, color.b, color.a);
+  }
+
+  private fontStyleKey(style: AtlasTextStyle): string {
+    return `${style.fontStyle}|${style.fontWeight}|${Math.max(1, Math.round(style.fontSize))}|${style.fontFamily}`;
+  }
+
+  private fontString(style: AtlasTextStyle): string {
+    return `${style.fontStyle} ${style.fontWeight} ${Math.max(1, Math.round(style.fontSize))}px ${style.fontFamily}`;
   }
 
   private toNdcX(pixelX: number): number {

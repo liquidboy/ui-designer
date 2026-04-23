@@ -66,6 +66,7 @@ Responsibilities:
 - clipping, ordering, and batching boundaries
 - bitmap glyph atlas management for text
 - textured quad rendering for text runs
+- image texture upload and textured image quads
 
 ### `packages/ui-runtime-web`
 Browser host for runtime execution.
@@ -76,6 +77,7 @@ Responsibilities:
 - input and IME integration surface
 - bootstrapping from XAML documents
 - rebuilding the rendered tree from updated XAML without owning editor state
+- font-face registration and resource warmup before first paint
 
 ### `packages/designer-core`
 Editor-domain logic for the visual design surface.
@@ -109,17 +111,18 @@ Visual editor shell with infinite canvas viewport and authoring panels.
 2. Parse text into `xaml-schema` AST.
 3. Build a runtime scene graph in `ui-core`.
 4. Execute layout pass (measure then arrange).
-5. Generate draw commands for bounds, solid rects, and text runs.
-6. Draw rect primitives and glyph-backed text quads via `webgpu-renderer`.
+5. Generate draw commands for bounds, solid rects, text runs, and images.
+6. Draw rect primitives, glyph-backed text quads, and textured image quads via `webgpu-renderer`.
 7. Route input events and schedule invalidation.
 
 ## Draw Command Model
 
-`ui-core` now emits three command categories:
+`ui-core` now emits four command categories:
 
 - `bounds`: invisible element boxes used for hit-testing, selection targeting, and post-layout transforms without depending on visible pixels
 - `rect`: solid-color primitives for panels, borders, fills, and editor affordances
 - `text`: styled text boxes that carry content, alignment, font metadata, and layout bounds through to the renderer
+- `image`: textured boxes that carry source, opacity, and stretch behavior through to the renderer
 
 This split matters in the designer because a `TextBlock` can now participate in selection and resizing without rendering placeholder bars.
 
@@ -128,17 +131,35 @@ This split matters in the designer because a `TextBlock` can now participate in 
 The current text path is intentionally simple and practical:
 
 1. `ui-core` measures `TextBlock` and `Button` label content with a shared 2D canvas context so default sizing is based on real font metrics rather than character-count heuristics.
-2. Text content is emitted as `text` draw commands with a layout box, font metadata, wrapping, and overflow behavior.
-3. `webgpu-renderer` lazily rasterizes glyphs into a bitmap atlas on a hidden 2D canvas.
-4. The atlas is uploaded to a GPU texture when new glyphs appear.
-5. Text commands are expanded into clipped textured quads in screen space and composited in a second render pass with alpha blending.
+2. `ui-core` normalizes `FontFamily` declarations into fallback-aware CSS font lists so text still resolves cleanly when the preferred face is unavailable.
+3. `ui-runtime-web` can register explicit browser `FontFace` definitions and asks the renderer to warm font and image resources before the first render.
+4. Text content is emitted as `text` draw commands with a layout box, font metadata, wrapping, and overflow behavior.
+5. `webgpu-renderer` lazily rasterizes grapheme-based glyph segments into a bitmap atlas on a hidden 2D canvas.
+6. The atlas is uploaded to a GPU texture when new glyphs appear.
+7. Text commands are expanded into clipped textured quads in screen space and composited in a second render pass with alpha blending.
 
 Current MVP constraints:
 
-- text shaping is per-codepoint, not HarfBuzz-class shaping
+- text shaping is grapheme-aware with browser-measured advances, but it is not HarfBuzz-class shaping
 - wrapping is greedy and whitespace-aware rather than full paragraph layout
 - ellipsis is line-based and not typographically aware
 - atlas eviction is not implemented yet
+
+## Image Rendering MVP
+
+The first image path mirrors the text pipeline in spirit:
+
+1. `ui-core` emits `image` draw commands from `Image` elements with `Source`, `Opacity`, and `Stretch`.
+2. `webgpu-renderer` loads image sources asynchronously into `ImageBitmap` objects.
+3. Ready bitmaps are uploaded into GPU textures and cached by source string.
+4. Image commands are grouped by source and rendered as textured quads in a dedicated pass.
+5. `Stretch="Fill"`, `Uniform`, `UniformToFill`, and `None` are resolved in the renderer so the scene graph stays lightweight.
+
+Current MVP constraints:
+
+- natural image size does not participate in layout yet
+- image caching is source-string based and does not evict
+- remote image loading depends on normal browser fetch/CORS behavior
 
 ## Designer Pipeline
 

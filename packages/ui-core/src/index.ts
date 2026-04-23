@@ -54,6 +54,8 @@ export type TextWrapMode = 'none' | 'wrap';
 
 export type TextOverflowMode = 'visible' | 'clip' | 'ellipsis';
 
+export type ImageStretchMode = 'fill' | 'uniform' | 'uniformToFill' | 'none';
+
 export interface DrawTextCommand {
   kind: 'text';
   elementId: string;
@@ -74,7 +76,19 @@ export interface DrawTextCommand {
   overflow: TextOverflowMode;
 }
 
-export type DrawCommand = DrawBoundsCommand | DrawRectCommand | DrawTextCommand;
+export interface DrawImageCommand {
+  kind: 'image';
+  elementId: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  source: string;
+  opacity: number;
+  stretch: ImageStretchMode;
+}
+
+export type DrawCommand = DrawBoundsCommand | DrawRectCommand | DrawTextCommand | DrawImageCommand;
 
 export interface DrawCommandOptions {
   hoveredElementId?: string | null;
@@ -120,12 +134,20 @@ interface TextRenderConfig {
   minSize: Size;
 }
 
-const DEFAULT_TEXT_FONT_FAMILY = '"Segoe UI", sans-serif';
+interface ImageRenderConfig {
+  source: string;
+  opacity: number;
+  stretch: ImageStretchMode;
+  minSize: Size;
+}
+
+const DEFAULT_TEXT_FONT_FAMILY = '"Segoe UI", system-ui, sans-serif';
 const DEFAULT_TEXT_FONT_SIZE = 16;
 const DEFAULT_TEXT_FONT_WEIGHT = '400';
 const DEFAULT_BUTTON_FONT_SIZE = 15;
 const DEFAULT_BUTTON_FONT_WEIGHT = '600';
 const DEFAULT_TEXT_FONT_STYLE = 'normal';
+const DEFAULT_IMAGE_SIZE = { width: 220, height: 140 };
 
 let measurementContext: CanvasRenderingContext2D | null | undefined;
 
@@ -241,6 +263,24 @@ function normalizeFontStyle(value: string | null, fallback: string): string {
   return fallback;
 }
 
+function normalizeFontFamily(value: string | null, fallback: string): string {
+  const base = value?.trim() || fallback;
+  const normalized = base.toLowerCase();
+
+  if (
+    normalized.includes('system-ui') ||
+    normalized.includes('sans-serif') ||
+    normalized.includes('serif') ||
+    normalized.includes('monospace') ||
+    normalized.includes('cursive') ||
+    normalized.includes('fantasy')
+  ) {
+    return base;
+  }
+
+  return `${base}, ${fallback}`;
+}
+
 function fontString(style: TextStyle): string {
   return `${style.fontStyle} ${style.fontWeight} ${style.fontSize}px ${style.fontFamily}`;
 }
@@ -252,7 +292,7 @@ function textStyleFromProps(
   const fontSize = Math.max(1, propNumber(props, 'FontSize') ?? defaults.fontSize);
   const fontWeight = normalizeFontWeight(props.FontWeight as string | number | null, defaults.fontWeight);
   const fontStyle = normalizeFontStyle(stringProp(props, 'FontStyle'), DEFAULT_TEXT_FONT_STYLE);
-  const fontFamily = stringProp(props, 'FontFamily')?.trim() || defaults.fontFamily || DEFAULT_TEXT_FONT_FAMILY;
+  const fontFamily = normalizeFontFamily(stringProp(props, 'FontFamily'), defaults.fontFamily || DEFAULT_TEXT_FONT_FAMILY);
   const lineHeight = Math.max(fontSize, propNumber(props, 'LineHeight') ?? Math.ceil(fontSize * 1.25));
 
   return {
@@ -464,6 +504,51 @@ function textOverflowFromProps(props: Record<string, unknown>, fallback: TextOve
   return fallback;
 }
 
+function imageStretchFromProps(props: Record<string, unknown>, fallback: ImageStretchMode): ImageStretchMode {
+  const value = stringProp(props, 'Stretch');
+  if (!value) {
+    return fallback;
+  }
+
+  switch (value.trim().toLowerCase()) {
+    case 'none':
+      return 'none';
+    case 'uniform':
+      return 'uniform';
+    case 'uniformtofill':
+      return 'uniformToFill';
+    default:
+      return 'fill';
+  }
+}
+
+function imageOpacityFromProps(props: Record<string, unknown>, fallback: number): number {
+  const value = propNumber(props, 'Opacity');
+  if (value == null) {
+    return fallback;
+  }
+
+  return Math.max(0, Math.min(1, value));
+}
+
+function imageRenderConfigForElement(type: string, props: Record<string, unknown>): ImageRenderConfig | null {
+  if (type.toLowerCase() !== 'image') {
+    return null;
+  }
+
+  const source = stringProp(props, 'Source')?.trim() ?? '';
+  if (!source) {
+    return null;
+  }
+
+  return {
+    source,
+    opacity: imageOpacityFromProps(props, 1),
+    stretch: imageStretchFromProps(props, 'uniformToFill'),
+    minSize: DEFAULT_IMAGE_SIZE
+  };
+}
+
 function textRenderConfigForElement(type: string, props: Record<string, unknown>): TextRenderConfig | null {
   const normalized = type.toLowerCase();
 
@@ -530,6 +615,11 @@ function defaultSizeFor(type: string, props: Record<string, unknown>): Size {
   const textConfig = textRenderConfigForElement(normalized, props);
   if (textConfig) {
     return measureTextElementSize(textConfig);
+  }
+
+  const imageConfig = imageRenderConfigForElement(normalized, props);
+  if (imageConfig) {
+    return imageConfig.minSize;
   }
 
   if (normalized === 'rectangle') {
@@ -762,6 +852,23 @@ function colorFromProps(
   return fallback;
 }
 
+function optionalColorFromProps(
+  props: Record<string, unknown>,
+  keys: readonly string[] = ['Background', 'Fill']
+): ColorRgba | null {
+  for (const key of keys) {
+    const candidate = props[key];
+    if (typeof candidate === 'string') {
+      const color = colorFromHex(candidate);
+      if (color) {
+        return color;
+      }
+    }
+  }
+
+  return null;
+}
+
 function textColorFromProps(
   props: Record<string, unknown>,
   fallback: ColorRgba,
@@ -839,6 +946,31 @@ function pushText(
   });
 }
 
+function pushImage(
+  commands: DrawCommand[],
+  elementId: string,
+  rect: LayoutRect,
+  source: string,
+  opacity: number,
+  stretch: ImageStretchMode
+): void {
+  if (rect.width <= 0 || rect.height <= 0 || opacity <= 0 || !source) {
+    return;
+  }
+
+  commands.push({
+    kind: 'image',
+    elementId,
+    x: rect.x,
+    y: rect.y,
+    width: rect.width,
+    height: rect.height,
+    source,
+    opacity,
+    stretch
+  });
+}
+
 function emitOutline(
   commands: DrawCommand[],
   element: UiElement,
@@ -858,6 +990,7 @@ function emitElementCommands(commands: DrawCommand[], element: UiElement, option
   const t = element.type.toLowerCase();
   pushBounds(commands, element.id, element.layout);
   const textConfig = textRenderConfigForElement(t, element.props);
+  const imageConfig = imageRenderConfigForElement(t, element.props);
 
   if (t === 'canvas') {
     pushRect(
@@ -901,6 +1034,13 @@ function emitElementCommands(commands: DrawCommand[], element: UiElement, option
       element.layout,
       colorFromProps(element.props, { r: 0.2, g: 0.41, b: 0.8, a: 1 })
     );
+  } else if (t === 'image') {
+    pushRect(
+      commands,
+      element.id,
+      element.layout,
+      optionalColorFromProps(element.props) ?? { r: 0.12, g: 0.15, b: 0.2, a: 0.72 }
+    );
   }
 
   if (textConfig) {
@@ -921,6 +1061,10 @@ function emitElementCommands(commands: DrawCommand[], element: UiElement, option
       textConfig.wrapping,
       textConfig.overflow
     );
+  }
+
+  if (imageConfig) {
+    pushImage(commands, element.id, element.layout, imageConfig.source, imageConfig.opacity, imageConfig.stretch);
   }
 
   if (options.hoveredElementId === element.id) {

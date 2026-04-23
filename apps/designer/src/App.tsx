@@ -23,21 +23,24 @@ import { RuntimeHost } from '@ui-designer/ui-runtime-web';
 import type { ColorRgba, Point, UiElement } from '@ui-designer/ui-core';
 import type { XamlNode } from '@ui-designer/xaml-schema';
 
+const SAMPLE_IMAGE_SOURCE =
+  'data:image/svg+xml;utf8,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 320 200%27%3E%3Cdefs%3E%3ClinearGradient id=%27g%27 x1=%270%27 x2=%271%27 y1=%270%27 y2=%271%27%3E%3Cstop offset=%270%25%27 stop-color=%27%230d1b2a%27/%3E%3Cstop offset=%27100%25%27 stop-color=%27%232256d6%27/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width=%27320%27 height=%27200%27 rx=%2724%27 fill=%27url(%23g)%27/%3E%3Ccircle cx=%27250%27 cy=%2756%27 r=%2734%27 fill=%27%23ffd166%27 fill-opacity=%270.88%27/%3E%3Cpath d=%27M44 152C84 96 132 76 198 88C232 94 260 112 286 144%27 fill=%27none%27 stroke=%27%23f8fafc%27 stroke-width=%2718%27 stroke-linecap=%27round%27/%3E%3Crect x=%2748%27 y=%2742%27 width=%27108%27 height=%2718%27 rx=%279%27 fill=%27%23f8fafc%27 fill-opacity=%270.4%27/%3E%3Crect x=%2748%27 y=%2772%27 width=%2782%27 height=%2714%27 rx=%277%27 fill=%27%23f8fafc%27 fill-opacity=%270.28%27/%3E%3C/svg%3E';
+
 const sampleXaml = `
 <Canvas Width="1600" Height="1200">
   <Grid Rows="2" Columns="2" Width="980" Height="640" X="120" Y="80">
     <Border Grid.Row="0" Grid.Column="0" Background="#18222e" Padding="16">
       <StackPanel Spacing="12">
-        <TextBlock FontStyle="Italic" Text="Inspector-Driven Design Surface" />
+        <TextBlock FontStyle="Italic" FontFamily="Georgia" Text="Inspector-Driven Design Surface" />
         <TextBlock
           Width="260"
           TextWrapping="Wrap"
-          Text="WebGPU text now wraps, clips, and respects richer font styling directly inside the design canvas."
+          Text="WebGPU text now wraps, clips, uses fallback-aware font loading, and shares the canvas with image-backed components."
         />
         <Button Width="186" TextTrimming="CharacterEllipsis" Content="Primary Action with Extended Copy" />
       </StackPanel>
     </Border>
-    <Rectangle Grid.Row="0" Grid.Column="1" Fill="#3472ff" />
+    <Image Grid.Row="0" Grid.Column="1" Source="${SAMPLE_IMAGE_SOURCE}" Stretch="UniformToFill" Background="#101823" />
     <Rectangle Grid.Row="1" Grid.Column="0" Fill="#ff8157" />
     <Rectangle Grid.Row="1" Grid.Column="1" Fill="#3fca9d" />
   </Grid>
@@ -53,6 +56,7 @@ type TreeDropIntent = 'before' | 'inside' | 'after';
 type PaletteTemplateId =
   | 'accent-rectangle'
   | 'text-label'
+  | 'image-frame'
   | 'primary-button'
   | 'content-stack'
   | 'metric-card'
@@ -104,6 +108,20 @@ const PALETTE_TEMPLATES: readonly PaletteTemplate[] = [
       })
   },
   {
+    id: 'image-frame',
+    title: 'Image Frame',
+    description: 'Image-backed block for hero art, thumbnails, or composition tests.',
+    accent: '#ffd166',
+    build: () =>
+      xamlNode('Image', {
+        Width: 220,
+        Height: 140,
+        Source: SAMPLE_IMAGE_SOURCE,
+        Stretch: 'UniformToFill',
+        Background: '#101823'
+      })
+  },
+  {
     id: 'primary-button',
     title: 'Primary Button',
     description: 'Action button with a strong default size and call-to-action label.',
@@ -129,7 +147,7 @@ const PALETTE_TEMPLATES: readonly PaletteTemplate[] = [
           Background: '#18222e'
         },
         [
-          xamlNode('TextBlock', { Text: `Section ${index + 1}` }),
+          xamlNode('TextBlock', { Text: `Section ${index + 1}`, FontFamily: 'Georgia' }),
           xamlNode('TextBlock', {
             Width: 260,
             TextWrapping: 'Wrap',
@@ -222,10 +240,12 @@ const PALETTE_TEMPLATES: readonly PaletteTemplate[] = [
         [
           xamlNode('StackPanel', { Spacing: 12 }, [
             xamlNode('TextBlock', { Text: `Frame ${index + 1}` }),
-            xamlNode('Rectangle', {
+            xamlNode('Image', {
               Width: 220,
               Height: 88,
-              Fill: DEFAULT_NODE_COLORS[(index + 4) % DEFAULT_NODE_COLORS.length]
+              Source: SAMPLE_IMAGE_SOURCE,
+              Stretch: 'UniformToFill',
+              Background: DEFAULT_NODE_COLORS[(index + 4) % DEFAULT_NODE_COLORS.length]
             })
           ])
         ]
