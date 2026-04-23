@@ -80,6 +80,18 @@ body,
   font-size: 0.92rem;
 }
 
+.tree-caption,
+.source-caption {
+  margin: 0 0 10px;
+  color: #91a6c0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.tree-toolbar {
+  margin-bottom: 10px;
+}
+
 .tree-list {
   display: grid;
   gap: 4px;
@@ -219,12 +231,17 @@ body,
   font-size: 0.85rem;
 }
 
-.field input {
+.field input,
+.field select {
   border: 1px solid #33445b;
   border-radius: 6px;
   padding: 6px 8px;
   background: #0f151f;
   color: #dce8f8;
+}
+
+.compact-field {
+  margin-bottom: 10px;
 }
 
 .source-preview {
@@ -239,6 +256,18 @@ body,
   font-family: 'IBM Plex Mono', 'SFMono-Regular', monospace;
   font-size: 0.78rem;
   line-height: 1.5;
+}
+
+.source-preview.has-error {
+  border-color: #d66a6a;
+  box-shadow: inset 0 0 0 1px rgba(214, 106, 106, 0.2);
+}
+
+.source-error {
+  margin: 8px 0 0;
+  color: #ff9c9c;
+  font-size: 0.78rem;
+  line-height: 1.45;
 }
 
 @media (max-width: 980px) {

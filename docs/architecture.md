@@ -120,8 +120,9 @@ Visual editor shell with infinite canvas viewport and authoring panels.
 4. Project scene into world coordinates.
 5. Render viewport content plus editor overlays (selection, handles, grid).
 6. Build transient preview documents during drag and resize interactions.
-7. Commit edits through undoable document commands.
-8. Serialize the committed document back to XAML and persist local drafts.
+7. Commit inspector, tree, and source edits through undoable document commands where applicable.
+8. Allow direct source editing with parse/apply validation for document-level changes.
+9. Serialize the committed document back to XAML and persist local drafts.
 
 ## Designer Document Model
 
@@ -132,6 +133,7 @@ Key concepts:
 - Working document: the committed in-memory XAML AST that represents the current designer state.
 - Preview document: a temporary AST generated during pointer interactions so drag and resize can feel live without polluting undo history.
 - Runtime host: used as the renderer and hit-test surface only. It receives XAML strings from the designer and does not own authoritative edit state.
+- Tree actions: structural edits such as create, delete, and reparent that operate on AST structure and then reselect the moved node by its new document path.
 
 Persisted editable attributes:
 - `Designer.OffsetX` and `Designer.OffsetY` store freeform movement independently of container layout rules.
@@ -141,6 +143,7 @@ Persisted editable attributes:
 Reset behavior:
 - Reset actions compare the working document against the base document for the selected node.
 - Editable attributes are restored from the base document, which makes reset deterministic even after multiple undo/redo cycles.
+- Applying raw XAML source replaces the working and base documents together, because source edits redefine the current authoring baseline.
 
 ## Current MVP Editing Loop
 

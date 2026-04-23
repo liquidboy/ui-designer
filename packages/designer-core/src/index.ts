@@ -131,6 +131,44 @@ export function findDocumentNodeById(document: XamlDocument, id: string): XamlNo
   return findNodeInTree(document.root, id, 'root.0');
 }
 
+function parseDocumentPath(id: string): number[] | null {
+  const segments = id.split('.');
+  if (segments[0] !== 'root' || segments[1] !== '0') {
+    return null;
+  }
+
+  const path = segments.slice(2).map((segment) => Number.parseInt(segment, 10));
+  return path.every((index) => Number.isInteger(index) && index >= 0) ? path : null;
+}
+
+function findNodeByPath(root: XamlNode, path: number[]): XamlNode | null {
+  let current: XamlNode = root;
+
+  for (const index of path) {
+    const next = current.children[index];
+    if (!next) {
+      return null;
+    }
+    current = next;
+  }
+
+  return current;
+}
+
+function findParentEntryByPath(root: XamlNode, path: number[]): { parent: XamlNode; index: number } | null {
+  if (path.length === 0) {
+    return null;
+  }
+
+  const parent = findNodeByPath(root, path.slice(0, -1));
+  const index = path[path.length - 1];
+  if (!parent || index < 0 || index >= parent.children.length) {
+    return null;
+  }
+
+  return { parent, index };
+}
+
 function inferTreeLabel(node: XamlNode): string {
   const text = node.attributes.Text;
   if (typeof text === 'string' && text.trim()) {
@@ -196,6 +234,44 @@ export function updateDocumentNodeAttributes(
     node.attributes[key] = value;
   }
 
+  return next;
+}
+
+export function insertDocumentChild(
+  document: XamlDocument,
+  parentId: string,
+  node: XamlNode,
+  index = Number.POSITIVE_INFINITY
+): XamlDocument {
+  const path = parseDocumentPath(parentId);
+  if (path == null) {
+    return cloneXamlDocument(document);
+  }
+
+  const next = cloneXamlDocument(document);
+  const parent = findNodeByPath(next.root, path);
+  if (!parent) {
+    return next;
+  }
+
+  const insertIndex = Math.max(0, Math.min(parent.children.length, Math.floor(index)));
+  parent.children.splice(insertIndex, 0, cloneXamlNode(node));
+  return next;
+}
+
+export function removeDocumentNode(document: XamlDocument, id: string): XamlDocument {
+  const path = parseDocumentPath(id);
+  if (!path || path.length === 0) {
+    return cloneXamlDocument(document);
+  }
+
+  const next = cloneXamlDocument(document);
+  const entry = findParentEntryByPath(next.root, path);
+  if (!entry) {
+    return next;
+  }
+
+  entry.parent.children.splice(entry.index, 1);
   return next;
 }
 

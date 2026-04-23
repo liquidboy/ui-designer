@@ -3,9 +3,12 @@ import {
   CommandStack,
   buildDesignerTree,
   cloneXamlDocument,
+  cloneXamlNode,
   createCameraState,
   findDocumentNodeById,
+  insertDocumentChild,
   parseDesignerDocument,
+  removeDocumentNode,
   screenToWorld,
   serializeDesignerDocument,
   updateDocumentNodeAttributes,
@@ -16,6 +19,7 @@ import {
 } from '@ui-designer/designer-core';
 import { RuntimeHost } from '@ui-designer/ui-runtime-web';
 import type { ColorRgba, Point, UiElement } from '@ui-designer/ui-core';
+import type { XamlNode } from '@ui-designer/xaml-schema';
 
 const sampleXaml = `
 <Canvas Width="1600" Height="1200">
@@ -34,6 +38,9 @@ const sampleXaml = `
 `;
 const GRID_SIZE = 8;
 const DRAFT_STORAGE_KEY = 'ui-designer:document-draft:v1';
+const NEW_ELEMENT_TYPES = ['Rectangle', 'TextBlock', 'Button', 'Border', 'StackPanel', 'Grid'] as const;
+type NewElementType = (typeof NEW_ELEMENT_TYPES)[number];
+const DEFAULT_NODE_COLORS = ['#3472ff', '#ff8157', '#3fca9d', '#ffd166', '#6fd3ff', '#b88cff'];
 
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
@@ -107,6 +114,101 @@ function readDraftXaml(): string | null {
   }
 }
 
+function canHostAdditionalChildren(node: XamlNode | null): boolean {
+  if (!node) {
+    return false;
+  }
+
+  switch (node.type.toLowerCase()) {
+    case 'canvas':
+    case 'grid':
+    case 'stackpanel':
+      return true;
+    case 'border':
+      return node.children.length === 0;
+    default:
+      return false;
+  }
+}
+
+function createDefaultNode(type: NewElementType, index: number): XamlNode {
+  const accent = DEFAULT_NODE_COLORS[index % DEFAULT_NODE_COLORS.length];
+
+  switch (type) {
+    case 'Rectangle':
+      return {
+        type,
+        attributes: {
+          Width: 160,
+          Height: 96,
+          Fill: accent
+        },
+        children: []
+      };
+    case 'TextBlock':
+      return {
+        type,
+        attributes: {
+          Text: `Label ${index + 1}`
+        },
+        children: []
+      };
+    case 'Button':
+      return {
+        type,
+        attributes: {
+          Content: `Action ${index + 1}`,
+          Width: 152,
+          Height: 40
+        },
+        children: []
+      };
+    case 'Border':
+      return {
+        type,
+        attributes: {
+          Width: 220,
+          Height: 120,
+          Background: accent,
+          Padding: 16
+        },
+        children: []
+      };
+    case 'StackPanel':
+      return {
+        type,
+        attributes: {
+          Width: 240,
+          Spacing: 12,
+          Background: '#18222e'
+        },
+        children: []
+      };
+    case 'Grid':
+      return {
+        type,
+        attributes: {
+          Width: 280,
+          Height: 180,
+          Rows: 2,
+          Columns: 2,
+          Background: '#18222e'
+        },
+        children: []
+      };
+  }
+}
+
+function getNodeIndexFromId(id: string): number | null {
+  const segments = id.split('.');
+  if (segments.length < 2) {
+    return null;
+  }
+
+  const index = Number.parseInt(segments[segments.length - 1], 10);
+  return Number.isInteger(index) && index >= 0 ? index : null;
+}
+
 export function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const runtimeRef = useRef<RuntimeHost | null>(null);
@@ -117,6 +219,10 @@ export function App() {
   const [selectedElement, setSelectedElement] = useState<UiElement | null>(null);
   const [documentXaml, setDocumentXaml] = useState(sampleXaml);
   const [treeItems, setTreeItems] = useState<ReturnType<typeof buildDesignerTree>>([]);
+  const [sourceDraft, setSourceDraft] = useState(sampleXaml);
+  const [sourceDirty, setSourceDirty] = useState(false);
+  const [sourceError, setSourceError] = useState<string | null>(null);
+  const [newElementType, setNewElementType] = useState<NewElementType>('Rectangle');
   const [xInput, setXInput] = useState('');
   const [yInput, setYInput] = useState('');
   const [widthInput, setWidthInput] = useState('');
@@ -192,7 +298,25 @@ export function App() {
     };
   };
 
-  const applyRenderedDocument = (document: DesignerDocument, commit: boolean) => {
+  const setSelection = (id: string | null) => {
+    const runtime = runtimeRef.current;
+
+    selectedIdRef.current = id;
+
+    if (!runtime) {
+      setSelectedId(id);
+      syncSelectedElement(id);
+      return;
+    }
+
+    runtime.setSelectedElement(id);
+  };
+
+  const applyRenderedDocument = (
+    document: DesignerDocument,
+    commit: boolean,
+    selectionId: string | null | undefined = undefined
+  ) => {
     const runtime = runtimeRef.current;
     const nextXaml = serializeDesignerDocument(document);
 
@@ -203,6 +327,8 @@ export function App() {
     }
 
     if (!runtime) {
+      const nextSelectionId = selectionId === undefined ? selectedIdRef.current : selectionId;
+      setSelection(nextSelectionId ?? null);
       return;
     }
 
@@ -210,19 +336,25 @@ export function App() {
     runtime.setXaml(nextXaml);
 
     const currentSelectionId = selectedIdRef.current;
-    const nextSelectionId =
-      currentSelectionId && runtime.getElementById(currentSelectionId) ? currentSelectionId : null;
-    runtime.setSelectedElement(nextSelectionId);
+    let nextSelectionId = selectionId === undefined ? currentSelectionId : selectionId;
+    if (nextSelectionId && !runtime.getElementById(nextSelectionId)) {
+      nextSelectionId = null;
+    }
+
+    setSelection(nextSelectionId);
   };
 
-  const applyCommittedDocument = (document: DesignerDocument, options?: { setAsBase?: boolean }) => {
+  const applyCommittedDocument = (
+    document: DesignerDocument,
+    options?: { setAsBase?: boolean; selectionId?: string | null }
+  ) => {
     const committedDocument = cloneXamlDocument(document);
 
     if (options?.setAsBase) {
       baseDocumentRef.current = cloneXamlDocument(committedDocument);
     }
 
-    applyRenderedDocument(committedDocument, true);
+    applyRenderedDocument(committedDocument, true, options?.selectionId);
   };
 
   const previewDocument = (document: DesignerDocument) => {
@@ -251,7 +383,11 @@ export function App() {
     setColorInput(getDocumentColorValue(id) ?? '#67c7ff');
   };
 
-  const executeDocumentCommand = (label: string, nextDocument: DesignerDocument) => {
+  const executeDocumentCommand = (
+    label: string,
+    nextDocument: DesignerDocument,
+    options?: { nextSelectionId?: string | null; previousSelectionId?: string | null }
+  ) => {
     const currentDocument = documentRef.current;
     if (!currentDocument) {
       return;
@@ -269,10 +405,10 @@ export function App() {
     const command: DesignerCommand = {
       id: label,
       apply: () => {
-        applyCommittedDocument(afterDocument);
+        applyCommittedDocument(afterDocument, { selectionId: options?.nextSelectionId });
       },
       undo: () => {
-        applyCommittedDocument(beforeDocument);
+        applyCommittedDocument(beforeDocument, { selectionId: options?.previousSelectionId });
       }
     };
 
@@ -344,6 +480,181 @@ export function App() {
     executeDocumentCommand('reset-element-edits', buildResetDocument(currentDocument, baseDocument, elementId));
   };
 
+  const applySourceDraft = () => {
+    const nextSource = sourceDraft.trim();
+    if (!nextSource) {
+      const message = 'XAML source cannot be empty.';
+      setSourceError(message);
+      setStatus(message);
+      return;
+    }
+
+    try {
+      const nextDocument = parseDesignerDocument(nextSource);
+      const normalizedXaml = serializeDesignerDocument(nextDocument);
+
+      commandStackRef.current.clear();
+      setHistoryVersion((value) => value + 1);
+      setSourceError(null);
+      setSourceDirty(false);
+      setSourceDraft(normalizedXaml);
+      applyCommittedDocument(nextDocument, { setAsBase: true, selectionId: null });
+      setStatus('Applied XAML source and reset the designer history baseline.');
+    } catch (error: unknown) {
+      const reason = error instanceof Error ? error.message : String(error);
+      setSourceError(reason);
+      setStatus(`XAML apply failed: ${reason}`);
+    }
+  };
+
+  const revertSourceDraft = () => {
+    setSourceDraft(documentXaml);
+    setSourceDirty(false);
+    setSourceError(null);
+  };
+
+  const createChildElement = () => {
+    const currentDocument = documentRef.current;
+    if (!currentDocument) {
+      return;
+    }
+
+    const selectedTreeItem =
+      treeItems.find((item) => item.id === selectedIdRef.current) ?? treeItems.find((item) => item.id === 'root.0') ?? null;
+    const parentId = selectedTreeItem?.id ?? 'root.0';
+    const parentNode = findDocumentNodeById(currentDocument, parentId);
+    if (!parentNode || !canHostAdditionalChildren(parentNode)) {
+      setStatus('The selected element cannot host more children.');
+      return;
+    }
+
+    const insertIndex = parentNode.children.length;
+    const nextNode = createDefaultNode(newElementType, insertIndex);
+    const nextDocument = insertDocumentChild(currentDocument, parentId, nextNode, insertIndex);
+    const nextSelectionId = `${parentId}.${insertIndex}`;
+
+    executeDocumentCommand('tree-add-child', nextDocument, {
+      nextSelectionId,
+      previousSelectionId: selectedIdRef.current
+    });
+    setStatus(`Added ${newElementType} under ${parentNode.type}.`);
+  };
+
+  const createSiblingElement = () => {
+    const currentDocument = documentRef.current;
+    const selectedTreeItem = treeItems.find((item) => item.id === selectedIdRef.current) ?? null;
+    if (!currentDocument || !selectedTreeItem?.parentId) {
+      setStatus('Select a non-root element to add a sibling.');
+      return;
+    }
+
+    const parentNode = findDocumentNodeById(currentDocument, selectedTreeItem.parentId);
+    if (!parentNode || !canHostAdditionalChildren(parentNode)) {
+      setStatus('The selected element parent cannot host additional children.');
+      return;
+    }
+
+    const selectedIndex = getNodeIndexFromId(selectedTreeItem.id);
+    if (selectedIndex == null) {
+      return;
+    }
+
+    const insertIndex = selectedIndex + 1;
+    const nextNode = createDefaultNode(newElementType, parentNode.children.length);
+    const nextDocument = insertDocumentChild(currentDocument, selectedTreeItem.parentId, nextNode, insertIndex);
+    const nextSelectionId = `${selectedTreeItem.parentId}.${insertIndex}`;
+
+    executeDocumentCommand('tree-add-sibling', nextDocument, {
+      nextSelectionId,
+      previousSelectionId: selectedTreeItem.id
+    });
+    setStatus(`Added ${newElementType} beside ${selectedTreeItem.type}.`);
+  };
+
+  const deleteSelectedElement = () => {
+    const currentDocument = documentRef.current;
+    const selectedTreeItem = treeItems.find((item) => item.id === selectedIdRef.current) ?? null;
+    if (!currentDocument || !selectedTreeItem || selectedTreeItem.id === 'root.0') {
+      setStatus('Select a non-root element to delete it.');
+      return;
+    }
+
+    const nextDocument = removeDocumentNode(currentDocument, selectedTreeItem.id);
+    executeDocumentCommand('tree-delete-node', nextDocument, {
+      nextSelectionId: selectedTreeItem.parentId,
+      previousSelectionId: selectedTreeItem.id
+    });
+    setStatus(`Deleted ${selectedTreeItem.type}.`);
+  };
+
+  const reparentSelectedIn = () => {
+    const currentDocument = documentRef.current;
+    const selectedTreeItem = treeItems.find((item) => item.id === selectedIdRef.current) ?? null;
+    if (!currentDocument || !selectedTreeItem?.parentId) {
+      setStatus('Select an element with a previous sibling to nest it.');
+      return;
+    }
+
+    const selectedIndex = getNodeIndexFromId(selectedTreeItem.id);
+    if (selectedIndex == null || selectedIndex === 0) {
+      setStatus('The selected element cannot be nested into a previous sibling.');
+      return;
+    }
+
+    const previousSiblingId = `${selectedTreeItem.parentId}.${selectedIndex - 1}`;
+    const previousSiblingNode = findDocumentNodeById(currentDocument, previousSiblingId);
+    const selectedNode = findDocumentNodeById(currentDocument, selectedTreeItem.id);
+    if (!previousSiblingNode || !selectedNode || !canHostAdditionalChildren(previousSiblingNode)) {
+      setStatus('The previous sibling cannot host the selected element.');
+      return;
+    }
+
+    const insertIndex = previousSiblingNode.children.length;
+    const withoutSelected = removeDocumentNode(currentDocument, selectedTreeItem.id);
+    const nextDocument = insertDocumentChild(withoutSelected, previousSiblingId, cloneXamlNode(selectedNode), insertIndex);
+    const nextSelectionId = `${previousSiblingId}.${insertIndex}`;
+
+    executeDocumentCommand('tree-reparent-in', nextDocument, {
+      nextSelectionId,
+      previousSelectionId: selectedTreeItem.id
+    });
+    setStatus(`Nested ${selectedTreeItem.type} into ${previousSiblingNode.type}.`);
+  };
+
+  const reparentSelectedOut = () => {
+    const currentDocument = documentRef.current;
+    const selectedTreeItem = treeItems.find((item) => item.id === selectedIdRef.current) ?? null;
+    const parentTreeItem = selectedTreeItem?.parentId
+      ? treeItems.find((item) => item.id === selectedTreeItem.parentId) ?? null
+      : null;
+    if (!currentDocument || !selectedTreeItem?.parentId || !parentTreeItem?.parentId) {
+      setStatus('Select a nested element to move it out one level.');
+      return;
+    }
+
+    const selectedNode = findDocumentNodeById(currentDocument, selectedTreeItem.id);
+    const parentIndex = getNodeIndexFromId(parentTreeItem.id);
+    if (!selectedNode || parentIndex == null) {
+      return;
+    }
+
+    const insertIndex = parentIndex + 1;
+    const withoutSelected = removeDocumentNode(currentDocument, selectedTreeItem.id);
+    const nextDocument = insertDocumentChild(
+      withoutSelected,
+      parentTreeItem.parentId,
+      cloneXamlNode(selectedNode),
+      insertIndex
+    );
+    const nextSelectionId = `${parentTreeItem.parentId}.${insertIndex}`;
+
+    executeDocumentCommand('tree-reparent-out', nextDocument, {
+      nextSelectionId,
+      previousSelectionId: selectedTreeItem.id
+    });
+    setStatus(`Moved ${selectedTreeItem.type} out of ${parentTreeItem.type}.`);
+  };
+
   const performUndo = () => {
     if (!commandStackRef.current.canUndo()) {
       return;
@@ -385,11 +696,16 @@ export function App() {
 
     try {
       const nextDocument = parseDesignerDocument(draftXaml);
+      const normalizedXaml = serializeDesignerDocument(nextDocument);
       selectedIdRef.current = null;
       setSelectedId(null);
-      applyCommittedDocument(nextDocument, { setAsBase: true });
+      setSourceDraft(normalizedXaml);
+      setSourceDirty(false);
+      setSourceError(null);
+      applyCommittedDocument(nextDocument, { setAsBase: true, selectionId: null });
       commandStackRef.current.clear();
       setHistoryVersion((value) => value + 1);
+      setStatus('Loaded the saved XAML draft.');
     } catch (error: unknown) {
       const reason = error instanceof Error ? error.message : String(error);
       setStatus(`Failed to load draft: ${reason}`);
@@ -439,6 +755,7 @@ export function App() {
     documentRef.current = cloneXamlDocument(initialDocument);
     baseDocumentRef.current = cloneXamlDocument(initialDocument);
     setDocumentXaml(initialXaml);
+    setSourceDraft(initialXaml);
     setTreeItems(buildDesignerTree(initialDocument));
 
     const runtime = new RuntimeHost(canvas);
@@ -474,6 +791,13 @@ export function App() {
   useEffect(() => {
     saveDraftToStorage();
   }, [documentXaml]);
+
+  useEffect(() => {
+    if (!sourceDirty) {
+      setSourceDraft(documentXaml);
+      setSourceError(null);
+    }
+  }, [documentXaml, sourceDirty]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -828,6 +1152,31 @@ export function App() {
     executeDocumentCommand('inspector-color', buildColorDocument(currentDocument, id, colorToHex(next) ?? '#67c7ff'));
   };
 
+  const selectedTreeItem = selectedId ? treeItems.find((item) => item.id === selectedId) ?? null : null;
+  const selectedTreeNode =
+    selectedTreeItem && documentRef.current ? findDocumentNodeById(documentRef.current, selectedTreeItem.id) : null;
+  const parentTreeItem =
+    selectedTreeItem?.parentId ? treeItems.find((item) => item.id === selectedTreeItem.parentId) ?? null : null;
+  const selectedTreeIndex = selectedTreeItem ? getNodeIndexFromId(selectedTreeItem.id) : null;
+  const previousSiblingId =
+    selectedTreeItem?.parentId && selectedTreeIndex != null && selectedTreeIndex > 0
+      ? `${selectedTreeItem.parentId}.${selectedTreeIndex - 1}`
+      : null;
+  const previousSiblingNode =
+    previousSiblingId && documentRef.current ? findDocumentNodeById(documentRef.current, previousSiblingId) : null;
+  const selectedOrRootId = selectedTreeItem?.id ?? 'root.0';
+  const selectedOrRootNode =
+    documentRef.current ? findDocumentNodeById(documentRef.current, selectedOrRootId) : null;
+  const siblingParentNode =
+    selectedTreeItem?.parentId && documentRef.current
+      ? findDocumentNodeById(documentRef.current, selectedTreeItem.parentId)
+      : null;
+  const canAddChild = canHostAdditionalChildren(selectedOrRootNode);
+  const canAddSibling = !!selectedTreeItem?.parentId && canHostAdditionalChildren(siblingParentNode);
+  const canDeleteSelected = !!selectedTreeItem && selectedTreeItem.id !== 'root.0';
+  const canReparentIn = !!selectedTreeItem && !!previousSiblingNode && canHostAdditionalChildren(previousSiblingNode);
+  const canReparentOut = !!selectedTreeItem && !!parentTreeItem?.parentId;
+  const canApplySource = sourceDirty && sourceDraft.trim().length > 0;
   const origin = worldToScreen({ x: 0, y: 0 }, cameraView);
   const canUndo = commandStackRef.current.canUndo();
   const canRedo = commandStackRef.current.canRedo();
@@ -908,6 +1257,43 @@ export function App() {
         </button>
         <section className="tree-panel">
           <h2>Component Tree</h2>
+          <p className="tree-caption">
+            Target: {selectedTreeNode ? `${selectedTreeNode.type} (${selectedTreeItem?.id})` : 'Root canvas'}
+          </p>
+          <div className="tree-toolbar">
+            <label className="field compact-field">
+              <span>New Element</span>
+              <select
+                value={newElementType}
+                onInput={(event) => setNewElementType((event.target as HTMLSelectElement).value as NewElementType)}
+              >
+                {NEW_ELEMENT_TYPES.map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="toolbar-row">
+              <button className="toolbar-btn" type="button" onClick={createChildElement} disabled={!canAddChild}>
+                Add Child
+              </button>
+              <button className="toolbar-btn" type="button" onClick={createSiblingElement} disabled={!canAddSibling}>
+                Add Sibling
+              </button>
+            </div>
+            <div className="toolbar-row">
+              <button className="toolbar-btn" type="button" onClick={reparentSelectedIn} disabled={!canReparentIn}>
+                Nest In
+              </button>
+              <button className="toolbar-btn" type="button" onClick={reparentSelectedOut} disabled={!canReparentOut}>
+                Move Out
+              </button>
+            </div>
+            <button className="toolbar-btn full-width" type="button" onClick={deleteSelectedElement} disabled={!canDeleteSelected}>
+              Delete Selected
+            </button>
+          </div>
           <div className="tree-list" role="tree">
             {treeItems.map((item) => (
               <button
@@ -1047,7 +1433,34 @@ export function App() {
         ) : null}
         <section className="inspector-group">
           <h3>XAML Draft</h3>
-          <textarea className="source-preview" readOnly value={documentXaml} />
+          <p className="source-caption">
+            Edit raw XAML, then apply it back into the designer. Applying source resets undo history and refreshes the reset baseline.
+          </p>
+          <textarea
+            className={`source-preview ${sourceError ? 'has-error' : ''}`}
+            value={sourceDraft}
+            onInput={(event) => {
+              setSourceDraft((event.target as HTMLTextAreaElement).value);
+              setSourceDirty(true);
+              setSourceError(null);
+            }}
+            onKeyDown={(event) => {
+              if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+                event.preventDefault();
+                applySourceDraft();
+              }
+            }}
+            spellcheck={false}
+          />
+          {sourceError ? <p className="source-error">Parse error: {sourceError}</p> : null}
+          <div className="toolbar-row">
+            <button className="toolbar-btn" type="button" onClick={applySourceDraft} disabled={!canApplySource}>
+              Apply XAML
+            </button>
+            <button className="toolbar-btn" type="button" onClick={revertSourceDraft} disabled={!sourceDirty}>
+              Revert
+            </button>
+          </div>
         </section>
       </aside>
     </main>
