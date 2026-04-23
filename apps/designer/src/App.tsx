@@ -28,8 +28,13 @@ const sampleXaml = `
   <Grid Rows="2" Columns="2" Width="980" Height="640" X="120" Y="80">
     <Border Grid.Row="0" Grid.Column="0" Background="#18222e" Padding="16">
       <StackPanel Spacing="12">
-        <TextBlock Text="Inspector-Driven Design Surface" />
-        <Button Content="Primary Action" />
+        <TextBlock FontStyle="Italic" Text="Inspector-Driven Design Surface" />
+        <TextBlock
+          Width="260"
+          TextWrapping="Wrap"
+          Text="WebGPU text now wraps, clips, and respects richer font styling directly inside the design canvas."
+        />
+        <Button Width="186" TextTrimming="CharacterEllipsis" Content="Primary Action with Extended Copy" />
       </StackPanel>
     </Border>
     <Rectangle Grid.Row="0" Grid.Column="1" Fill="#3472ff" />
@@ -125,8 +130,17 @@ const PALETTE_TEMPLATES: readonly PaletteTemplate[] = [
         },
         [
           xamlNode('TextBlock', { Text: `Section ${index + 1}` }),
-          xamlNode('TextBlock', { Text: 'Concise supporting copy for the selected design block.' }),
-          xamlNode('Button', { Content: 'Continue', Width: 148, Height: 40 })
+          xamlNode('TextBlock', {
+            Width: 260,
+            TextWrapping: 'Wrap',
+            Text: 'Concise supporting copy for the selected design block with real wrapped text.'
+          }),
+          xamlNode('Button', {
+            Content: 'Continue with a longer call to action',
+            Width: 168,
+            Height: 40,
+            TextTrimming: 'CharacterEllipsis'
+          })
         ]
       )
   },
@@ -267,7 +281,13 @@ function asFiniteNumber(value: unknown): number | null {
   return null;
 }
 
-function inferColorAttribute(node: { type: string; attributes: Record<string, unknown> }): 'Background' | 'Fill' {
+function inferColorAttribute(
+  node: { type: string; attributes: Record<string, unknown> }
+): 'Background' | 'Fill' | 'Foreground' {
+  if ('Foreground' in node.attributes) {
+    return 'Foreground';
+  }
+
   if ('Background' in node.attributes) {
     return 'Background';
   }
@@ -276,7 +296,7 @@ function inferColorAttribute(node: { type: string; attributes: Record<string, un
     return 'Fill';
   }
 
-  return node.type.toLowerCase() === 'rectangle' ? 'Fill' : 'Background';
+  return node.type.toLowerCase() === 'textblock' ? 'Foreground' : node.type.toLowerCase() === 'rectangle' ? 'Fill' : 'Background';
 }
 
 function readDraftXaml(): string | null {
@@ -647,7 +667,7 @@ export function App() {
       Height: baseNode.attributes.Height ?? null
     };
 
-    for (const key of ['Background', 'Fill'] as const) {
+    for (const key of ['Foreground', 'Background', 'Fill'] as const) {
       if (key in currentNode.attributes || key in baseNode.attributes) {
         patch[key] = baseNode.attributes[key] ?? null;
       }

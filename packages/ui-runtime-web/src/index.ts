@@ -2,7 +2,6 @@ import { parseXaml } from '@ui-designer/xaml-parser';
 import {
   buildDrawCommands,
   type ColorRgba,
-  type DrawRectCommand,
   buildUiTree,
   type DrawCommand,
   findElementById,
@@ -10,13 +9,14 @@ import {
   type Point,
   type UiElement
 } from '@ui-designer/ui-core';
-import { WebGPUCanvasRenderer } from '@ui-designer/webgpu-renderer';
+import { WebGPUCanvasRenderer, type RendererDebugSnapshot } from '@ui-designer/webgpu-renderer';
 
 export interface RuntimeBootOptions {
   xaml: string;
   canvas: HTMLCanvasElement;
   onHoveredElementChange?: (elementId: string | null) => void;
   onSelectedElementChange?: (elementId: string | null) => void;
+  onRenderDiagnostics?: (diagnostics: RuntimeRenderDiagnostics) => void;
 }
 
 export interface RuntimeCamera {
@@ -29,6 +29,10 @@ export interface RuntimeOverridesSnapshot {
   offsets: Record<string, Point>;
   sizes: Record<string, { width: number; height: number }>;
   colors: Record<string, ColorRgba>;
+}
+
+export interface RuntimeRenderDiagnostics extends RendererDebugSnapshot {
+  boundsCommands: number;
 }
 
 export class RuntimeHost {
@@ -46,6 +50,7 @@ export class RuntimeHost {
   private hoveredElementId: string | null = null;
   private onHoveredElementChange?: (elementId: string | null) => void;
   private onSelectedElementChange?: (elementId: string | null) => void;
+  private onRenderDiagnostics?: (diagnostics: RuntimeRenderDiagnostics) => void;
   private readonly pointerMoveHandler = (event: PointerEvent) => this.handlePointerMove(event);
   private readonly pointerDownHandler = (event: PointerEvent) => this.handlePointerDown(event);
 
@@ -58,6 +63,7 @@ export class RuntimeHost {
     this.setXaml(options.xaml);
     this.onHoveredElementChange = options.onHoveredElementChange;
     this.onSelectedElementChange = options.onSelectedElementChange;
+    this.onRenderDiagnostics = options.onRenderDiagnostics;
 
     await this.renderer.initialize();
     this.canvas.addEventListener('pointermove', this.pointerMoveHandler);
@@ -211,6 +217,13 @@ export class RuntimeHost {
     }
   }
 
+  getRenderDiagnostics(): RuntimeRenderDiagnostics {
+    return {
+      ...this.renderer.getDebugSnapshot(),
+      boundsCommands: this.screenCommands.filter((command) => command.kind === 'bounds').length
+    };
+  }
+
   exportOverridesSnapshot(): RuntimeOverridesSnapshot {
     return {
       offsets: Object.fromEntries(this.elementOffsets.entries()),
@@ -260,7 +273,7 @@ export class RuntimeHost {
   pickElementAtScreenPoint(point: Point): string | null {
     for (let i = this.screenCommands.length - 1; i >= 0; i -= 1) {
       const command = this.screenCommands[i];
-      if (command.kind !== 'rect') {
+      if (command.kind !== 'bounds') {
         continue;
       }
 
@@ -293,6 +306,10 @@ export class RuntimeHost {
     const worldCommands = this.applyElementColors(this.applyElementSizes(this.applyElementOffsets(commands)));
     this.screenCommands = this.projectCommands(worldCommands);
     this.renderer.render(this.screenCommands);
+
+    if (this.onRenderDiagnostics) {
+      this.onRenderDiagnostics(this.getRenderDiagnostics());
+    }
   }
 
   private toCanvasPoint(event: PointerEvent): { x: number; y: number } {
@@ -359,22 +376,28 @@ export class RuntimeHost {
 
     return commands.map((command: DrawCommand) => {
       const origin = this.worldToScreen({ x: command.x, y: command.y });
-      return {
+      const projected = {
         ...command,
         x: origin.x,
         y: origin.y,
         width: command.width * this.camera.zoom,
         height: command.height * this.camera.zoom
       };
+
+      if (command.kind !== 'text') {
+        return projected;
+      }
+
+      return {
+        ...projected,
+        fontSize: command.fontSize * this.camera.zoom,
+        lineHeight: command.lineHeight * this.camera.zoom
+      };
     });
   }
 
   private applyElementOffsets(commands: DrawCommand[]): DrawCommand[] {
     return commands.map((command: DrawCommand) => {
-      if (command.kind !== 'rect') {
-        return command;
-      }
-
       const offset = this.getElementOffset(command.elementId);
       if (offset.x === 0 && offset.y === 0) {
         return command;
@@ -389,29 +412,17 @@ export class RuntimeHost {
   }
 
   private applyElementSizes(commands: DrawCommand[]): DrawCommand[] {
-    const baseBounds = new Map<string, DrawRectCommand>();
+    const baseBounds = new Map<string, { x: number; y: number; width: number; height: number }>();
     for (const command of commands) {
-      if (command.kind === 'rect' && command.isBounds) {
+      if (command.kind === 'bounds') {
         baseBounds.set(command.elementId, command);
       }
     }
 
     return commands.map((command: DrawCommand) => {
-      if (command.kind !== 'rect') {
-        return command;
-      }
-
       const current = this.elementSizeOverrides.get(command.elementId);
       if (!current) {
         return command;
-      }
-
-      if (command.isBounds) {
-        return {
-          ...command,
-          width: current.width,
-          height: current.height
-        };
       }
 
       const originalBounds = baseBounds.get(command.elementId);
@@ -419,57 +430,32 @@ export class RuntimeHost {
         return command;
       }
 
-      const epsilon = 0.5;
-      const isTop = Math.abs(command.y - originalBounds.y) <= epsilon;
-      const isBottom =
-        Math.abs(command.y + command.height - (originalBounds.y + originalBounds.height)) <= epsilon;
-      const isLeft = Math.abs(command.x - originalBounds.x) <= epsilon;
-      const isRight =
-        Math.abs(command.x + command.width - (originalBounds.x + originalBounds.width)) <= epsilon;
-
-      if (isTop && command.height <= 6) {
+      if (command.kind === 'bounds') {
         return {
           ...command,
-          x: originalBounds.x,
-          y: originalBounds.y,
-          width: current.width
-        };
-      }
-
-      if (isBottom && command.height <= 6) {
-        return {
-          ...command,
-          x: originalBounds.x,
-          y: originalBounds.y + current.height - command.height,
-          width: current.width
-        };
-      }
-
-      if (isLeft && command.width <= 6) {
-        return {
-          ...command,
-          x: originalBounds.x,
-          y: originalBounds.y,
+          width: current.width,
           height: current.height
         };
       }
 
-      if (isRight && command.width <= 6) {
-        return {
-          ...command,
-          x: originalBounds.x + current.width - command.width,
-          y: originalBounds.y,
-          height: current.height
-        };
-      }
+      const left = command.x - originalBounds.x;
+      const top = command.y - originalBounds.y;
+      const right = originalBounds.x + originalBounds.width - (command.x + command.width);
+      const bottom = originalBounds.y + originalBounds.height - (command.y + command.height);
 
-      return command;
+      return {
+        ...command,
+        x: originalBounds.x + left,
+        y: originalBounds.y + top,
+        width: Math.max(0, current.width - left - right),
+        height: Math.max(0, current.height - top - bottom)
+      };
     });
   }
 
   private applyElementColors(commands: DrawCommand[]): DrawCommand[] {
     return commands.map((command: DrawCommand) => {
-      if (command.kind !== 'rect') {
+      if (command.kind !== 'rect' && command.kind !== 'text') {
         return command;
       }
 
@@ -485,7 +471,7 @@ export class RuntimeHost {
     });
   }
 
-  private containsPoint(rect: DrawRectCommand, point: Point): boolean {
+  private containsPoint(rect: { x: number; y: number; width: number; height: number }, point: Point): boolean {
     return (
       point.x >= rect.x &&
       point.y >= rect.y &&

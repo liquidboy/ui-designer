@@ -402,6 +402,10 @@ function colorToHex(color: ColorRgba): string {
 }
 
 function inferColorAttribute(node: XamlNode): string {
+  if ('Foreground' in node.attributes) {
+    return 'Foreground';
+  }
+
   if ('Background' in node.attributes) {
     return 'Background';
   }
@@ -410,7 +414,7 @@ function inferColorAttribute(node: XamlNode): string {
     return 'Fill';
   }
 
-  return node.type.toLowerCase() === 'rectangle' ? 'Fill' : 'Background';
+  return node.type.toLowerCase() === 'textblock' ? 'Foreground' : node.type.toLowerCase() === 'rectangle' ? 'Fill' : 'Background';
 }
 
 export function applyOverrideSnapshotToDocument(

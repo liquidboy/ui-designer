@@ -24,6 +24,22 @@ Version 1 intentionally includes a small control and property set so layout, ren
 5. `Background`, `BorderBrush`, `BorderThickness`
 6. `Transform` (translation + scale for v1)
 
+## Text Properties
+
+Supported on `TextBlock` and button labels where applicable:
+
+1. `Text` / `Content`
+2. `Foreground`
+3. `FontSize`
+4. `FontWeight`
+5. `FontFamily`
+6. `FontStyle`
+7. `LineHeight`
+8. `TextAlignment`
+9. `TextWrapping`
+10. `TextOverflow`
+11. `TextTrimming`
+
 ## Events
 
 1. `PointerDown`

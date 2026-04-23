@@ -64,7 +64,8 @@ Responsibilities:
 - WebGPU setup and swapchain management
 - draw-list execution
 - clipping, ordering, and batching boundaries
-- eventual text and image atlas paths
+- bitmap glyph atlas management for text
+- textured quad rendering for text runs
 
 ### `packages/ui-runtime-web`
 Browser host for runtime execution.
@@ -108,9 +109,36 @@ Visual editor shell with infinite canvas viewport and authoring panels.
 2. Parse text into `xaml-schema` AST.
 3. Build a runtime scene graph in `ui-core`.
 4. Execute layout pass (measure then arrange).
-5. Generate render commands.
-6. Draw via `webgpu-renderer`.
+5. Generate draw commands for bounds, solid rects, and text runs.
+6. Draw rect primitives and glyph-backed text quads via `webgpu-renderer`.
 7. Route input events and schedule invalidation.
+
+## Draw Command Model
+
+`ui-core` now emits three command categories:
+
+- `bounds`: invisible element boxes used for hit-testing, selection targeting, and post-layout transforms without depending on visible pixels
+- `rect`: solid-color primitives for panels, borders, fills, and editor affordances
+- `text`: styled text boxes that carry content, alignment, font metadata, and layout bounds through to the renderer
+
+This split matters in the designer because a `TextBlock` can now participate in selection and resizing without rendering placeholder bars.
+
+## Text Rendering MVP
+
+The current text path is intentionally simple and practical:
+
+1. `ui-core` measures `TextBlock` and `Button` label content with a shared 2D canvas context so default sizing is based on real font metrics rather than character-count heuristics.
+2. Text content is emitted as `text` draw commands with a layout box, font metadata, wrapping, and overflow behavior.
+3. `webgpu-renderer` lazily rasterizes glyphs into a bitmap atlas on a hidden 2D canvas.
+4. The atlas is uploaded to a GPU texture when new glyphs appear.
+5. Text commands are expanded into clipped textured quads in screen space and composited in a second render pass with alpha blending.
+
+Current MVP constraints:
+
+- text shaping is per-codepoint, not HarfBuzz-class shaping
+- wrapping is greedy and whitespace-aware rather than full paragraph layout
+- ellipsis is line-based and not typographically aware
+- atlas eviction is not implemented yet
 
 ## Designer Pipeline
 

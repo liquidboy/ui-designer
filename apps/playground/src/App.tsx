@@ -6,8 +6,13 @@ const sampleXaml = `
   <Grid Rows="2" Columns="2" Width="760" Height="460" X="40" Y="40">
     <Border Grid.Row="0" Grid.Column="0" Background="#1f2937" Padding="12">
       <StackPanel Spacing="10">
-        <TextBlock Text="Hello WebGPU XAML" />
-        <Button Content="Click me" />
+        <TextBlock
+          Width="220"
+          TextWrapping="Wrap"
+          FontStyle="Italic"
+          Text="Hello WebGPU XAML now supports wrapped text and styled glyph rendering."
+        />
+        <Button Width="176" TextTrimming="CharacterEllipsis" Content="Launch a much longer action label" />
       </StackPanel>
     </Border>
     <Rectangle Grid.Row="0" Grid.Column="1" Fill="#5b7cff" />
