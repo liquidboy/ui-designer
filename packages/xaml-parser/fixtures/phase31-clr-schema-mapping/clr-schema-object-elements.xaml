@@ -1,0 +1,3 @@
+<local:Canvas xmlns:local="clr-namespace:Liquidboy.UI.Designer;assembly=ui-designer">
+  <local:TextBlock Text="CLR object" />
+</local:Canvas>

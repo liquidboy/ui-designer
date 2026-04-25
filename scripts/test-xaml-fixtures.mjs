@@ -2108,6 +2108,81 @@ async function runPhase30DeclarationTypeResolutionFixtures() {
   return files.length;
 }
 
+async function runPhase31ClrSchemaMappingFixtures() {
+  const declarationWarnings = [
+    'unsupported-directive',
+    'unsupported-directive',
+    'unrenderable-type',
+    'unrenderable-member',
+    'unrenderable-member'
+  ];
+  const expectations = {
+    'clr-schema-declaration-type.xaml': { errors: [], warnings: declarationWarnings },
+    'clr-schema-direct-dotted-array.xaml': { errors: [], warnings: [] },
+    'clr-schema-object-elements.xaml': { errors: [], warnings: [] },
+    'clr-schema-theme-type-arguments.xaml': { errors: [], warnings: ['unsupported-directive'] },
+    'clr-schema-type-arguments.xaml': { errors: [], warnings: ['unsupported-directive'] },
+    'clr-schema-type-array.xaml': { errors: [], warnings: [] },
+    'clr-schema-unknown-assembly.xaml': { errors: ['unknown-xaml-type'], warnings: [] },
+    'clr-schema-unknown-namespace.xaml': { errors: ['unknown-xaml-type'], warnings: [] },
+    'clr-schema-unknown-type.xaml': { errors: ['unknown-xaml-type'], warnings: [] }
+  };
+  const files = await listFixtureFiles('phase31-clr-schema-mapping');
+
+  for (const fileName of files) {
+    const input = await readFixture('phase31-clr-schema-mapping', fileName);
+    const result = parseAndValidateXaml(input);
+    const expected = expectations[fileName];
+    assert.ok(expected, `Missing CLR schema-mapping expectation for ${fileName}`);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'error'), expected.errors, `${fileName} validation errors`);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'warning'), expected.warnings, `${fileName} validation warnings`);
+
+    if (expected.errors.length > 0) {
+      continue;
+    }
+
+    const serialized = serializeXamlDocumentNode(result.document);
+    const reparsed = parseAndValidateXaml(serialized);
+    assert.deepEqual(diagnosticsWithSeverity(reparsed.validation, 'error'), [], `${fileName} round-trip validation errors`);
+
+    if (fileName === 'clr-schema-object-elements.xaml') {
+      const runtime = parseRuntimeXaml(input);
+      assert.equal(runtime.root.type, 'Canvas');
+      assert.equal(runtime.root.children[0]?.type, 'TextBlock');
+      assert.equal(runtime.root.children[0]?.attributes.Text, 'CLR object');
+      assert.match(serialized, /xmlns:local="clr-namespace:Liquidboy\.UI\.Designer;assembly=ui-designer"/);
+    }
+
+    if (fileName === 'clr-schema-type-array.xaml') {
+      const runtime = parseRuntimeXaml(input);
+      assert.equal(runtime.root.attributes.Type, 'local:TextBlock');
+      assert.equal(runtime.root.children[0]?.type, 'TextBlock');
+      assert.equal(runtime.root.children[0]?.attributes.Text, 'CLR type item');
+    }
+
+    if (fileName === 'clr-schema-direct-dotted-array.xaml') {
+      const runtime = parseRuntimeXaml(input);
+      assert.equal(runtime.root.attributes.Type, 'Liquidboy.UI.Designer.TextBlock');
+      assert.equal(runtime.root.children[0]?.type, 'TextBlock');
+      assert.equal(runtime.root.children[0]?.attributes.Text, 'Direct dotted type');
+    }
+
+    if (fileName === 'clr-schema-declaration-type.xaml') {
+      assert.match(serialized, /Type="local:TextBlock"/);
+    }
+
+    if (fileName === 'clr-schema-type-arguments.xaml') {
+      assert.match(serialized, /x:TypeArguments="local:TextBlock"/);
+    }
+
+    if (fileName === 'clr-schema-theme-type-arguments.xaml') {
+      assert.match(serialized, /x:TypeArguments="themeClr:Color"/);
+    }
+  }
+
+  return files.length;
+}
+
 async function runPhase6CollectionFixtures() {
   const expectations = {
     'theme-dictionary-xkey.xaml': { errors: [], warnings: [] },
@@ -2177,7 +2252,8 @@ const phase27Count = await runPhase27ConstructionDirectiveFixtures();
 const phase28Count = await runPhase28MetadataCodeDirectiveFixtures();
 const phase29Count = await runPhase29DeclarationIntrinsicFixtures();
 const phase30Count = await runPhase30DeclarationTypeResolutionFixtures();
+const phase31Count = await runPhase31ClrSchemaMappingFixtures();
 
 console.log(
-  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources, ${phase9Count} serializer, ${phase10Count} designer serializer, ${phase11Count} XML scope, ${phase12Count} object resources, ${phase13Count} dynamic resources, ${phase14Count} whitespace normalization, ${phase15Count} intrinsic arrays, ${phase16Count} intrinsic static references, ${phase17Count} intrinsic references, ${phase18Count} namescope boundaries, ${phase19Count} reference identity, ${phase20Count} schema text syntax, ${phase21Count} intrinsic object elements, ${phase22Count} CLR type resolution, ${phase23Count} primitive decimals, ${phase24Count} static resolution, ${phase25Count} type arguments, ${phase26Count} template namescopes, ${phase27Count} construction directives, ${phase28Count} metadata/code directives, ${phase29Count} declaration intrinsics, ${phase30Count} declaration type resolution).`
+  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources, ${phase9Count} serializer, ${phase10Count} designer serializer, ${phase11Count} XML scope, ${phase12Count} object resources, ${phase13Count} dynamic resources, ${phase14Count} whitespace normalization, ${phase15Count} intrinsic arrays, ${phase16Count} intrinsic static references, ${phase17Count} intrinsic references, ${phase18Count} namescope boundaries, ${phase19Count} reference identity, ${phase20Count} schema text syntax, ${phase21Count} intrinsic object elements, ${phase22Count} CLR type resolution, ${phase23Count} primitive decimals, ${phase24Count} static resolution, ${phase25Count} type arguments, ${phase26Count} template namescopes, ${phase27Count} construction directives, ${phase28Count} metadata/code directives, ${phase29Count} declaration intrinsics, ${phase30Count} declaration type resolution, ${phase31Count} CLR schema mappings).`
 );

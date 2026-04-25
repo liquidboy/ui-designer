@@ -1,0 +1,6 @@
+<x:Array
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:local="clr-namespace:Liquidboy.UI.Designer;assembly=ui-designer"
+  Type="{x:Type local:TextBlock}">
+  <local:TextBlock Text="CLR type item" />
+</x:Array>

@@ -182,6 +182,15 @@ export interface XamlVocabularyNamespace {
   description: string;
 }
 
+export interface XamlClrNamespaceDefinition {
+  clrNamespace: string;
+  assemblies?: readonly string[];
+  allowUnqualifiedAssembly?: boolean;
+  xamlNamespaceUri: string | null;
+  types: readonly string[];
+  description?: string;
+}
+
 export interface XamlMemberDefinition {
   name: string;
   namespaceUri: string | null;
@@ -216,6 +225,7 @@ export interface XamlVocabularyRegistry {
   types: readonly XamlTypeDefinition[];
   attachedMembers: readonly XamlMemberDefinition[];
   directives: readonly XamlMemberDefinition[];
+  clrNamespaces?: readonly XamlClrNamespaceDefinition[];
 }
 
 type XamlNamespaceScope = ReadonlyMap<string | null, string>;
@@ -1028,6 +1038,38 @@ export const designerPanelsTypes = [
   })
 ] as const;
 
+export const uiDesignerClrNamespaces = [
+  {
+    clrNamespace: 'Liquidboy.UI.Designer',
+    assemblies: ['ui-designer'],
+    allowUnqualifiedAssembly: true,
+    xamlNamespaceUri: UI_DESIGNER_NAMESPACE,
+    types: uiDesignerTypes.map((type) => type.name),
+    description: 'No-execution CLR namespace alias for ui-designer runtime vocabulary types.'
+  },
+  {
+    clrNamespace: 'Liquidboy.UI.Designer.Theme',
+    assemblies: ['ui-designer'],
+    xamlNamespaceUri: DESIGNER_THEME_NAMESPACE,
+    types: designerThemeTypes.map((type) => type.name),
+    description: 'No-execution CLR namespace alias for designer theme configuration types.'
+  },
+  {
+    clrNamespace: 'Liquidboy.UI.Designer.Chrome',
+    assemblies: ['ui-designer'],
+    xamlNamespaceUri: DESIGNER_CHROME_NAMESPACE,
+    types: designerChromeTypes.map((type) => type.name),
+    description: 'No-execution CLR namespace alias for designer chrome configuration types.'
+  },
+  {
+    clrNamespace: 'Liquidboy.UI.Designer.Panels',
+    assemblies: ['ui-designer'],
+    xamlNamespaceUri: DESIGNER_PANELS_NAMESPACE,
+    types: designerPanelsTypes.map((type) => type.name),
+    description: 'No-execution CLR namespace alias for designer panel configuration types.'
+  }
+] as const satisfies readonly XamlClrNamespaceDefinition[];
+
 export const uiDesignerVocabularyRegistry: XamlVocabularyRegistry = {
   namespaces: [
     {
@@ -1073,7 +1115,8 @@ export const uiDesignerVocabularyRegistry: XamlVocabularyRegistry = {
   ],
   types: [...xamlIntrinsicTypes, ...uiDesignerTypes, ...designerThemeTypes, ...designerChromeTypes, ...designerPanelsTypes],
   attachedMembers: uiDesignerAttachedMembers,
-  directives: xamlIntrinsicDirectives
+  directives: xamlIntrinsicDirectives,
+  clrNamespaces: uiDesignerClrNamespaces
 };
 
 function namespacesMatch(actual: string | null, expected: string | null): boolean {
@@ -1095,7 +1138,10 @@ export function resolveXamlType(
   const localName = localNameOf(name);
   const namespaceUri = namespaceOf(name);
 
-  return registry.types.find((type) => type.name === localName && namespacesMatch(namespaceUri, type.namespaceUri)) ?? null;
+  return (
+    registry.types.find((type) => type.name === localName && namespacesMatch(namespaceUri, type.namespaceUri)) ??
+    resolveConfiguredClrNamespaceType(localName, namespaceUri, registry)
+  );
 }
 
 export function resolveXamlDirective(
@@ -1150,7 +1196,10 @@ function formatQualifiedName(name: string | XamlQualifiedName): string {
 }
 
 function registryHasNamespace(namespaceUri: string | null, registry: XamlVocabularyRegistry): boolean {
-  return registry.namespaces.some((namespace) => namespace.namespaceUri === namespaceUri);
+  return (
+    registry.namespaces.some((namespace) => namespace.namespaceUri === namespaceUri) ||
+    registryHasConfiguredClrNamespace(namespaceUri, registry)
+  );
 }
 
 function validationDiagnostic(
@@ -1398,6 +1447,39 @@ function isSupportedClrPrimitiveNamespace(mapping: ClrNamespaceMapping): boolean
   );
 }
 
+function configuredClrNamespaceMatchesAssembly(
+  mapping: ClrNamespaceMapping,
+  definition: XamlClrNamespaceDefinition
+): boolean {
+  if (mapping.assembly == null) {
+    return definition.allowUnqualifiedAssembly === true;
+  }
+
+  return definition.assemblies?.includes(mapping.assembly) === true;
+}
+
+function findConfiguredClrNamespace(
+  mapping: ClrNamespaceMapping,
+  registry: XamlVocabularyRegistry
+): XamlClrNamespaceDefinition | null {
+  return (
+    registry.clrNamespaces?.find((definition) => {
+      return (
+        definition.clrNamespace === mapping.clrNamespace &&
+        configuredClrNamespaceMatchesAssembly(mapping, definition)
+      );
+    }) ?? null
+  );
+}
+
+function registryHasConfiguredClrNamespace(
+  namespaceUri: string | null,
+  registry: XamlVocabularyRegistry
+): boolean {
+  const mapping = parseClrNamespaceUri(namespaceUri);
+  return mapping != null && findConfiguredClrNamespace(mapping, registry) != null;
+}
+
 function resolveClrPrimitiveTypeName(parts: XamlTypeNameParts, mapping: ClrNamespaceMapping): XamlTypeNameResolution | null {
   if (!isSupportedClrPrimitiveNamespace(mapping) || !(parts.localName in xamlPrimitiveTypeSyntax)) {
     return null;
@@ -1408,6 +1490,27 @@ function resolveClrPrimitiveTypeName(parts: XamlTypeNameParts, mapping: ClrNames
     namespaceUri: null,
     isPrimitive: true
   };
+}
+
+function resolveConfiguredClrTypeName(
+  parts: XamlTypeNameParts,
+  mapping: ClrNamespaceMapping,
+  registry: XamlVocabularyRegistry
+): XamlTypeNameResolution | null {
+  const definition = findConfiguredClrNamespace(mapping, registry);
+  if (!definition?.types.includes(parts.localName)) {
+    return null;
+  }
+
+  return resolveRegistryTypeName(parts.localName, definition.xamlNamespaceUri, registry);
+}
+
+function resolveClrTypeName(
+  parts: XamlTypeNameParts,
+  mapping: ClrNamespaceMapping,
+  registry: XamlVocabularyRegistry
+): XamlTypeNameResolution | null {
+  return resolveClrPrimitiveTypeName(parts, mapping) ?? resolveConfiguredClrTypeName(parts, mapping, registry);
 }
 
 function resolveRegistryTypeName(
@@ -1428,6 +1531,22 @@ function resolveRegistryTypeName(
     : null;
 }
 
+function resolveConfiguredClrNamespaceType(
+  localName: string,
+  namespaceUri: string | null,
+  registry: XamlVocabularyRegistry
+): XamlTypeDefinition | null {
+  const mapping = parseClrNamespaceUri(namespaceUri);
+  const definition = mapping ? findConfiguredClrNamespace(mapping, registry) : null;
+  if (!definition?.types.includes(localName)) {
+    return null;
+  }
+
+  return registry.types.find((type) => {
+    return type.name === localName && namespacesMatch(definition.xamlNamespaceUri, type.namespaceUri);
+  }) ?? null;
+}
+
 function resolveXamlTypeNameReference(
   typeName: string,
   registry: XamlVocabularyRegistry,
@@ -1446,17 +1565,17 @@ function resolveXamlTypeNameReference(
     const namespaceUri = context.namespaceScope.get(parts.prefix) ?? null;
     const clrMapping = parseClrNamespaceUri(namespaceUri);
     if (clrMapping) {
-      return resolveClrPrimitiveTypeName(parts, clrMapping);
+      return resolveClrTypeName(parts, clrMapping, registry);
     }
 
     return resolveRegistryTypeName(parts.localName, namespaceUri, registry);
   }
 
   if (parts.clrNamespace) {
-    return resolveClrPrimitiveTypeName(parts, {
+    return resolveClrTypeName(parts, {
       clrNamespace: parts.clrNamespace,
       assembly: null
-    });
+    }, registry);
   }
 
   if (parts.localName !== 'String' && parts.localName in xamlPrimitiveTypeSyntax) {

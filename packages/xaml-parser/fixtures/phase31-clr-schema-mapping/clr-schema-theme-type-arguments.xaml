@@ -1,0 +1,5 @@
+<theme:DesignerTheme
+  xmlns:theme="https://liquidboy.dev/ui-designer/designer-theme"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:themeClr="clr-namespace:Liquidboy.UI.Designer.Theme;assembly=ui-designer"
+  x:TypeArguments="themeClr:Color" />

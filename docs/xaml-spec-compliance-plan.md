@@ -58,21 +58,22 @@ The repo now has the core compliance foundation in place:
 20. Text syntax conversion now belongs to schema metadata: known members coerce number/boolean values, preserve decimal values as strings, and preserve string-like numeric text without parser-wide guessing.
 21. Object-element forms for supported intrinsic `x:Null`, `x:Type`, `x:Static`, and `x:Reference` now validate, serialize, and runtime-lower when the target member can safely represent the value.
 22. The validator currently covers known namespaces/types/members, duplicate scalar members, content rules, enum/primitive/color checks, scoped namescope collisions for `x:Name`, root-only placement for `x:Class`, collection item-type constraints, dictionary key validation, and warning-only preservation for unsupported markup extensions.
-23. Type-name validation now resolves in-scope XML namespace declarations for `x:Type`, `x:Array Type`, and declaration `Type` metadata, including prefix-qualified `ui-designer` object types and validation-only `clr-namespace:System` primitive aliases such as `sys:Int32`.
+23. Type-name validation now resolves in-scope XML namespace declarations for `x:Type`, `x:Array Type`, and declaration `Type` metadata, including prefix-qualified `ui-designer` object types, validation-only `clr-namespace:System` primitive aliases such as `sys:Int32`, and configured no-execution `Liquidboy.UI.Designer*` CLR namespace aliases.
 24. `x:Decimal` now validates decimal text separately from generic JavaScript numbers, enforces 28-scale and 96-bit range limits, and lowers runtime decimal values as strings to preserve exact source value fidelity.
 25. Validation-only `x:Static` member resolution now catches unknown static owners and members for known schema types and accepts scoped CLR primitive constants such as `sys:Double.NaN`, `sys:Int32.MaxValue`, and `sys:Decimal.MaxValue`.
-26. `x:TypeArguments` now validates comma-separated and nested type-name lists against in-scope namespaces, including namespace-qualified UI types and validation-only `clr-namespace:System` primitive aliases, while preserving valid generic metadata as source.
+26. `x:TypeArguments` now validates comma-separated and nested type-name lists against in-scope namespaces, including namespace-qualified UI types, validation-only `clr-namespace:System` primitive aliases, and configured no-execution CLR namespace aliases, while preserving valid generic metadata as source.
 27. Validation-only `ControlTemplate`, `DataTemplate`, and `ObjectIsland` vocabulary shapes now create local namescope boundaries, so boundary-local `x:Name` values are isolated and `x:Reference` validation resolves against the active schema scope.
 28. Preserved-only construction directives now cover `x:FactoryMethod`, `x:Arguments`, `x:ConstructorArgs`, and `x:InitializationText`, including property-element parsing for construction argument directives, placement validation, duplicate argument-form detection, and serialization round-trip coverage.
 29. Preserved-only markup-compilation/XML data metadata now covers `x:ClassModifier`, `x:FieldModifier`, `x:Code`, and `x:XData`, including dependency validation and raw XML island serialization.
 30. Preserved-only declaration intrinsics now cover `x:Subclass`, `x:Members`, `x:Member`, and `x:Property`, including root/class dependency validation, declaration item validation, and serialization round-trip coverage.
 31. Declaration `Type` values on `x:Member` and `x:Property` now validate against inherited and local property-element/object XML namespace mappings without executing CLR code or loading arbitrary assemblies.
+32. The vocabulary registry now exposes selected no-execution CLR namespace mappings for `Liquidboy.UI.Designer*`, so object elements and type tokens can validate against configured schema metadata without reflection or arbitrary assembly loading.
 
-Approximate targeted core `MS-XAML-2017` support: **96%**. This is a progress estimate for the scoped language/object-mapping work, not a claim of complete XAML or WPF vocabulary parity.
+Approximate targeted core `MS-XAML-2017` support: **97%**. This is a progress estimate for the scoped language/object-mapping work, not a claim of complete XAML or WPF vocabulary parity.
 
 The main remaining gaps are now:
 
-1. Safe schema-backed validation for selected non-System CLR namespace type tokens.
+1. Lexical validation for CLR identifier metadata such as `x:Class`, `x:Subclass`, construction names, and declaration names.
 2. Arbitrary CLR type loading, generic execution, constructor execution, and CLR static value execution.
 3. Full template/style runtime behavior beyond validation-only namescope boundaries.
 
@@ -84,7 +85,7 @@ Current limitation:
 4. Designer infoset edit propagation is intentionally conservative: if a lowered compatibility path cannot be mapped safely back to the infoset, the designer falls back to lowered serialization instead of risking stale or corrupt semantic output.
 5. Construction directives are preserved and validated, but constructors and factory methods are not executed.
 6. Markup-compilation/code directives and XML data islands are preserved and validated, but no code is compiled or executed.
-7. Declaration intrinsics are preserved and validated, including namespace-aware declaration `Type` metadata, but no CLR members or types are generated.
+7. Declaration intrinsics are preserved and validated, including namespace-aware declaration `Type` metadata and configured CLR schema aliases, but no CLR members or types are generated.
 8. `ResourceDictionary`, `ControlTemplate`, `DataTemplate`, and `ObjectIsland` are schema-marked nested namescope boundaries; the template/object-island forms are validation-only and emit unrenderable warnings until runtime support exists.
 9. `xml:space` handling and default text normalization are implemented for current scalar/content lowering, but whitespace behavior around validation-only template/object-island shapes is still partial.
 
@@ -391,8 +392,8 @@ We should call this initiative complete only when all of the following are true:
 
 The next concrete work item should be:
 
-1. add a no-execution schema mapping path for selected non-System CLR namespace type tokens
-2. validate those tokens from configured schema metadata without reflection or arbitrary assembly loading
-3. keep declaration metadata preserved with warnings so valid source can round-trip
+1. add lexical validation for CLR identifier metadata such as `x:Class`, `x:Subclass`, construction names, and declaration names
+2. validate malformed identifiers without compiling code or generating CLR members
+3. keep metadata preserved with warnings so valid source can round-trip
 
 That keeps us on the safer parser/validator side of the spec before we consider deeper CLR execution.

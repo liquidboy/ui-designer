@@ -166,7 +166,7 @@ Current status:
 
 1. `x:TypeArguments` parses as an intrinsic XAML directive and is preserved during semantic serialization.
 2. The directive validates comma-separated type-name lists, including nested parenthesized generic-looking forms.
-3. Type names resolve through in-scope XML namespace declarations, including namespace-qualified `ui-designer` types and validation-only `clr-namespace:System` primitive aliases.
+3. Type names resolve through in-scope XML namespace declarations, including namespace-qualified `ui-designer` types, validation-only `clr-namespace:System` primitive aliases, and configured no-execution `Liquidboy.UI.Designer*` CLR namespace aliases.
 4. Valid `x:TypeArguments` metadata still produces an unsupported-directive warning because runtime generic execution remains outside v1.
 
 Supported preserved form:
@@ -243,7 +243,7 @@ Current status:
 3. `x:Members` parses as a preserved directive property element on the document root object and requires root `x:Class`.
 4. `x:Members` accepts only `x:Member` and `x:Property` object declarations.
 5. `x:Member` and `x:Property` declarations require `Name` and `Type` metadata.
-6. Declaration `Type` values validate against in-scope XML namespace mappings, including namespace-qualified `ui-designer` types, XAML primitive types, and validation-only `clr-namespace:System` primitive aliases.
+6. Declaration `Type` values validate against in-scope XML namespace mappings, including namespace-qualified `ui-designer` types, XAML primitive types, validation-only `clr-namespace:System` primitive aliases, and configured no-execution `Liquidboy.UI.Designer*` CLR namespace aliases.
 7. Declaration metadata is preserved and serialized with warnings; no CLR members or types are generated in v1.
 
 Supported preserved form:
@@ -269,7 +269,7 @@ Current status:
 
 1. `x:Array` object elements validate as intrinsic XAML language objects.
 2. `Type` is required and simple object item types are checked against direct content or `x:Array.Items`.
-3. `{x:Type ...}` item-type expressions validate known simple object type names, namespace-qualified `ui-designer` object type names, and supported XAML/`clr-namespace:System` primitive type names, then runtime-lower to type-name strings.
+3. `{x:Type ...}` item-type expressions validate known simple object type names, namespace-qualified `ui-designer` object type names, supported XAML/`clr-namespace:System` primitive type names, and configured no-execution `Liquidboy.UI.Designer*` CLR namespace aliases, then runtime-lower to type-name strings.
 4. `<x:Type TypeName="..." />` object elements validate and runtime-lower to type-name strings in scalar member positions.
 5. Authoring serialization preserves `x:Array` namespace prefixes, property-element form, and raw/object `x:Type` source.
 6. Authoring compatibility lowering emits a structural `Array` node with item children so source round-tripping remains stable.
@@ -277,7 +277,8 @@ Current status:
 8. Supported primitive item elements such as `x:String`, `x:Int32`, `x:Double`, and `x:Boolean` coerce to JavaScript string, number, and boolean values.
 9. Integer primitive aliases and `x:Single` enforce scoped numeric ranges; `x:Decimal` enforces 28-scale and 96-bit decimal limits while lowering as a string to avoid JavaScript number precision loss.
 10. `System.Int32`-style primitive type tokens and `xmlns:sys="clr-namespace:System;assembly=mscorlib"` aliases such as `sys:Int32` are accepted for validation-only primitive resolution.
-11. Arbitrary CLR type loading and generic type execution remain outside v1.
+11. Configured `Liquidboy.UI.Designer*` CLR namespace aliases validate known schema types without reflection, arbitrary assembly loading, or CLR execution.
+12. Arbitrary CLR type loading and generic type execution remain outside v1.
 
 Supported structural form:
 
@@ -351,6 +352,17 @@ Supported CLR primitive namespace form:
     </x:Array>
   </Button.Content>
 </Button>
+```
+
+Supported schema-backed CLR namespace form:
+
+```xaml
+<x:Array
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:local="clr-namespace:Liquidboy.UI.Designer;assembly=ui-designer"
+  Type="{x:Type local:TextBlock}">
+  <local:TextBlock Text="CLR schema alias" />
+</x:Array>
 ```
 
 Supported decimal form:
