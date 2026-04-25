@@ -2298,6 +2298,81 @@ async function runPhase33ModifierDirectiveFixtures() {
   return files.length;
 }
 
+async function runPhase34ComplianceClosureFixtures() {
+  const expectations = {
+    'arbitrary-clr-object-rejected.xaml': { errors: ['unknown-namespace'], warnings: [] },
+    'code-island-not-compiled.xaml': { errors: [], warnings: ['unsupported-directive', 'unrenderable-type'] },
+    'construction-runtime-preserved.xaml': {
+      errors: [],
+      warnings: ['unsupported-directive', 'unsupported-directive', 'unsupported-directive']
+    },
+    'generic-metadata-runtime-preserved.xaml': { errors: [], warnings: ['unsupported-directive'] },
+    'template-runtime-deferred.xaml': { errors: [], warnings: ['unrenderable-member', 'unrenderable-type'] },
+    'xdata-island-not-ui-validated.xaml': { errors: [], warnings: ['unrenderable-type'] }
+  };
+  const files = await listFixtureFiles('phase34-compliance-closure');
+
+  for (const fileName of files) {
+    const input = await readFixture('phase34-compliance-closure', fileName);
+    const result = parseAndValidateXaml(input);
+    const expected = expectations[fileName];
+    assert.ok(expected, `Missing compliance closure expectation for ${fileName}`);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'error'), expected.errors, `${fileName} validation errors`);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'warning'), expected.warnings, `${fileName} validation warnings`);
+
+    if (expected.errors.length > 0) {
+      assert.throws(() => parseRuntimeXaml(input), /Unknown namespace|unknown namespace/i, `${fileName} runtime rejection`);
+      continue;
+    }
+
+    const serialized = serializeXamlDocumentNode(result.document);
+    const reparsed = parseAndValidateXaml(serialized);
+    assert.deepEqual(diagnosticsWithSeverity(reparsed.validation, 'error'), [], `${fileName} round-trip validation errors`);
+
+    if (fileName === 'code-island-not-compiled.xaml') {
+      assert.match(serialized, /this is intentionally not valid C#/);
+      assert.doesNotThrow(() => parseRuntimeXaml(input), 'x:Code text should be preserved, not compiled');
+    }
+
+    if (fileName === 'construction-runtime-preserved.xaml') {
+      const runtime = parseRuntimeXaml(input);
+      assert.equal(runtime.root.type, 'Button');
+      assert.equal(runtime.root.attributes.FactoryMethod, 'Create');
+      assert.equal(runtime.root.attributes.InitializationText, 'seed');
+      assert.equal(runtime.root.attributes.Arguments, 'Constructor argument metadata');
+      assert.equal(runtime.root.children.length, 0);
+      assert.match(serialized, /<x:Arguments>/);
+      assert.match(serialized, /<x:String>Constructor argument metadata<\/x:String>/);
+    }
+
+    if (fileName === 'generic-metadata-runtime-preserved.xaml') {
+      const runtime = parseRuntimeXaml(input);
+      assert.equal(runtime.root.type, 'Canvas');
+      assert.equal(runtime.root.attributes.TypeArguments, 'local:TextBlock');
+      assert.match(serialized, /x:TypeArguments="local:TextBlock"/);
+    }
+
+    if (fileName === 'template-runtime-deferred.xaml') {
+      const runtime = parseRuntimeXaml(input);
+      const button = runtime.root.children[0];
+      assert.equal(button?.type, 'Button');
+      assert.equal(button.children[0]?.type, 'Template');
+      assert.equal(button.children[0]?.children[0]?.type, 'ControlTemplate');
+      assert.equal(button.children[1]?.type, 'TextBlock');
+      assert.equal(button.children[1]?.attributes.Text, 'Runtime content remains separate');
+    }
+
+    if (fileName === 'xdata-island-not-ui-validated.xaml') {
+      const runtime = parseRuntimeXaml(input);
+      assert.equal(runtime.root.type, 'Button');
+      assert.match(serialized, /<external:Widget xmlns:external="urn:not-xaml-vocabulary"/);
+      assert.doesNotMatch(serialized, /unknown-namespace/);
+    }
+  }
+
+  return files.length;
+}
+
 async function runPhase6CollectionFixtures() {
   const expectations = {
     'theme-dictionary-xkey.xaml': { errors: [], warnings: [] },
@@ -2370,7 +2445,8 @@ const phase30Count = await runPhase30DeclarationTypeResolutionFixtures();
 const phase31Count = await runPhase31ClrSchemaMappingFixtures();
 const phase32Count = await runPhase32ClrIdentifierMetadataFixtures();
 const phase33Count = await runPhase33ModifierDirectiveFixtures();
+const phase34Count = await runPhase34ComplianceClosureFixtures();
 
 console.log(
-  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources, ${phase9Count} serializer, ${phase10Count} designer serializer, ${phase11Count} XML scope, ${phase12Count} object resources, ${phase13Count} dynamic resources, ${phase14Count} whitespace normalization, ${phase15Count} intrinsic arrays, ${phase16Count} intrinsic static references, ${phase17Count} intrinsic references, ${phase18Count} namescope boundaries, ${phase19Count} reference identity, ${phase20Count} schema text syntax, ${phase21Count} intrinsic object elements, ${phase22Count} CLR type resolution, ${phase23Count} primitive decimals, ${phase24Count} static resolution, ${phase25Count} type arguments, ${phase26Count} template namescopes, ${phase27Count} construction directives, ${phase28Count} metadata/code directives, ${phase29Count} declaration intrinsics, ${phase30Count} declaration type resolution, ${phase31Count} CLR schema mappings, ${phase32Count} CLR identifier metadata, ${phase33Count} modifier directives).`
+  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources, ${phase9Count} serializer, ${phase10Count} designer serializer, ${phase11Count} XML scope, ${phase12Count} object resources, ${phase13Count} dynamic resources, ${phase14Count} whitespace normalization, ${phase15Count} intrinsic arrays, ${phase16Count} intrinsic static references, ${phase17Count} intrinsic references, ${phase18Count} namescope boundaries, ${phase19Count} reference identity, ${phase20Count} schema text syntax, ${phase21Count} intrinsic object elements, ${phase22Count} CLR type resolution, ${phase23Count} primitive decimals, ${phase24Count} static resolution, ${phase25Count} type arguments, ${phase26Count} template namescopes, ${phase27Count} construction directives, ${phase28Count} metadata/code directives, ${phase29Count} declaration intrinsics, ${phase30Count} declaration type resolution, ${phase31Count} CLR schema mappings, ${phase32Count} CLR identifier metadata, ${phase33Count} modifier directives, ${phase34Count} compliance closure).`
 );

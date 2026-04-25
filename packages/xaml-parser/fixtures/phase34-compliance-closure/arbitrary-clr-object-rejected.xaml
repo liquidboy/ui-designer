@@ -1,0 +1,3 @@
+<external:Widget
+  xmlns:external="clr-namespace:Example.Plugin;assembly=Example.Plugin"
+  Label="Should not load arbitrary CLR types" />

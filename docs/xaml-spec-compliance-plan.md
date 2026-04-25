@@ -70,14 +70,16 @@ The repo now has the core compliance foundation in place:
 32. The vocabulary registry now exposes selected no-execution CLR namespace mappings for `Liquidboy.UI.Designer*`, so object elements and type tokens can validate against configured schema metadata without reflection or arbitrary assembly loading.
 33. Lexical CLR metadata validation now rejects malformed `x:Class`, `x:Subclass`, `x:FactoryMethod`, and declaration `Name` values without compiling code or generating CLR members.
 34. Markup-compilation modifier validation now rejects unsupported `x:ClassModifier` and `x:FieldModifier` values while preserving supported modifier metadata without compiling or generating CLR members.
+35. Final scoped compliance closure fixtures now prove the remaining no-execution/deferred boundaries: unconfigured arbitrary CLR object namespaces are rejected, `x:Code` text and `x:XData` XML islands are preserved without compilation or UI validation, construction/generic metadata stays preserved-only, and template runtime behavior remains explicitly deferred.
 
-Approximate targeted core `MS-XAML-2017` support: **99%**. This is a progress estimate for the scoped language/object-mapping work, not a claim of complete XAML or WPF vocabulary parity.
+Approximate targeted core `MS-XAML-2017` support: **100%** for the scoped language/object-mapping parser/validator target. This is not a claim of complete XAML ecosystem support, WPF vocabulary parity, or arbitrary CLR/runtime execution.
 
-The main remaining gaps are now:
+Outside the completed scoped target:
 
-1. Final scoped compliance closure fixtures for preserved-only/deferred execution boundaries.
-2. Arbitrary CLR type loading, generic execution, constructor execution, and CLR static value execution.
-3. Full template/style runtime behavior beyond validation-only namescope boundaries.
+1. Arbitrary CLR type loading, reflection, and assembly probing.
+2. Code generation or markup compilation for `x:Class`, `x:Subclass`, `x:Members`, `x:Code`, or modifier directives.
+3. Generic type execution, constructor/factory execution, and CLR static value execution.
+4. Full template/style runtime behavior beyond validation-only namescope boundaries.
 
 Current limitation:
 
@@ -394,8 +396,8 @@ We should call this initiative complete only when all of the following are true:
 
 The next concrete work item should be:
 
-1. add final closure fixtures for the remaining preserved-only/deferred execution boundaries
-2. confirm the scoped parser/validator target is complete without adding arbitrary CLR loading or code generation
-3. document which remaining items belong to an explicit WPF/runtime compatibility track
+1. choose whether to start a WPF/runtime compatibility track
+2. prioritize product-visible runtime behavior such as template/style execution or richer resource invalidation only if needed
+3. keep any CLR execution or code-generation work behind a separate design review
 
-That keeps us on the safer parser/validator side of the spec before we consider deeper CLR execution.
+That keeps the completed parser/validator work stable while making deeper runtime or CLR behavior a deliberate follow-up rather than an accidental expansion of the compliance claim.

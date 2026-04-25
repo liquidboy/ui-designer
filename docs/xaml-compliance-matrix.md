@@ -175,10 +175,11 @@ Completed foundation work:
 31. Configured no-execution CLR namespace mappings now validate selected `Liquidboy.UI.Designer*` type tokens for object elements, `x:Array Type`, `x:Type`, `x:TypeArguments`, and declaration `Type` metadata without reflection, arbitrary assembly loading, or CLR execution.
 32. Lexical CLR metadata validation now catches malformed `x:Class`, `x:Subclass`, `x:FactoryMethod`, and `x:Member`/`x:Property` declaration `Name` values while preserving valid metadata without compiling or generating CLR members.
 33. Markup-compilation modifier validation now accepts supported `x:ClassModifier` public/not-public values and common `x:FieldModifier` field access values case-insensitively, while rejecting unsupported values without code generation.
+34. Final scoped closure fixtures now cover the remaining parser/validator boundary cases: arbitrary unconfigured CLR namespaces are rejected, `x:Code` and `x:XData` islands are preserved without compilation or UI validation, construction and generic metadata remain no-execution metadata, and template/runtime-only concepts remain schema-valid but deferred.
 
-Approximate targeted core `MS-XAML-2017` support: **99%**. This estimate covers the scoped language/object-mapping target in this matrix, not full WPF vocabulary parity.
+Approximate targeted core `MS-XAML-2017` support: **100%** for the scoped language/object-mapping parser/validator target in this matrix. This is not a claim of full WPF vocabulary parity or CLR/runtime execution support.
 
-Next slice:
+Post-100 follow-up track:
 
-1. Add a final scoped compliance closure pass with fixtures for the remaining preserved-only/deferred execution boundaries.
-2. Keep arbitrary CLR loading, code generation, generic execution, and full template/style runtime outside the scoped core parser/validator target unless we explicitly start a WPF compatibility track.
+1. Start an explicit WPF/runtime compatibility track only if product needs require it.
+2. Keep arbitrary CLR loading, reflection, code generation, generic execution, constructor/factory execution, CLR static value execution, and full template/style runtime outside the completed scoped core parser/validator target until that track is deliberately approved.

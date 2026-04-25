@@ -1,0 +1,10 @@
+<Canvas>
+  <Button>
+    <Button.Template>
+      <ControlTemplate>
+        <TextBlock Text="Template visual is validation-only" />
+      </ControlTemplate>
+    </Button.Template>
+    <TextBlock Text="Runtime content remains separate" />
+  </Button>
+</Canvas>

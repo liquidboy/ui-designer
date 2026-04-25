@@ -1,0 +1,5 @@
+<Canvas xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="Example.RootView">
+  <x:Code><![CDATA[
+    this is intentionally not valid C# and must still be preserved
+  ]]></x:Code>
+</Canvas>

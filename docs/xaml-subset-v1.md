@@ -517,6 +517,21 @@ Current status:
 4. `xml:lang` is inherited by descendant object nodes and lowers to compatibility `lang` metadata.
 5. Whitespace edge cases around future templates/object islands remain outside the v1 subset.
 
+## Scoped Compliance Closure
+
+Current status:
+
+1. The scoped core `MS-XAML-2017` parser/validator/object-mapping target is complete for the v1 vocabulary.
+2. Arbitrary CLR object namespaces remain rejected unless they match configured no-execution schema mappings.
+3. `x:Code` and `x:XData` preserve source content without compiling code or validating XML island elements as UI objects.
+4. Construction and generic directives preserve metadata without running constructors, factory methods, or generic type execution.
+5. Template and object-island forms remain schema-valid, namescope-aware, and round-trippable, but rendering/style application is deferred.
+
+Compliance percentage:
+
+1. **100%** of the scoped parser/validator/object-mapping target is implemented.
+2. This percentage does not include full WPF vocabulary parity, arbitrary CLR loading/reflection, code generation, constructor/factory execution, CLR static value execution, or full template/style runtime behavior.
+
 ## Example Document
 
 ```xaml
