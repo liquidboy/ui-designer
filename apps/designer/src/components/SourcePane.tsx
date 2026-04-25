@@ -1,9 +1,12 @@
+import type { DesignerChromeItem } from '../designer/chrome';
+
 interface SourceDiagnostic {
   severity: 'error' | 'warning';
   message: string;
 }
 
 interface SourcePaneProps {
+  tabs: readonly DesignerChromeItem[];
   documentFileName: string;
   sourceDraft: string;
   sourceDirty: boolean;
@@ -16,6 +19,7 @@ interface SourcePaneProps {
 
 export function SourcePane(props: SourcePaneProps) {
   const {
+    tabs,
     documentFileName,
     sourceDraft,
     sourceDirty,
@@ -35,8 +39,11 @@ export function SourcePane(props: SourcePaneProps) {
   return (
     <section className="source-pane" aria-label="XAML source editor">
       <div className="source-tabs">
-        <button className="source-tab is-active" type="button">XAML</button>
-        <button className="source-tab" type="button">Design</button>
+        {tabs.map((tab) => (
+          <button key={tab.id} className={`source-tab ${tab.isActive ? 'is-active' : ''}`} type="button">
+            {tab.label}
+          </button>
+        ))}
         <span className="source-file">{documentFileName}{sourceDirty ? ' *' : ''}</span>
       </div>
       <textarea

@@ -1,10 +1,12 @@
 import type { JSX } from 'preact';
 import type { CameraState, DesignerTreeItem } from '@ui-designer/designer-core';
+import type { DesignerChromeItem } from '../designer/chrome';
 import type { DebugOverlaySettings } from '../designer/overlays';
 import type { TreeDropIntent } from '../designer/document';
 import type { DesignerFontAsset, DesignerImageAsset, PaletteTemplate } from '../designer/presets';
 
 interface LeftRailProps {
+  dockTabs: readonly DesignerChromeItem[];
   status: string;
   origin: { x: number; y: number };
   cameraView: CameraState;
@@ -78,6 +80,7 @@ interface LeftRailProps {
 
 export function LeftRail(props: LeftRailProps) {
   const {
+    dockTabs,
     status,
     origin,
     cameraView,
@@ -152,9 +155,11 @@ export function LeftRail(props: LeftRailProps) {
   return (
     <aside className="left-rail">
       <div className="dock-tabs" role="tablist" aria-label="Designer panels">
-        <button className="dock-tab is-active" type="button">Project</button>
-        <button className="dock-tab" type="button">Assets</button>
-        <button className="dock-tab" type="button">States</button>
+        {dockTabs.map((tab) => (
+          <button key={tab.id} className={`dock-tab ${tab.isActive ? 'is-active' : ''}`} type="button">
+            {tab.label}
+          </button>
+        ))}
       </div>
       <h1>Solution Explorer</h1>
       <p>{status}</p>

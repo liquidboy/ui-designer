@@ -956,8 +956,7 @@ button {
 }
 
 .blend-statusbar {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  display: flex;
   gap: 18px;
   align-items: center;
   min-height: 24px;
@@ -969,6 +968,7 @@ button {
 }
 
 .blend-statusbar span:first-child {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1027,7 +1027,7 @@ button {
   }
 
   .blend-statusbar {
-    grid-template-columns: 1fr;
+    flex-direction: column;
     gap: 0;
     align-items: start;
     padding: 4px 10px;

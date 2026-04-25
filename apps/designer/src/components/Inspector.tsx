@@ -1,7 +1,9 @@
 import type { JSX } from 'preact';
 import type { UiElement } from '@ui-designer/ui-core';
+import type { DesignerChromeItem } from '../designer/chrome';
 
 interface InspectorProps {
+  dockTabs: readonly DesignerChromeItem[];
   selectedId: string | null;
   selectedElement: UiElement | null;
   isSelectedImageNode: boolean;
@@ -54,6 +56,7 @@ function onEnter(event: JSX.TargetedKeyboardEvent<HTMLInputElement | HTMLTextAre
 
 export function Inspector(props: InspectorProps) {
   const {
+    dockTabs,
     selectedId,
     selectedElement,
     isSelectedImageNode,
@@ -101,9 +104,11 @@ export function Inspector(props: InspectorProps) {
   return (
     <aside className="inspector">
       <div className="dock-tabs" role="tablist" aria-label="Inspector panels">
-        <button className="dock-tab is-active" type="button">Properties</button>
-        <button className="dock-tab" type="button">Resources</button>
-        <button className="dock-tab" type="button">Data</button>
+        {dockTabs.map((tab) => (
+          <button key={tab.id} className={`dock-tab ${tab.isActive ? 'is-active' : ''}`} type="button">
+            {tab.label}
+          </button>
+        ))}
       </div>
       <div className="property-target">
         <span className="target-icon" aria-hidden="true" />

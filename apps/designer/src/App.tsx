@@ -29,6 +29,7 @@ import { Inspector } from './components/Inspector';
 import { LeftRail } from './components/LeftRail';
 import { SourcePane } from './components/SourcePane';
 import { Viewport } from './components/Viewport';
+import { designerChromeDefinition, type DesignerChromeItem } from './designer/chrome';
 import {
   asFiniteNumber,
   applyContainerPlacement,
@@ -1890,6 +1891,29 @@ export function App() {
 
     return source.startsWith('data:image/') ? `Embedded Image ${index + 1}` : `Image ${index + 1}`;
   };
+  const resolveChromeLabel = (item: DesignerChromeItem): string => {
+    if (item.labelBinding === 'documentFileName') {
+      return documentFileName;
+    }
+
+    return item.label;
+  };
+  const commandHandlers: Record<string, { onClick: () => void; disabled?: boolean }> = {
+    undo: { onClick: performUndo, disabled: !canUndo },
+    redo: { onClick: performRedo, disabled: !canRedo },
+    import: { onClick: openDocumentFilePicker },
+    export: { onClick: () => void saveDocumentToFile() }
+  };
+  const statusValues: Record<string, string> = {
+    status,
+    zoom: `${(cameraView.zoom * 100).toFixed(0)}%`,
+    snap: snapEnabled ? '8px' : 'Off',
+    selection: selectedId ?? 'none'
+  };
+  const resolveStatusText = (item: DesignerChromeItem): string => {
+    const value = item.valueBinding ? statusValues[item.valueBinding] : '';
+    return item.label ? `${item.label} ${value}` : value;
+  };
 
   return (
     <main className="designer-shell">
@@ -1922,30 +1946,34 @@ export function App() {
           <div className="app-mark" aria-hidden="true">X</div>
           <div className="window-title">{documentFileName} - Liquid XAML Blend</div>
           <nav className="menu-strip" aria-label="Application menu">
-            {['File', 'Edit', 'View', 'Object', 'Project', 'Tools', 'Window', 'Help'].map((item) => (
-              <button key={item} type="button">{item}</button>
+            {designerChromeDefinition.menuItems.map((item) => (
+              <button key={item.id} type="button">{resolveChromeLabel(item)}</button>
             ))}
           </nav>
         </div>
         <div className="command-strip">
-          <button className="toolbar-btn" type="button" onClick={performUndo} disabled={!canUndo}>
-            Undo
-          </button>
-          <button className="toolbar-btn" type="button" onClick={performRedo} disabled={!canRedo}>
-            Redo
-          </button>
-          <button className="toolbar-btn" type="button" onClick={openDocumentFilePicker}>
-            Import
-          </button>
-          <button className="toolbar-btn" type="button" onClick={() => void saveDocumentToFile()}>
-            Export
-          </button>
+          {designerChromeDefinition.commandItems.map((item) => {
+            const handler = commandHandlers[item.id];
+
+            return (
+              <button
+                key={item.id}
+                className="toolbar-btn"
+                type="button"
+                onClick={handler?.onClick}
+                disabled={handler?.disabled}
+              >
+                {resolveChromeLabel(item)}
+              </button>
+            );
+          })}
           <span className="quick-launch">Quick Launch (Ctrl+Q)</span>
         </div>
       </header>
 
       <section className="blend-workspace">
         <LeftRail
+          dockTabs={designerChromeDefinition.leftDockTabs}
           status={status}
           origin={origin}
           cameraView={cameraView}
@@ -2023,19 +2051,22 @@ export function App() {
 
         <section className="document-area">
           <div className="document-tabs">
-            <button className="document-tab is-active" type="button">{documentFileName}</button>
-            <button className="document-tab" type="button">Resources.xaml</button>
+            {designerChromeDefinition.documentTabs.map((tab) => (
+              <button key={tab.id} className={`document-tab ${tab.isActive ? 'is-active' : ''}`} type="button">
+                {resolveChromeLabel(tab)}
+              </button>
+            ))}
           </div>
           <section className="artboard-region" aria-label="Designer artboard">
             <div className="tool-strip" aria-label="Tools">
-              {['V', 'H', 'Z', 'P', 'T', 'R', 'I', 'G'].map((tool, index) => (
+              {designerChromeDefinition.toolStrip.map((tool) => (
                 <button
-                  key={`${tool}-${index}`}
-                  className={index === 0 ? 'is-active' : ''}
+                  key={tool.id}
+                  className={tool.isActive ? 'is-active' : ''}
                   type="button"
-                  title={['Selection', 'Pan', 'Zoom', 'Pen', 'Text', 'Rectangle', 'Image', 'Grid'][index]}
+                  title={tool.label}
                 >
-                  {tool}
+                  {tool.glyph}
                 </button>
               ))}
             </div>
@@ -2055,6 +2086,7 @@ export function App() {
             </div>
           </section>
           <SourcePane
+            tabs={designerChromeDefinition.sourceTabs}
             documentFileName={documentFileName}
             sourceDraft={sourceDraft}
             sourceDirty={sourceDirty}
@@ -2071,6 +2103,7 @@ export function App() {
         </section>
 
         <Inspector
+          dockTabs={designerChromeDefinition.inspectorTabs}
           selectedId={selectedId}
           selectedElement={selectedElement}
           isSelectedImageNode={isSelectedImageNode}
@@ -2122,10 +2155,9 @@ export function App() {
       </section>
 
       <footer className="blend-statusbar">
-        <span>{status}</span>
-        <span>Zoom {(cameraView.zoom * 100).toFixed(0)}%</span>
-        <span>Snap {snapEnabled ? '8px' : 'Off'}</span>
-        <span>Selection {selectedId ?? 'none'}</span>
+        {designerChromeDefinition.statusSegments.map((segment) => (
+          <span key={segment.id}>{resolveStatusText(segment)}</span>
+        ))}
       </footer>
     </main>
   );
