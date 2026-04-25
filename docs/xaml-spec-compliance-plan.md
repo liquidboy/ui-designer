@@ -65,12 +65,13 @@ The repo now has the core compliance foundation in place:
 27. Validation-only `ControlTemplate`, `DataTemplate`, and `ObjectIsland` vocabulary shapes now create local namescope boundaries, so boundary-local `x:Name` values are isolated and `x:Reference` validation resolves against the active schema scope.
 28. Preserved-only construction directives now cover `x:FactoryMethod`, `x:Arguments`, `x:ConstructorArgs`, and `x:InitializationText`, including property-element parsing for construction argument directives, placement validation, duplicate argument-form detection, and serialization round-trip coverage.
 29. Preserved-only markup-compilation/XML data metadata now covers `x:ClassModifier`, `x:FieldModifier`, `x:Code`, and `x:XData`, including dependency validation and raw XML island serialization.
+30. Preserved-only declaration intrinsics now cover `x:Subclass`, `x:Members`, `x:Member`, and `x:Property`, including root/class dependency validation, declaration item validation, and serialization round-trip coverage.
 
-Approximate targeted core `MS-XAML-2017` support: **94%**. This is a progress estimate for the scoped language/object-mapping work, not a claim of complete XAML or WPF vocabulary parity.
+Approximate targeted core `MS-XAML-2017` support: **95%**. This is a progress estimate for the scoped language/object-mapping work, not a claim of complete XAML or WPF vocabulary parity.
 
 The main remaining gaps are now:
 
-1. Remaining declaration/schema intrinsics such as `x:Subclass`, `x:Members`, and `x:Property`.
+1. Namespace-aware validation for declaration `Type` metadata.
 2. Arbitrary CLR type loading, generic execution, constructor execution, and CLR static value execution.
 3. Full template/style runtime behavior beyond validation-only namescope boundaries.
 
@@ -82,8 +83,9 @@ Current limitation:
 4. Designer infoset edit propagation is intentionally conservative: if a lowered compatibility path cannot be mapped safely back to the infoset, the designer falls back to lowered serialization instead of risking stale or corrupt semantic output.
 5. Construction directives are preserved and validated, but constructors and factory methods are not executed.
 6. Markup-compilation/code directives and XML data islands are preserved and validated, but no code is compiled or executed.
-7. `ResourceDictionary`, `ControlTemplate`, `DataTemplate`, and `ObjectIsland` are schema-marked nested namescope boundaries; the template/object-island forms are validation-only and emit unrenderable warnings until runtime support exists.
-8. `xml:space` handling and default text normalization are implemented for current scalar/content lowering, but whitespace behavior around validation-only template/object-island shapes is still partial.
+7. Declaration intrinsics are preserved and validated, but no CLR members or types are generated.
+8. `ResourceDictionary`, `ControlTemplate`, `DataTemplate`, and `ObjectIsland` are schema-marked nested namescope boundaries; the template/object-island forms are validation-only and emit unrenderable warnings until runtime support exists.
+9. `xml:space` handling and default text normalization are implemented for current scalar/content lowering, but whitespace behavior around validation-only template/object-island shapes is still partial.
 
 This document remains the long-term roadmap. The current implementation status now lives in [XAML Compliance Matrix](./xaml-compliance-matrix.md).
 
@@ -388,8 +390,8 @@ We should call this initiative complete only when all of the following are true:
 
 The next concrete work item should be:
 
-1. add preserved-only schema support for remaining declaration/schema intrinsics such as `x:Subclass`, `x:Members`, and `x:Property`
-2. validate placement without executing code or loading arbitrary CLR types
-3. preserve and serialize those declarations with warnings so valid source can round-trip
+1. add namespace-aware validation for `x:Member`/`x:Property` declaration `Type` values
+2. validate type tokens without executing code or loading arbitrary CLR types
+3. preserve declarations with warnings so valid source can round-trip
 
 That keeps us on the safer parser/validator side of the spec before we consider deeper CLR execution.

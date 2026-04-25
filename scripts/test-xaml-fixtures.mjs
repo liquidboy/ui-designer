@@ -1979,6 +1979,77 @@ async function runPhase28MetadataCodeDirectiveFixtures() {
   return files.length;
 }
 
+async function runPhase29DeclarationIntrinsicFixtures() {
+  const expectations = {
+    'members-attribute-invalid.xaml': { errors: ['invalid-directive-placement'], warnings: ['unsupported-directive'] },
+    'members-empty-invalid.xaml': { errors: ['missing-member-declarations'], warnings: ['unsupported-directive'] },
+    'members-invalid-item.xaml': { errors: ['invalid-member-declaration-value'], warnings: ['unsupported-directive'] },
+    'members-missing-class.xaml': {
+      errors: ['missing-required-directive'],
+      warnings: ['unrenderable-type', 'unrenderable-member', 'unrenderable-member']
+    },
+    'members-preserved.xaml': {
+      errors: [],
+      warnings: [
+        'unsupported-directive',
+        'unsupported-directive',
+        'unrenderable-type',
+        'unrenderable-member',
+        'unrenderable-member',
+        'unrenderable-type',
+        'unrenderable-member',
+        'unrenderable-member'
+      ]
+    },
+    'members-text-invalid.xaml': {
+      errors: ['missing-member-declarations', 'invalid-member-declaration-value'],
+      warnings: ['unsupported-directive']
+    },
+    'property-missing-name.xaml': {
+      errors: ['missing-required-member'],
+      warnings: ['unsupported-directive', 'unsupported-directive', 'unrenderable-type', 'unrenderable-member']
+    },
+    'property-outside-members-invalid.xaml': {
+      errors: ['invalid-directive-placement'],
+      warnings: ['unrenderable-type', 'unrenderable-member', 'unrenderable-member']
+    },
+    'subclass-child-invalid.xaml': { errors: ['invalid-directive-placement'], warnings: ['unsupported-directive'] },
+    'subclass-missing-class.xaml': { errors: ['missing-required-directive'], warnings: [] },
+    'subclass-preserved.xaml': { errors: [], warnings: ['unsupported-directive', 'unsupported-directive'] }
+  };
+  const files = await listFixtureFiles('phase29-declaration-intrinsics');
+
+  for (const fileName of files) {
+    const input = await readFixture('phase29-declaration-intrinsics', fileName);
+    const result = parseAndValidateXaml(input);
+    const expected = expectations[fileName];
+    assert.ok(expected, `Missing declaration intrinsic expectation for ${fileName}`);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'error'), expected.errors, `${fileName} validation errors`);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'warning'), expected.warnings, `${fileName} validation warnings`);
+
+    if (expected.errors.length > 0) {
+      continue;
+    }
+
+    const serialized = serializeXamlDocumentNode(result.document);
+    const reparsed = parseAndValidateXaml(serialized);
+    assert.deepEqual(diagnosticsWithSeverity(reparsed.validation, 'error'), [], `${fileName} round-trip validation errors`);
+
+    if (fileName === 'subclass-preserved.xaml') {
+      assert.match(serialized, /x:Class="Example\.RootView"/);
+      assert.match(serialized, /x:Subclass="Example\.RootViewBase"/);
+    }
+
+    if (fileName === 'members-preserved.xaml') {
+      assert.match(serialized, /<x:Members>/);
+      assert.match(serialized, /<x:Property Name="Title" Type="x:String" \/>/);
+      assert.match(serialized, /<x:Member Name="Count" Type="x:Int32" \/>/);
+    }
+  }
+
+  return files.length;
+}
+
 async function runPhase6CollectionFixtures() {
   const expectations = {
     'theme-dictionary-xkey.xaml': { errors: [], warnings: [] },
@@ -2046,7 +2117,8 @@ const phase25Count = await runPhase25TypeArgumentFixtures();
 const phase26Count = await runPhase26TemplateNamescopeFixtures();
 const phase27Count = await runPhase27ConstructionDirectiveFixtures();
 const phase28Count = await runPhase28MetadataCodeDirectiveFixtures();
+const phase29Count = await runPhase29DeclarationIntrinsicFixtures();
 
 console.log(
-  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources, ${phase9Count} serializer, ${phase10Count} designer serializer, ${phase11Count} XML scope, ${phase12Count} object resources, ${phase13Count} dynamic resources, ${phase14Count} whitespace normalization, ${phase15Count} intrinsic arrays, ${phase16Count} intrinsic static references, ${phase17Count} intrinsic references, ${phase18Count} namescope boundaries, ${phase19Count} reference identity, ${phase20Count} schema text syntax, ${phase21Count} intrinsic object elements, ${phase22Count} CLR type resolution, ${phase23Count} primitive decimals, ${phase24Count} static resolution, ${phase25Count} type arguments, ${phase26Count} template namescopes, ${phase27Count} construction directives, ${phase28Count} metadata/code directives).`
+  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources, ${phase9Count} serializer, ${phase10Count} designer serializer, ${phase11Count} XML scope, ${phase12Count} object resources, ${phase13Count} dynamic resources, ${phase14Count} whitespace normalization, ${phase15Count} intrinsic arrays, ${phase16Count} intrinsic static references, ${phase17Count} intrinsic references, ${phase18Count} namescope boundaries, ${phase19Count} reference identity, ${phase20Count} schema text syntax, ${phase21Count} intrinsic object elements, ${phase22Count} CLR type resolution, ${phase23Count} primitive decimals, ${phase24Count} static resolution, ${phase25Count} type arguments, ${phase26Count} template namescopes, ${phase27Count} construction directives, ${phase28Count} metadata/code directives, ${phase29Count} declaration intrinsics).`
 );

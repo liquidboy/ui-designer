@@ -234,6 +234,28 @@ Supported preserved forms:
 </Button>
 ```
 
+## Declaration Intrinsics
+
+Current status:
+
+1. `x:Subclass` parses as a preserved intrinsic XAML directive.
+2. `x:Subclass` is valid only on the document root object and requires `x:Class` on that object.
+3. `x:Members` parses as a preserved directive property element on the document root object and requires root `x:Class`.
+4. `x:Members` accepts only `x:Member` and `x:Property` object declarations.
+5. `x:Member` and `x:Property` declarations require `Name` and `Type` metadata.
+6. Declaration metadata is preserved and serialized with warnings; no CLR members or types are generated in v1.
+
+Supported preserved form:
+
+```xaml
+<Canvas xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="Example.RootView" x:Subclass="Example.RootViewBase">
+  <x:Members>
+    <x:Property Name="Title" Type="x:String" />
+    <x:Member Name="Count" Type="x:Int32" />
+  </x:Members>
+</Canvas>
+```
+
 ## Intrinsic Arrays
 
 Current status:

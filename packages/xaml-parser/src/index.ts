@@ -89,7 +89,8 @@ const XAML_PROPERTY_ELEMENT_DIRECTIVES = new Set([
   'Arguments',
   'ConstructorArgs',
   'FactoryMethod',
-  'InitializationText'
+  'InitializationText',
+  'Members'
 ]);
 
 interface SourceLocator {

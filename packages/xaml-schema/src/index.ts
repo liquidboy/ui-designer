@@ -460,6 +460,11 @@ export const xamlIntrinsicDirectives = [
     kind: 'directive',
     isRuntimeSupported: false
   }),
+  member('Subclass', 'string', {
+    namespaceUri: XAML_LANGUAGE_NAMESPACE,
+    kind: 'directive',
+    isRuntimeSupported: false
+  }),
   member('ClassModifier', 'string', {
     namespaceUri: XAML_LANGUAGE_NAMESPACE,
     kind: 'directive',
@@ -496,6 +501,11 @@ export const xamlIntrinsicDirectives = [
     isRuntimeSupported: false
   }),
   member('InitializationText', 'string', {
+    namespaceUri: XAML_LANGUAGE_NAMESPACE,
+    kind: 'directive',
+    isRuntimeSupported: false
+  }),
+  member('Members', 'object', {
     namespaceUri: XAML_LANGUAGE_NAMESPACE,
     kind: 'directive',
     isRuntimeSupported: false
@@ -613,6 +623,26 @@ export const xamlIntrinsicTypes = [
     ],
     contentProperty: 'Xml',
     allowsText: true,
+    allowsChildren: false,
+    isRuntimeSupported: false
+  }),
+  typeDefinition('Member', {
+    namespaceUri: XAML_LANGUAGE_NAMESPACE,
+    members: [
+      member('Name', 'string', { isRuntimeSupported: false }),
+      member('Type', 'string', { isRuntimeSupported: false })
+    ],
+    allowsText: false,
+    allowsChildren: false,
+    isRuntimeSupported: false
+  }),
+  typeDefinition('Property', {
+    namespaceUri: XAML_LANGUAGE_NAMESPACE,
+    members: [
+      member('Name', 'string', { isRuntimeSupported: false }),
+      member('Type', 'string', { isRuntimeSupported: false })
+    ],
+    allowsText: false,
     allowsChildren: false,
     isRuntimeSupported: false
   }),
@@ -2127,6 +2157,11 @@ function validateDirectiveSemantics(
     return;
   }
 
+  if (definition.name === 'Subclass' || definition.name === 'Members') {
+    validateXamlDeclarationDirective(object, member, definition, diagnostics, context);
+    return;
+  }
+
   if (
     definition.name === 'FactoryMethod' ||
     definition.name === 'Arguments' ||
@@ -2289,6 +2324,112 @@ function validateXamlMarkupCompileDirective(
       'Directive "x:FieldModifier" requires x:Name on the same object.',
       member
     ));
+  }
+}
+
+function isXamlMembersDirective(member: XamlMemberNode): boolean {
+  return isXamlDirectiveNamed(member, 'Members');
+}
+
+function isXamlDeclarationMemberObject(object: XamlObjectNode): boolean {
+  return isXamlObjectElement(object, ['Member', 'Property']);
+}
+
+function validateXamlDeclarationDirective(
+  object: XamlObjectNode,
+  member: XamlMemberNode,
+  definition: XamlMemberDefinition,
+  diagnostics: XamlDiagnostic[],
+  context: XamlValidationContext
+): void {
+  if (definition.name === 'Subclass') {
+    validateRequiredDirectiveText(member, definition.name, diagnostics);
+
+    if (object !== context.rootObject) {
+      diagnostics.push(validationDiagnostic(
+        'error',
+        'invalid-directive-placement',
+        'Directive "x:Subclass" is only valid on the document root object.',
+        member
+      ));
+      return;
+    }
+
+    if (!hasXamlDirective(object, 'Class')) {
+      diagnostics.push(validationDiagnostic(
+        'error',
+        'missing-required-directive',
+        'Directive "x:Subclass" requires x:Class on the same root object.',
+        member
+      ));
+    }
+    return;
+  }
+
+  if (definition.name !== 'Members') {
+    return;
+  }
+
+  if (member.syntax !== 'propertyElement') {
+    diagnostics.push(validationDiagnostic(
+      'error',
+      'invalid-directive-placement',
+      'Directive "x:Members" is only valid as a property element.',
+      member
+    ));
+    return;
+  }
+
+  if (object !== context.rootObject) {
+    diagnostics.push(validationDiagnostic(
+      'error',
+      'invalid-directive-placement',
+      'Directive "x:Members" is only valid on the document root object.',
+      member
+    ));
+    return;
+  }
+
+  if (!hasXamlDirective(object, 'Class')) {
+    diagnostics.push(validationDiagnostic(
+      'error',
+      'missing-required-directive',
+      'Directive "x:Members" requires x:Class on the document root object.',
+      member
+    ));
+  }
+
+  const declarationValues = member.values.filter((value): value is XamlObjectNode => value.kind === 'object');
+  if (declarationValues.length === 0) {
+    diagnostics.push(validationDiagnostic(
+      'error',
+      'missing-member-declarations',
+      'Directive "x:Members" requires one or more x:Member or x:Property declarations.',
+      member
+    ));
+  }
+
+  const textValue = member.values.find((value): value is XamlTextNode => {
+    return value.kind === 'text' && Boolean(value.text.trim());
+  });
+  if (textValue) {
+    diagnostics.push(validationDiagnostic(
+      'error',
+      'invalid-member-declaration-value',
+      'Directive "x:Members" expects x:Member or x:Property object values.',
+      textValue
+    ));
+  }
+
+  for (const declaration of declarationValues) {
+    if (!isXamlDeclarationMemberObject(declaration)) {
+      diagnostics.push(validationDiagnostic(
+        'error',
+        'invalid-member-declaration-value',
+        'Directive "x:Members" only allows x:Member or x:Property object values.',
+        declaration
+      ));
+    }
   }
 }
 
@@ -2758,6 +2899,60 @@ function objectContentText(object: XamlObjectNode, registry: XamlVocabularyRegis
   return textFromValues(valuesForResolvedMember(object, type, type.contentProperty, registry));
 }
 
+function objectMemberText(
+  object: XamlObjectNode,
+  type: XamlTypeDefinition,
+  memberName: string,
+  registry: XamlVocabularyRegistry
+): string {
+  const memberNode = findResolvedPropertyMember(object, type, memberName, registry);
+  return memberNode ? scalarTextFromValues(memberNode.values).trim() : '';
+}
+
+function validateDeclarationMemberObject(
+  parentMember: XamlMemberNode,
+  object: XamlObjectNode,
+  diagnostics: XamlDiagnostic[],
+  registry: XamlVocabularyRegistry
+): void {
+  if (!isXamlDeclarationMemberObject(object)) {
+    return;
+  }
+
+  if (!isXamlMembersDirective(parentMember)) {
+    diagnostics.push(validationDiagnostic(
+      'error',
+      'invalid-directive-placement',
+      `Intrinsic "x:${object.type.localName}" is only valid inside x:Members.`,
+      object
+    ));
+    return;
+  }
+
+  const type = resolveXamlType(object.type, registry);
+  if (!type) {
+    return;
+  }
+
+  if (!objectMemberText(object, type, 'Name', registry)) {
+    diagnostics.push(validationDiagnostic(
+      'error',
+      'missing-required-member',
+      `Intrinsic "x:${type.name}" requires a Name member.`,
+      object
+    ));
+  }
+
+  if (!objectMemberText(object, type, 'Type', registry)) {
+    diagnostics.push(validationDiagnostic(
+      'error',
+      'missing-required-member',
+      `Intrinsic "x:${type.name}" requires a Type member.`,
+      object
+    ));
+  }
+}
+
 function validateCodeAdjacentIntrinsicObjectPlacement(
   parent: XamlObjectNode,
   member: XamlMemberNode,
@@ -2905,6 +3100,7 @@ function validateContentMember(
         ));
       }
 
+      validateDeclarationMemberObject(member, value, diagnostics, registry);
       validateCodeAdjacentIntrinsicObjectPlacement(object, member, value, diagnostics, registry, context);
       validateObjectNode(value, diagnostics, registry, context);
       continue;
@@ -3046,6 +3242,7 @@ function validateObjectNode(
 
     for (const value of memberNode.values) {
       if (value.kind === 'object') {
+        validateDeclarationMemberObject(memberNode, value, diagnostics, registry);
         validateCodeAdjacentIntrinsicObjectPlacement(object, memberNode, value, diagnostics, registry, localContext);
         validateObjectNode(value, diagnostics, registry, localContext);
       }
