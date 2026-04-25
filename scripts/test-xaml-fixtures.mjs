@@ -1149,11 +1149,17 @@ async function runPhase15IntrinsicArrayFixtures() {
     'array-items-property.xaml': { errors: [], warnings: [] },
     'array-invalid-item.xaml': { errors: ['invalid-array-item-type'], warnings: [] },
     'array-missing-type.xaml': { errors: ['missing-required-member'], warnings: [] },
+    'array-primitive-boolean-resource-runtime.xaml': { errors: [], warnings: [] },
+    'array-primitive-invalid-item.xaml': { errors: ['invalid-array-item-type'], warnings: [] },
+    'array-primitive-invalid-value.xaml': { errors: ['invalid-number-value'], warnings: [] },
+    'array-primitive-number-runtime.xaml': { errors: [], warnings: [] },
+    'array-primitive-string-runtime.xaml': { errors: [], warnings: [] },
     'array-property-runtime.xaml': { errors: [], warnings: [] },
     'array-resource-static-runtime.xaml': { errors: [], warnings: [] },
     'array-type-extension.xaml': { errors: [], warnings: [] },
     'array-type-object-element.xaml': { errors: [], warnings: [] },
-    'array-type-extension-missing.xaml': { errors: ['missing-markup-extension-argument'], warnings: [] }
+    'array-type-extension-missing.xaml': { errors: ['missing-markup-extension-argument'], warnings: [] },
+    'array-unknown-type.xaml': { errors: ['unknown-xaml-type'], warnings: [] }
   };
   const files = await listFixtureFiles('phase15-intrinsic-array');
 
@@ -1171,7 +1177,13 @@ async function runPhase15IntrinsicArrayFixtures() {
 
     const lowered = lowerXamlDocument(result.document);
 
-    if (!['array-property-runtime.xaml', 'array-resource-static-runtime.xaml'].includes(fileName)) {
+    if (![
+      'array-primitive-boolean-resource-runtime.xaml',
+      'array-primitive-number-runtime.xaml',
+      'array-primitive-string-runtime.xaml',
+      'array-property-runtime.xaml',
+      'array-resource-static-runtime.xaml'
+    ].includes(fileName)) {
       assert.equal(result.document.root.type.localName, 'Array');
       assert.equal(result.document.root.type.namespaceUri, XAML_LANGUAGE_NAMESPACE);
       assert.equal(lowered.root.type, 'Array');
@@ -1204,6 +1216,24 @@ async function runPhase15IntrinsicArrayFixtures() {
       assert.equal(content[1]?.attributes.Text, 'Second runtime item');
       assert.equal(runtime.root.children.length, 0);
       assert.equal(lowered.root.children[0]?.type, 'Array');
+    }
+
+    if (fileName === 'array-primitive-string-runtime.xaml') {
+      const runtime = parseRuntimeXaml(input);
+      assert.deepEqual(runtime.root.attributes.Content, ['Alpha', 'Beta']);
+      assert.equal(lowered.root.children[0]?.type, 'Array');
+      assert.equal(lowered.root.children[0]?.children[0]?.type, 'String');
+    }
+
+    if (fileName === 'array-primitive-number-runtime.xaml') {
+      const runtime = parseRuntimeXaml(input);
+      assert.deepEqual(runtime.root.attributes.Content, [1, 2]);
+      assert.equal(lowered.root.children[0]?.attributes.Type, '{x:Type x:Int32}');
+    }
+
+    if (fileName === 'array-primitive-boolean-resource-runtime.xaml') {
+      const runtime = parseRuntimeXaml(input);
+      assert.deepEqual(runtime.root.children[0]?.attributes.Content, [true, false]);
     }
 
     if (fileName === 'array-resource-static-runtime.xaml') {

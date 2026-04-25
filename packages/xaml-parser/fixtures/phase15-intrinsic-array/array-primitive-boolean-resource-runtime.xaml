@@ -1,0 +1,11 @@
+<Canvas xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Canvas.Resources>
+    <ResourceDictionary>
+      <x:Array x:Key="Flags" Type="x:Boolean">
+        <x:Boolean>true</x:Boolean>
+        <x:Boolean>false</x:Boolean>
+      </x:Array>
+    </ResourceDictionary>
+  </Canvas.Resources>
+  <Button Content="{StaticResource Flags}" />
+</Canvas>

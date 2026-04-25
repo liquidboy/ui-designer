@@ -459,6 +459,32 @@ export const xamlIntrinsicDirectives = [
   })
 ] as const;
 
+const xamlPrimitiveTypeSyntax = {
+  String: 'string',
+  Boolean: 'boolean',
+  Byte: 'number',
+  SByte: 'number',
+  Int16: 'number',
+  Int32: 'number',
+  Int64: 'number',
+  UInt16: 'number',
+  UInt32: 'number',
+  UInt64: 'number',
+  Single: 'number',
+  Double: 'number',
+  Decimal: 'number'
+} as const satisfies Record<string, XamlTextSyntaxKind>;
+
+function xamlPrimitiveTypeDefinition(name: keyof typeof xamlPrimitiveTypeSyntax): XamlTypeDefinition {
+  return typeDefinition(name, {
+    namespaceUri: XAML_LANGUAGE_NAMESPACE,
+    members: [member('Value', xamlPrimitiveTypeSyntax[name], { isContent: true })],
+    contentProperty: 'Value',
+    allowsText: true,
+    allowsChildren: false
+  });
+}
+
 export const xamlIntrinsicTypes = [
   typeDefinition('Null', {
     namespaceUri: XAML_LANGUAGE_NAMESPACE,
@@ -480,9 +506,22 @@ export const xamlIntrinsicTypes = [
     ],
     contentProperty: 'Items',
     collectionKind: 'list',
-    allowsText: false,
+    allowsText: true,
     allowsChildren: true
   }),
+  xamlPrimitiveTypeDefinition('String'),
+  xamlPrimitiveTypeDefinition('Boolean'),
+  xamlPrimitiveTypeDefinition('Byte'),
+  xamlPrimitiveTypeDefinition('SByte'),
+  xamlPrimitiveTypeDefinition('Int16'),
+  xamlPrimitiveTypeDefinition('Int32'),
+  xamlPrimitiveTypeDefinition('Int64'),
+  xamlPrimitiveTypeDefinition('UInt16'),
+  xamlPrimitiveTypeDefinition('UInt32'),
+  xamlPrimitiveTypeDefinition('UInt64'),
+  xamlPrimitiveTypeDefinition('Single'),
+  xamlPrimitiveTypeDefinition('Double'),
+  xamlPrimitiveTypeDefinition('Decimal'),
   typeDefinition('Type', {
     namespaceUri: XAML_LANGUAGE_NAMESPACE,
     members: [
@@ -1099,10 +1138,41 @@ function localTypeNameFromTextSyntax(value: string): string | null {
   }
 
   const separator = trimmed.lastIndexOf(':');
-  return separator >= 0 ? trimmed.slice(separator + 1) : trimmed;
+  const unprefixed = separator >= 0 ? trimmed.slice(separator + 1) : trimmed;
+  const dot = unprefixed.lastIndexOf('.');
+  return dot >= 0 ? unprefixed.slice(dot + 1) : unprefixed;
+}
+
+function typeNameHasExplicitQualifier(value: string): boolean {
+  return value.includes(':') || value.includes('.');
+}
+
+function primitiveTextSyntaxFromTypeName(typeName: string): XamlTextSyntaxKind | null {
+  const localName = localTypeNameFromTextSyntax(typeName);
+  if (!localName || !(localName in xamlPrimitiveTypeSyntax)) {
+    return null;
+  }
+
+  if (localName === 'String' && !typeNameHasExplicitQualifier(typeName)) {
+    return null;
+  }
+
+  return xamlPrimitiveTypeSyntax[localName as keyof typeof xamlPrimitiveTypeSyntax];
+}
+
+function isPrimitiveXamlTypeName(typeName: string): boolean {
+  return primitiveTextSyntaxFromTypeName(typeName) != null;
+}
+
+function isPrimitiveXamlObject(object: XamlObjectNode): boolean {
+  return object.type.namespaceUri === XAML_LANGUAGE_NAMESPACE && object.type.localName in xamlPrimitiveTypeSyntax;
 }
 
 function registryHasTypeName(typeName: string, registry: XamlVocabularyRegistry): boolean {
+  if (isPrimitiveXamlTypeName(typeName)) {
+    return true;
+  }
+
   const localName = localTypeNameFromTextSyntax(typeName);
   return localName ? registry.types.some((type) => type.name === localName) : false;
 }
@@ -1554,12 +1624,12 @@ function findResolvedPropertyMember(
   });
 }
 
-function objectValuesForResolvedMember(
+function valuesForResolvedMember(
   object: XamlObjectNode,
   type: XamlTypeDefinition,
   memberName: string,
   registry: XamlVocabularyRegistry
-): XamlObjectNode[] {
+): XamlValueNode[] {
   return object.members.flatMap((memberNode) => {
     if (memberNode.syntax === 'attribute' || memberNode.isDirective) {
       return [];
@@ -1575,8 +1645,18 @@ function objectValuesForResolvedMember(
       return [];
     }
 
-    return memberNode.values.filter((value): value is XamlObjectNode => value.kind === 'object');
+    return memberNode.values;
   });
+}
+
+function objectValuesForResolvedMember(
+  object: XamlObjectNode,
+  type: XamlTypeDefinition,
+  memberName: string,
+  registry: XamlVocabularyRegistry
+): XamlObjectNode[] {
+  return valuesForResolvedMember(object, type, memberName, registry)
+    .filter((value): value is XamlObjectNode => value.kind === 'object');
 }
 
 function validateXamlArraySemantics(
@@ -1611,7 +1691,72 @@ function validateXamlArraySemantics(
     return;
   }
 
-  for (const item of objectValuesForResolvedMember(object, type, 'Items', registry)) {
+  if (!registryHasTypeName(typeText, registry)) {
+    diagnostics.push(validationDiagnostic(
+      'error',
+      'unknown-xaml-type',
+      `Intrinsic "x:Array" references unknown item type "${typeText}".`,
+      typeMember ?? object
+    ));
+    return;
+  }
+
+  const primitiveSyntax = primitiveTextSyntaxFromTypeName(typeText);
+  const itemValues = valuesForResolvedMember(object, type, 'Items', registry);
+
+  if (primitiveSyntax) {
+    for (const value of itemValues) {
+      if (value.kind === 'text') {
+        const text = value.text.trim();
+        if (text && !isValidXamlTextValue(text, primitiveSyntax)) {
+          diagnostics.push(validationDiagnostic(
+            'error',
+            'invalid-array-item-value',
+            `x:Array Type="${typeText}" contains a primitive item that is not valid ${primitiveSyntax} text.`,
+            value
+          ));
+        }
+        continue;
+      }
+
+      if (value.kind !== 'object') {
+        continue;
+      }
+
+      if (isXamlObjectElement(value, ['Null', 'NullExtension'])) {
+        continue;
+      }
+
+      if (!isPrimitiveXamlObject(value) || value.type.localName !== itemTypeName) {
+        diagnostics.push(validationDiagnostic(
+          'error',
+          'invalid-array-item-type',
+          `x:Array Type="${typeText}" does not allow "${formatQualifiedName(value.type)}" items.`,
+          value
+        ));
+      }
+    }
+    return;
+  }
+
+  for (const value of itemValues) {
+    if (value.kind === 'text') {
+      if (value.text.trim()) {
+        diagnostics.push(validationDiagnostic(
+          'error',
+          'invalid-array-item-type',
+          `x:Array Type="${typeText}" does not allow primitive text items.`,
+          value
+        ));
+      }
+      continue;
+    }
+
+    if (value.kind !== 'object') {
+      continue;
+    }
+
+    const item = value;
     const resolvedItemType = resolveXamlType(item.type, registry);
     if (!resolvedItemType || resolvedItemType.name === itemTypeName) {
       continue;
@@ -1835,6 +1980,13 @@ function validateContentMember(
       `Type "${type.name}" received content, but no content property is declared yet.`,
       object
     ));
+  }
+
+  const contentDefinition = type.contentProperty
+    ? resolveXamlMember(type, type.contentProperty, registry)
+    : null;
+  if (contentDefinition) {
+    validateTextSyntax(member, contentDefinition, diagnostics);
   }
 
   validateMarkupExtensions(member, diagnostics, registry, context);

@@ -1321,6 +1321,46 @@ function isXamlArrayObject(object: XamlObjectNode): boolean {
   return isIntrinsicObject(object, ['Array', 'ArrayExtension']);
 }
 
+const xamlPrimitiveArrayItemSyntax = new Map<string, XamlMemberDefinition['valueSyntax']>([
+  ['String', 'string'],
+  ['Boolean', 'boolean'],
+  ['Byte', 'number'],
+  ['SByte', 'number'],
+  ['Int16', 'number'],
+  ['Int32', 'number'],
+  ['Int64', 'number'],
+  ['UInt16', 'number'],
+  ['UInt32', 'number'],
+  ['UInt64', 'number'],
+  ['Single', 'number'],
+  ['Double', 'number'],
+  ['Decimal', 'number']
+]);
+
+function localTypeNameFromText(value: string): string {
+  const unprefixed = value.includes(':') ? value.slice(value.lastIndexOf(':') + 1) : value;
+  return unprefixed.includes('.') ? unprefixed.slice(unprefixed.lastIndexOf('.') + 1) : unprefixed;
+}
+
+function typeNameHasExplicitQualifier(value: string): boolean {
+  return value.includes(':') || value.includes('.');
+}
+
+function primitiveArrayItemSyntaxFromTypeName(typeName: string): XamlMemberDefinition['valueSyntax'] | null {
+  const trimmed = typeName.trim();
+  const localName = localTypeNameFromText(trimmed);
+  const syntax = xamlPrimitiveArrayItemSyntax.get(localName);
+  if (!syntax) {
+    return null;
+  }
+
+  return localName === 'String' && !typeNameHasExplicitQualifier(trimmed) ? null : syntax;
+}
+
+function isXamlPrimitiveObject(object: XamlObjectNode): boolean {
+  return object.type.namespaceUri === XAML_LANGUAGE_NAMESPACE && xamlPrimitiveArrayItemSyntax.has(object.type.localName);
+}
+
 function coerceRuntimePrimitive(value: unknown): XamlPrimitive {
   if (value == null) {
     return null;
@@ -1577,26 +1617,57 @@ function evaluateMarkupExtension(extension: XamlMarkupExtensionNode, options: Xa
   return extension.raw;
 }
 
-function evaluateXamlArrayItem(value: XamlValueNode, options: XamlLoweringContext): XamlRuntimeResourceValue | undefined {
+function evaluateXamlPrimitiveObject(object: XamlObjectNode, options: XamlLoweringContext): XamlPrimitive | undefined {
+  if (!isXamlPrimitiveObject(object)) {
+    return undefined;
+  }
+
+  const syntax = xamlPrimitiveArrayItemSyntax.get(object.type.localName);
+  if (!syntax) {
+    return undefined;
+  }
+
+  return coerceXamlTextValue(intrinsicObjectMemberText(object, 'Value', options.registry, options), syntax);
+}
+
+function evaluateXamlArrayItem(
+  value: XamlValueNode,
+  itemSyntax: XamlMemberDefinition['valueSyntax'] | null,
+  options: XamlLoweringContext
+): XamlRuntimeResourceValue | undefined {
   if (value.kind === 'object') {
+    const primitive = evaluateXamlPrimitiveObject(value, options);
+    if (primitive !== undefined) {
+      return primitive;
+    }
+
     const evaluated = evaluateIntrinsicObject(value, options);
     return evaluated !== undefined ? evaluated : lowerObjectNode(value, options.registry, options);
   }
 
   if (value.kind === 'markupExtension') {
-    return evaluateMarkupExtension(value, options);
+    const evaluated = evaluateMarkupExtension(value, options);
+    return typeof evaluated === 'string' && itemSyntax
+      ? coerceXamlTextValue(evaluated, itemSyntax)
+      : evaluated;
   }
 
   const text = value.preservesXmlSpace ? value.text : normalizeDefaultXmlWhitespace(value.text);
-  return text ? text : undefined;
+  if (!text) {
+    return undefined;
+  }
+
+  return itemSyntax ? coerceXamlTextValue(text, itemSyntax) : text;
 }
 
 function evaluateXamlArrayObject(object: XamlObjectNode, options: XamlLoweringContext): XamlRuntimeArrayValue {
+  const typeName = intrinsicObjectMemberText(object, 'Type', options.registry, options);
+  const itemSyntax = primitiveArrayItemSyntaxFromTypeName(typeName);
   const values = intrinsicObjectMemberValues(object, 'Items', options.registry);
   const items: XamlRuntimeArrayValue = [];
 
   for (const value of values) {
-    const evaluated = evaluateXamlArrayItem(value, options);
+    const evaluated = evaluateXamlArrayItem(value, itemSyntax, options);
     if (evaluated !== undefined) {
       items.push(evaluated);
     }

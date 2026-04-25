@@ -49,8 +49,8 @@ The repo now has the core compliance foundation in place:
 11. Object-valued runtime resources now support scoped known control resources, key validation, and object resources that depend on earlier primitive resources in the same dictionary.
 12. `DynamicResource` runtime lowering now supports primitive/object fallback to scoped resources and runtime override maps for update semantics without changing XAML source.
 13. Default text lowering now collapses XML whitespace runs and trims text values, while `xml:space="preserve"` keeps exact scoped text and `xml:space="default"` resets back to normalized behavior.
-14. Intrinsic `x:Array` object elements now parse, validate required `Type`, validate simple object item types, serialize, preserve structural authoring compatibility nodes, and runtime-lower single member/resource values to JavaScript arrays.
-15. `{x:Type ...}` now validates known simple object type names, preserves authoring source, and runtime-lowers to type-name strings for scenarios such as `x:Array Type`.
+14. Intrinsic `x:Array` object elements now parse, validate required `Type`, validate simple object and supported primitive item types, serialize, preserve structural authoring compatibility nodes, and runtime-lower single member/resource values to JavaScript arrays.
+15. `{x:Type ...}` now validates known simple object and supported primitive type names, preserves authoring source, and runtime-lowers to type-name strings for scenarios such as `x:Array Type`.
 16. `{x:Static ...}` now validates required type-qualified member references, preserves authoring source, and runtime-lowers to stable member-token strings.
 17. `{x:Reference ...}` now validates required names, supports forward references within the active namescope, preserves authoring source, and runtime-lowers supported object-valued references to the same lowered object instance.
 18. `ResourceDictionary` now creates a local namescope boundary, so resource-local `x:Name` values are isolated from the visual tree while dictionary-local `x:Reference` expressions resolve within that dictionary.
@@ -59,18 +59,18 @@ The repo now has the core compliance foundation in place:
 21. Object-element forms for supported intrinsic `x:Null`, `x:Type`, `x:Static`, and `x:Reference` now validate, serialize, and runtime-lower when the target member can safely represent the value.
 22. The validator currently covers known namespaces/types/members, duplicate scalar members, content rules, enum/primitive/color checks, scoped namescope collisions for `x:Name`, root-only placement for `x:Class`, collection item-type constraints, dictionary key validation, and warning-only preservation for unsupported markup extensions.
 
-Approximate targeted core `MS-XAML-2017` support: **82%**. This is a progress estimate for the scoped language/object-mapping work, not a claim of complete XAML or WPF vocabulary parity.
+Approximate targeted core `MS-XAML-2017` support: **84%**. This is a progress estimate for the scoped language/object-mapping work, not a claim of complete XAML or WPF vocabulary parity.
 
 The main remaining gaps are now:
 
-1. Primitive CLR item type coercion and richer CLR type-name resolution for `x:Array Type`.
+1. Range-aware primitive numeric validation and fuller CLR namespace/type-name resolution beyond the scoped XAML primitive aliases.
 2. Richer namescope boundaries for future templates and object islands.
 3. CLR static value resolution and generic type execution.
 
 Current limitation:
 
 1. Structured markup extension parsing currently applies to attribute values and property-element text; supported intrinsic object elements now runtime-lower for the scoped scalar forms plus `x:Array` member/resource arrays, while unsupported object-element extension forms are still deferred.
-2. Runtime resource lookup supports primitive resources, known control object resources, keyed `x:Array` resources, and dynamic resource overrides; resource object retrieval still creates resource instances, and full WPF-style resource invalidation and dependency tracking are still outside the current target.
+2. Runtime resource lookup supports primitive resources, known control object resources, keyed `x:Array` resources with scoped primitive item coercion, and dynamic resource overrides; resource object retrieval still creates resource instances, and full WPF-style resource invalidation and dependency tracking are still outside the current target.
 3. Runtime `Binding` support is intentionally v1-only: one-way path lookup, no converters, and no multi-binding.
 4. Designer infoset edit propagation is intentionally conservative: if a lowered compatibility path cannot be mapped safely back to the infoset, the designer falls back to lowered serialization instead of risking stale or corrupt semantic output.
 5. `ResourceDictionary` is the first nested namescope boundary; template/object-island namescopes remain deferred until those vocabularies exist.
@@ -379,8 +379,8 @@ We should call this initiative complete only when all of the following are true:
 
 The next concrete work item should be:
 
-1. add primitive CLR item type coercion for supported `x:Array Type` values such as strings, numbers, and booleans
-2. centralize richer type-name resolution so prefixed and intrinsic CLR type names validate consistently
-3. add fixtures for primitive typed arrays, unknown primitive type names, and mixed invalid item values
+1. add range-aware validation for numeric primitive aliases such as `x:Int32`, `x:UInt32`, and `x:Byte`
+2. expand CLR namespace/type-name resolution beyond scoped primitive aliases
+3. add fixtures for numeric boundary values, CLR namespace-qualified type names, and invalid out-of-range items
 
-That moves `x:Array` from object-item arrays toward more complete spec-shaped item typing without taking on full generic type execution yet.
+That tightens primitive array semantics without taking on full generic type execution yet.

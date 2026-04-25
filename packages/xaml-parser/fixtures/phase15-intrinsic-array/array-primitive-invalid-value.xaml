@@ -1,0 +1,7 @@
+<Button xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Button.Content>
+    <x:Array Type="x:Int32">
+      <x:Int32>not-a-number</x:Int32>
+    </x:Array>
+  </Button.Content>
+</Button>
