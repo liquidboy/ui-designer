@@ -247,7 +247,8 @@ Current status:
 3. Static references must provide a type-qualified member token, such as `TextBlock.Text`.
 4. Authoring serialization preserves the original extension or object-element source structure.
 5. Runtime lowering emits the stable member-token string.
-6. CLR/static value resolution remains outside v1.
+6. Validation resolves known schema member tokens, attached member tokens such as `Grid.Row`, and supported `clr-namespace:System` primitive constants such as `sys:Double.NaN`.
+7. CLR/static value execution remains outside v1.
 
 Supported form:
 
@@ -263,6 +264,15 @@ Supported object-element form:
     <x:Static Member="TextBlock.Text" />
   </TextBlock.Text>
 </TextBlock>
+```
+
+Supported CLR primitive constant form:
+
+```xaml
+<TextBlock
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:sys="clr-namespace:System;assembly=mscorlib"
+  Text="{x:Static sys:Double.NaN}" />
 ```
 
 ## Intrinsic References

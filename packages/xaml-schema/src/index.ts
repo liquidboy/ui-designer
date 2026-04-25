@@ -504,6 +504,21 @@ const XAML_DECIMAL_MAX_UNSCALED = 79228162514264337593543950335n;
 const CLR_NAMESPACE_PREFIX = 'clr-namespace:';
 const supportedClrPrimitiveNamespaces = new Set(['System']);
 const supportedClrPrimitiveAssemblies = new Set(['mscorlib', 'System', 'System.Runtime', 'System.Private.CoreLib', 'netstandard']);
+const supportedClrPrimitiveStaticMembers: Readonly<Record<string, readonly string[]>> = {
+  Boolean: ['FalseString', 'TrueString'],
+  Byte: ['MaxValue', 'MinValue'],
+  SByte: ['MaxValue', 'MinValue'],
+  Int16: ['MaxValue', 'MinValue'],
+  Int32: ['MaxValue', 'MinValue'],
+  Int64: ['MaxValue', 'MinValue'],
+  UInt16: ['MaxValue', 'MinValue'],
+  UInt32: ['MaxValue', 'MinValue'],
+  UInt64: ['MaxValue', 'MinValue'],
+  Single: ['Epsilon', 'MaxValue', 'MinValue', 'NaN', 'NegativeInfinity', 'PositiveInfinity'],
+  Double: ['Epsilon', 'MaxValue', 'MinValue', 'NaN', 'NegativeInfinity', 'PositiveInfinity'],
+  Decimal: ['MaxValue', 'MinValue', 'MinusOne', 'One', 'Zero'],
+  String: ['Empty']
+};
 
 function xamlPrimitiveTypeDefinition(name: keyof typeof xamlPrimitiveTypeSyntax): XamlTypeDefinition {
   return typeDefinition(name, {
@@ -1188,6 +1203,11 @@ interface XamlTypeNameResolution {
   isPrimitive: boolean;
 }
 
+interface StaticMemberReference {
+  ownerTypeName: string;
+  memberName: string;
+}
+
 function parseXamlTypeNameText(value: string): XamlTypeNameParts | null {
   const trimmed = value.trim();
   if (!trimmed || trimmed.startsWith('{')) {
@@ -1343,6 +1363,22 @@ function isPrimitiveXamlTypeName(
   return primitiveTextSyntaxFromTypeName(typeName, registry, context) != null;
 }
 
+function resolveTypeDefinitionFromTypeNameReference(
+  typeName: string,
+  registry: XamlVocabularyRegistry,
+  context?: XamlValidationContext
+): XamlTypeDefinition | null {
+  const resolution = resolveXamlTypeNameReference(typeName, registry, context);
+  if (!resolution) {
+    return null;
+  }
+
+  const namespaceUri = resolution.isPrimitive ? XAML_LANGUAGE_NAMESPACE : resolution.namespaceUri;
+  return registry.types.find((type) => {
+    return type.name === resolution.localName && namespacesMatch(namespaceUri, type.namespaceUri);
+  }) ?? null;
+}
+
 function isPrimitiveXamlObject(object: XamlObjectNode): boolean {
   return object.type.namespaceUri === XAML_LANGUAGE_NAMESPACE && object.type.localName in xamlPrimitiveTypeSyntax;
 }
@@ -1458,9 +1494,69 @@ function xamlStaticMemberFromExtension(extension: XamlMarkupExtensionNode): stri
     : '';
 }
 
-function isWellFormedStaticMemberReference(memberName: string): boolean {
+function parseStaticMemberReference(memberName: string): StaticMemberReference | null {
   const separator = memberName.lastIndexOf('.');
-  return separator > 0 && separator < memberName.length - 1;
+  if (separator <= 0 || separator === memberName.length - 1) {
+    return null;
+  }
+
+  return {
+    ownerTypeName: memberName.slice(0, separator),
+    memberName: memberName.slice(separator + 1)
+  };
+}
+
+function isSupportedPrimitiveStaticMember(typeName: string, memberName: string): boolean {
+  return supportedClrPrimitiveStaticMembers[typeName]?.includes(memberName) === true;
+}
+
+function validateXamlStaticMemberReference(
+  memberName: string,
+  diagnostics: XamlDiagnostic[],
+  registry: XamlVocabularyRegistry,
+  context: XamlValidationContext,
+  node: { span?: XamlSourceSpan },
+  intrinsicName: string
+): void {
+  const reference = parseStaticMemberReference(memberName);
+  if (!reference) {
+    diagnostics.push(validationDiagnostic(
+      'error',
+      'invalid-static-member-reference',
+      `${intrinsicName} requires a type-qualified member reference, such as "Type.Member".`,
+      node
+    ));
+    return;
+  }
+
+  const ownerType = resolveTypeDefinitionFromTypeNameReference(reference.ownerTypeName, registry, context);
+  if (!ownerType) {
+    diagnostics.push(validationDiagnostic(
+      'error',
+      'unknown-xaml-type',
+      `${intrinsicName} references unknown owner type "${reference.ownerTypeName}".`,
+      node
+    ));
+    return;
+  }
+
+  if (ownerType.namespaceUri === XAML_LANGUAGE_NAMESPACE && ownerType.name in xamlPrimitiveTypeSyntax) {
+    if (isSupportedPrimitiveStaticMember(ownerType.name, reference.memberName)) {
+      return;
+    }
+  } else if (
+    resolveXamlMember(ownerType, reference.memberName, registry) ||
+    resolveXamlAttachedMember(ownerType.name, reference.memberName, registry)
+  ) {
+    return;
+  }
+
+  diagnostics.push(validationDiagnostic(
+    'error',
+    'unknown-static-member',
+    `${intrinsicName} references unknown member "${reference.memberName}" on type "${reference.ownerTypeName}".`,
+    node
+  ));
 }
 
 function xamlReferenceNameFromExtension(extension: XamlMarkupExtensionNode): string {
@@ -1522,6 +1618,8 @@ function validateXamlTypeExtension(
 function validateXamlStaticExtension(
   extension: XamlMarkupExtensionNode,
   diagnostics: XamlDiagnostic[],
+  registry: XamlVocabularyRegistry,
+  context: XamlValidationContext,
   fallbackNode: XamlMemberNode
 ): void {
   const memberName = xamlStaticMemberFromExtension(extension);
@@ -1535,14 +1633,14 @@ function validateXamlStaticExtension(
     return;
   }
 
-  if (!isWellFormedStaticMemberReference(memberName)) {
-    diagnostics.push(validationDiagnostic(
-      'error',
-      'invalid-static-member-reference',
-      `Markup extension "x:Static" requires a type-qualified member reference, such as "Type.Member".`,
-      extension.span ? extension : fallbackNode
-    ));
-  }
+  validateXamlStaticMemberReference(
+    memberName,
+    diagnostics,
+    registry,
+    context,
+    extension.span ? extension : fallbackNode,
+    'Markup extension "x:Static"'
+  );
 }
 
 function validateXamlReferenceExtension(
@@ -1585,7 +1683,7 @@ function validateMarkupExtensions(
     }
 
     if (isXamlStaticExtension(extension)) {
-      validateXamlStaticExtension(extension, diagnostics, member);
+      validateXamlStaticExtension(extension, diagnostics, registry, context, member);
       continue;
     }
 
@@ -2162,13 +2260,15 @@ function validateXamlIntrinsicObjectSemantics(
 
   if (type.name === 'Static' || type.name === 'StaticExtension') {
     const memberName = textFromRequiredMember(object, type, 'Member', diagnostics, registry);
-    if (memberName && !isWellFormedStaticMemberReference(memberName)) {
-      diagnostics.push(validationDiagnostic(
-        'error',
-        'invalid-static-member-reference',
-        `Intrinsic "x:${type.name}" requires a type-qualified member reference, such as "Type.Member".`,
-        object
-      ));
+    if (memberName) {
+      validateXamlStaticMemberReference(
+        memberName,
+        diagnostics,
+        registry,
+        context,
+        object,
+        `Intrinsic "x:${type.name}"`
+      );
     }
     return;
   }

@@ -51,7 +51,7 @@ The repo now has the core compliance foundation in place:
 13. Default text lowering now collapses XML whitespace runs and trims text values, while `xml:space="preserve"` keeps exact scoped text and `xml:space="default"` resets back to normalized behavior.
 14. Intrinsic `x:Array` object elements now parse, validate required `Type`, validate simple object and supported primitive item types, enforce scoped numeric ranges, serialize, preserve structural authoring compatibility nodes, and runtime-lower single member/resource values to JavaScript arrays.
 15. `{x:Type ...}` now validates known simple object and supported primitive type names, preserves authoring source, and runtime-lowers to type-name strings for scenarios such as `x:Array Type`.
-16. `{x:Static ...}` now validates required type-qualified member references, preserves authoring source, and runtime-lowers to stable member-token strings.
+16. `{x:Static ...}` now validates required type-qualified member references, resolves known schema owner/member tokens and supported CLR primitive constants, preserves authoring source, and runtime-lowers to stable member-token strings.
 17. `{x:Reference ...}` now validates required names, supports forward references within the active namescope, preserves authoring source, and runtime-lowers supported object-valued references to the same lowered object instance.
 18. `ResourceDictionary` now creates a local namescope boundary, so resource-local `x:Name` values are isolated from the visual tree while dictionary-local `x:Reference` expressions resolve within that dictionary.
 19. Runtime lowering caches lowered object nodes for `x:Reference`, preserves shared references during resource graph cloning, and still rejects circular reference chains.
@@ -60,14 +60,15 @@ The repo now has the core compliance foundation in place:
 22. The validator currently covers known namespaces/types/members, duplicate scalar members, content rules, enum/primitive/color checks, scoped namescope collisions for `x:Name`, root-only placement for `x:Class`, collection item-type constraints, dictionary key validation, and warning-only preservation for unsupported markup extensions.
 23. Type-name validation now resolves in-scope XML namespace declarations for `x:Type` and `x:Array Type`, including prefix-qualified `ui-designer` object types and validation-only `clr-namespace:System` primitive aliases such as `sys:Int32`.
 24. `x:Decimal` now validates decimal text separately from generic JavaScript numbers, enforces 28-scale and 96-bit range limits, and lowers runtime decimal values as strings to preserve exact source value fidelity.
+25. Validation-only `x:Static` member resolution now catches unknown static owners and members for known schema types and accepts scoped CLR primitive constants such as `sys:Double.NaN`, `sys:Int32.MaxValue`, and `sys:Decimal.MaxValue`.
 
-Approximate targeted core `MS-XAML-2017` support: **89%**. This is a progress estimate for the scoped language/object-mapping work, not a claim of complete XAML or WPF vocabulary parity.
+Approximate targeted core `MS-XAML-2017` support: **90%**. This is a progress estimate for the scoped language/object-mapping work, not a claim of complete XAML or WPF vocabulary parity.
 
 The main remaining gaps are now:
 
-1. Validation-only `x:Static` member resolution and future CLR static value execution.
+1. Validation-only `x:TypeArguments` type-name list parsing and future generic execution.
 2. Richer namescope boundaries for future templates and object islands.
-3. Arbitrary CLR type loading and generic type execution.
+3. Arbitrary CLR type loading and CLR static value execution.
 
 Current limitation:
 
@@ -381,8 +382,8 @@ We should call this initiative complete only when all of the following are true:
 
 The next concrete work item should be:
 
-1. add validation-only `x:Static` member resolution for known schema types
-2. support scoped CLR primitive constants where they can be represented without loading arbitrary assemblies
-3. add fixtures for unknown static owners, unknown members, and preserved runtime strings for unresolved-but-well-formed cases
+1. add validation-only parsing/resolution for `x:TypeArguments` type-name lists
+2. support namespace-qualified and `clr-namespace:System` primitive aliases in those lists
+3. add fixtures for valid preserved generic metadata, unknown type arguments, and malformed type-argument syntax
 
-That improves static-member fidelity without taking on arbitrary CLR type loading yet.
+That improves generic metadata fidelity without taking on generic type execution yet.

@@ -1674,6 +1674,59 @@ async function runPhase23PrimitiveDecimalFixtures() {
   return files.length;
 }
 
+async function runPhase24StaticResolutionFixtures() {
+  const expectations = {
+    'static-attached-member.xaml': { errors: [], warnings: [] },
+    'static-clr-decimal-constant.xaml': { errors: [], warnings: [] },
+    'static-clr-double-constant.xaml': { errors: [], warnings: [] },
+    'static-clr-int32-constant.xaml': { errors: [], warnings: [] },
+    'static-clr-unknown-constant.xaml': { errors: ['unknown-static-member'], warnings: [] },
+    'static-object-unknown-member.xaml': { errors: ['unknown-static-member'], warnings: [] },
+    'static-prefixed-ui-member.xaml': { errors: [], warnings: [] },
+    'static-unknown-clr-owner.xaml': { errors: ['unknown-xaml-type'], warnings: [] },
+    'static-unknown-member.xaml': { errors: ['unknown-static-member'], warnings: [] },
+    'static-unknown-owner.xaml': { errors: ['unknown-xaml-type'], warnings: [] }
+  };
+  const files = await listFixtureFiles('phase24-static-resolution');
+
+  for (const fileName of files) {
+    const input = await readFixture('phase24-static-resolution', fileName);
+    const result = parseAndValidateXaml(input);
+    const expected = expectations[fileName];
+    assert.ok(expected, `Missing static resolution expectation for ${fileName}`);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'error'), expected.errors, `${fileName} validation errors`);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'warning'), expected.warnings, `${fileName} validation warnings`);
+
+    if (expected.errors.length > 0) {
+      continue;
+    }
+
+    const runtime = parseRuntimeXaml(input);
+
+    if (fileName === 'static-attached-member.xaml') {
+      assert.equal(runtime.root.attributes.Text, 'Grid.Row');
+    }
+
+    if (fileName === 'static-clr-decimal-constant.xaml') {
+      assert.equal(runtime.root.attributes.Text, 'sys:Decimal.MaxValue');
+    }
+
+    if (fileName === 'static-clr-double-constant.xaml') {
+      assert.equal(runtime.root.attributes.Text, 'sys:Double.NaN');
+    }
+
+    if (fileName === 'static-clr-int32-constant.xaml') {
+      assert.equal(runtime.root.attributes.Text, 'sys:Int32.MaxValue');
+    }
+
+    if (fileName === 'static-prefixed-ui-member.xaml') {
+      assert.equal(runtime.root.attributes.Text, 'ui:TextBlock.Text');
+    }
+  }
+
+  return files.length;
+}
+
 async function runPhase6CollectionFixtures() {
   const expectations = {
     'theme-dictionary-xkey.xaml': { errors: [], warnings: [] },
@@ -1736,7 +1789,8 @@ const phase20Count = await runPhase20SchemaTextSyntaxFixtures();
 const phase21Count = await runPhase21IntrinsicObjectElementFixtures();
 const phase22Count = await runPhase22ClrTypeResolutionFixtures();
 const phase23Count = await runPhase23PrimitiveDecimalFixtures();
+const phase24Count = await runPhase24StaticResolutionFixtures();
 
 console.log(
-  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources, ${phase9Count} serializer, ${phase10Count} designer serializer, ${phase11Count} XML scope, ${phase12Count} object resources, ${phase13Count} dynamic resources, ${phase14Count} whitespace normalization, ${phase15Count} intrinsic arrays, ${phase16Count} intrinsic static references, ${phase17Count} intrinsic references, ${phase18Count} namescope boundaries, ${phase19Count} reference identity, ${phase20Count} schema text syntax, ${phase21Count} intrinsic object elements, ${phase22Count} CLR type resolution, ${phase23Count} primitive decimals).`
+  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources, ${phase9Count} serializer, ${phase10Count} designer serializer, ${phase11Count} XML scope, ${phase12Count} object resources, ${phase13Count} dynamic resources, ${phase14Count} whitespace normalization, ${phase15Count} intrinsic arrays, ${phase16Count} intrinsic static references, ${phase17Count} intrinsic references, ${phase18Count} namescope boundaries, ${phase19Count} reference identity, ${phase20Count} schema text syntax, ${phase21Count} intrinsic object elements, ${phase22Count} CLR type resolution, ${phase23Count} primitive decimals, ${phase24Count} static resolution).`
 );
