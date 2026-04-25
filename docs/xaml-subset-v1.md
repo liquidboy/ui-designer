@@ -76,8 +76,10 @@ Current status:
 2. Designer theme `Colors` validates as a dictionary, with entries keyed by explicit `x:Key` or implicit `Color.Id`.
 3. Missing keys, duplicate keys, invalid collection item types, and `x:Key` outside dictionary items produce validation errors.
 4. Runtime `ResourceDictionary` supports primitive `Color`, `Number`, and `String` resources keyed by `x:Key`.
-5. Top-level `{StaticResource ...}` references resolve against the nearest scoped runtime resources during runtime lowering.
-6. Object-valued resources, dynamic resources, and resource serialization are still pending.
+5. Runtime `ResourceDictionary` also supports known control object resources keyed by `x:Key`.
+6. `{StaticResource ...}` references resolve against the nearest scoped runtime resources during runtime lowering.
+7. Object-valued resources can depend on earlier primitive resources in the same dictionary.
+8. Dynamic resources are still pending.
 
 Supported runtime form:
 
@@ -89,6 +91,21 @@ Supported runtime form:
     </ResourceDictionary>
   </Canvas.Resources>
   <TextBlock Foreground="{StaticResource Accent}" Text="Resource-backed text" />
+</Canvas>
+```
+
+Supported object-resource form:
+
+```xaml
+<Canvas xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Canvas.Resources>
+    <ResourceDictionary>
+      <TextBlock x:Key="SharedLabel" Text="Reusable label" />
+    </ResourceDictionary>
+  </Canvas.Resources>
+  <Border>
+    <Border.Child>{StaticResource SharedLabel}</Border.Child>
+  </Border>
 </Canvas>
 ```
 

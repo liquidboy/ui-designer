@@ -402,7 +402,7 @@ export const uiDesignerTypes = [
     members: [],
     contentProperty: 'Children',
     collectionKind: 'dictionary',
-    allowedContentTypes: ['Color', 'Number', 'String'],
+    allowedContentTypes: ['Color', 'Number', 'String', ...runtimeControlContentTypes],
     allowsText: false,
     allowsChildren: true
   }),
@@ -1148,16 +1148,16 @@ function validateDictionaryItemKeys(
   const assignedKeys = new Map<string, XamlMemberNode | XamlObjectNode>();
 
   for (const item of items) {
-    if (!isAllowedCollectionItemType(dictionaryType, item, registry)) {
-      continue;
-    }
-
-    const itemType = resolveXamlType(item.type, registry);
     const explicitKey = findXamlKeyDirective(item);
     if (explicitKey) {
       context.dictionaryKeyMembers.add(explicitKey);
     }
 
+    if (!isAllowedCollectionItemType(dictionaryType, item, registry)) {
+      continue;
+    }
+
+    const itemType = resolveXamlType(item.type, registry);
     const implicitKey = itemType?.dictionaryKeyProperty
       ? findResolvedPropertyMember(item, itemType, itemType.dictionaryKeyProperty, registry)
       : undefined;

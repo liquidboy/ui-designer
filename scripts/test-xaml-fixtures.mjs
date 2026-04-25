@@ -1010,6 +1010,46 @@ async function runPhase11XmlScopeFixtures() {
   return files.length;
 }
 
+async function runPhase12ObjectResourceFixtures() {
+  const files = await listFixtureFiles('phase12-object-resources');
+
+  for (const fileName of files) {
+    const input = await readFixture('phase12-object-resources', fileName);
+    const result = parseAndValidateXaml(input);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'error'), [], `${fileName} validation errors`);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'warning'), [], `${fileName} validation warnings`);
+
+    const preserved = lowerXamlDocument(result.document);
+    const runtime = parseRuntimeXaml(input);
+    assert.equal(preserved.root.children[0]?.type, 'Resources', `${fileName} should preserve resources while authoring`);
+
+    if (fileName === 'runtime-object-resource.xaml') {
+      assert.equal(runtime.root.children.length, 1);
+      assert.equal(runtime.root.children[0]?.type, 'Border');
+      assert.equal(runtime.root.children[0]?.children[0]?.type, 'TextBlock');
+      assert.equal(runtime.root.children[0]?.children[0]?.attributes.Text, 'Reusable label');
+      assert.equal(runtime.root.children[0]?.children[0]?.attributes.Foreground, '#67c7ff');
+      assert.equal(runtime.root.children[0]?.children[0]?.attributes.Key, undefined);
+    }
+
+    if (fileName === 'scoped-object-resource.xaml') {
+      assert.equal(runtime.root.children.length, 2);
+      assert.equal(runtime.root.children[0]?.children[0]?.type, 'Button');
+      assert.equal(runtime.root.children[0]?.children[0]?.attributes.Content, 'Outer action');
+      assert.equal(runtime.root.children[1]?.children[0]?.type, 'Button');
+      assert.equal(runtime.root.children[1]?.children[0]?.attributes.Content, 'Inner action');
+    }
+
+    if (fileName === 'object-resource-with-primitive-dependency.xaml') {
+      assert.equal(runtime.root.children[0]?.children[0]?.type, 'TextBlock');
+      assert.equal(runtime.root.children[0]?.children[0]?.attributes.Text, 'Accent label');
+      assert.equal(runtime.root.children[0]?.children[0]?.attributes.Foreground, '#ff8157');
+    }
+  }
+
+  return files.length;
+}
+
 async function runPhase6CollectionFixtures() {
   const expectations = {
     'theme-dictionary-xkey.xaml': { errors: [], warnings: [] },
@@ -1060,7 +1100,8 @@ const phase8Count = await runPhase8ResourceFixtures();
 const phase9Count = await runPhase9SerializerFixtures();
 const phase10Count = await runPhase10DesignerSerializerFixtures();
 const phase11Count = await runPhase11XmlScopeFixtures();
+const phase12Count = await runPhase12ObjectResourceFixtures();
 
 console.log(
-  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources, ${phase9Count} serializer, ${phase10Count} designer serializer, ${phase11Count} XML scope).`
+  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources, ${phase9Count} serializer, ${phase10Count} designer serializer, ${phase11Count} XML scope, ${phase12Count} object resources).`
 );

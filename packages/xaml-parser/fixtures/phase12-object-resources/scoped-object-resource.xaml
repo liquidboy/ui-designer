@@ -1,0 +1,18 @@
+<StackPanel xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <StackPanel.Resources>
+    <ResourceDictionary>
+      <Button x:Key="SharedAction" Content="Outer action" />
+    </ResourceDictionary>
+  </StackPanel.Resources>
+  <Border>
+    <Border.Child>{StaticResource SharedAction}</Border.Child>
+  </Border>
+  <Border>
+    <Border.Resources>
+      <ResourceDictionary>
+        <Button x:Key="SharedAction" Content="Inner action" />
+      </ResourceDictionary>
+    </Border.Resources>
+    <Border.Child>{StaticResource SharedAction}</Border.Child>
+  </Border>
+</StackPanel>

@@ -59,13 +59,15 @@ export interface XamlSerializationOptions {
 }
 
 interface XamlLoweringContext extends XamlLoweringOptions {
-  resources: Map<string, XamlPrimitive>;
+  resources: Map<string, XamlRuntimeResourceValue>;
 }
 
 const CONTENT_MEMBER_NAME = 'Content';
 const RESOURCES_MEMBER_NAME = 'Resources';
 const RESOURCE_DICTIONARY_TYPE_NAME = 'ResourceDictionary';
 const PRIMITIVE_RESOURCE_TYPE_NAMES = new Set(['Color', 'Number', 'String']);
+
+type XamlRuntimeResourceValue = XamlPrimitive | XamlNode;
 
 interface SourceLocator {
   span(startOffset: number, endOffset: number): XamlSourceSpan;
@@ -1335,7 +1337,20 @@ function resolveBindingPath(dataContext: unknown, path: string): unknown {
   return trimmed.split('.').reduce(readBindingPathSegment, dataContext);
 }
 
-function evaluateMarkupExtension(extension: XamlMarkupExtensionNode, options: XamlLoweringContext): XamlPrimitive {
+function cloneLoweredXamlNode(node: XamlNode): XamlNode {
+  return {
+    type: node.type,
+    attributes: { ...node.attributes },
+    children: node.children.map(cloneLoweredXamlNode),
+    text: node.text
+  };
+}
+
+function isLoweredXamlNode(value: XamlRuntimeResourceValue): value is XamlNode {
+  return typeof value === 'object' && value != null && 'type' in value && 'attributes' in value && 'children' in value;
+}
+
+function evaluateMarkupExtension(extension: XamlMarkupExtensionNode, options: XamlLoweringContext): XamlRuntimeResourceValue {
   if (isNullExtension(extension)) {
     return null;
   }
@@ -1354,7 +1369,8 @@ function evaluateMarkupExtension(extension: XamlMarkupExtensionNode, options: Xa
       throw new Error(`StaticResource "${key}" could not be resolved.`);
     }
 
-    return options.resources.get(key) ?? null;
+    const value = options.resources.get(key) ?? null;
+    return isLoweredXamlNode(value) ? cloneLoweredXamlNode(value) : value;
   }
 
   return extension.raw;
@@ -1366,7 +1382,8 @@ function primitiveValueFromNode(value: XamlValueNode, options: XamlLoweringConte
   }
 
   if (value.kind === 'markupExtension') {
-    return options.evaluateMarkupExtensions ? evaluateMarkupExtension(value, options) : value.raw;
+    const evaluated = options.evaluateMarkupExtensions ? evaluateMarkupExtension(value, options) : value.raw;
+    return isLoweredXamlNode(evaluated) ? undefined : evaluated;
   }
 
   return undefined;
@@ -1464,7 +1481,7 @@ function isResourcesMember(
 
 function lowerContextWithResources(
   context: XamlLoweringContext,
-  resources: Map<string, XamlPrimitive>
+  resources: Map<string, XamlRuntimeResourceValue>
 ): XamlLoweringContext {
   return {
     ...context,
@@ -1504,6 +1521,17 @@ function primitiveResourceValueFromNode(node: XamlNode): XamlPrimitive | undefin
   return '';
 }
 
+function runtimeResourceValueFromNode(node: XamlNode): XamlRuntimeResourceValue | undefined {
+  const primitiveValue = primitiveResourceValueFromNode(node);
+  if (primitiveValue !== undefined) {
+    return primitiveValue;
+  }
+
+  const resourceObject = cloneLoweredXamlNode(node);
+  delete resourceObject.attributes.Key;
+  return resourceObject;
+}
+
 function collectResourceObject(
   object: XamlObjectNode,
   registry: XamlVocabularyRegistry,
@@ -1515,7 +1543,7 @@ function collectResourceObject(
   }
 
   const lowered = lowerObjectNode(object, registry, context);
-  const value = primitiveResourceValueFromNode(lowered);
+  const value = runtimeResourceValueFromNode(lowered);
   if (value !== undefined) {
     context.resources.set(key, value);
   }
@@ -1569,9 +1597,18 @@ function lowerValueObjects(
   registry: XamlVocabularyRegistry,
   options: XamlLoweringContext
 ): XamlNode[] {
-  return values
-    .filter((value): value is XamlObjectNode => value.kind === 'object')
-    .map((value) => lowerObjectNode(value, registry, options));
+  return values.flatMap((value) => {
+    if (value.kind === 'object') {
+      return [lowerObjectNode(value, registry, options)];
+    }
+
+    if (value.kind === 'markupExtension' && options.evaluateMarkupExtensions) {
+      const evaluated = evaluateMarkupExtension(value, options);
+      return isLoweredXamlNode(evaluated) ? [evaluated] : [];
+    }
+
+    return [];
+  });
 }
 
 function lowerPropertyMember(
