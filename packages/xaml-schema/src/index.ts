@@ -15,6 +15,14 @@ export interface XamlDocument {
   root: XamlNode;
 }
 
+export type XamlLegacyPrimitive = XamlPrimitive;
+
+export type XamlLegacyAttributeMap = XamlAttributeMap;
+
+export type XamlLegacyNode = XamlNode;
+
+export type XamlLegacyDocument = XamlDocument;
+
 export type XamlDiagnosticSeverity = 'error' | 'warning';
 
 export interface XamlSourcePosition {
@@ -147,7 +155,7 @@ export interface XamlMemberDefinition {
 }
 
 export interface XamlTypeDefinition {
-  name: ControlType;
+  name: string;
   namespaceUri: string | null;
   members: readonly XamlMemberDefinition[];
   contentProperty?: string;

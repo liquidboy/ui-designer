@@ -42,6 +42,11 @@ export interface XamlParseAndValidateResult extends XamlParseResult {
   validation: XamlValidationResult;
 }
 
+export interface XamlLoweredParseResult extends XamlParseAndValidateResult {
+  legacyDocument: XamlDocument | null;
+  hasErrors: boolean;
+}
+
 const CONTENT_MEMBER_NAME = 'Content';
 
 interface SourceLocator {
@@ -538,6 +543,14 @@ export function parseAndValidateXaml(
   };
 }
 
+function formatDiagnostic(diagnostic: XamlDiagnostic): string {
+  const location = diagnostic.span
+    ? ` at ${diagnostic.span.start.line}:${diagnostic.span.start.column}`
+    : '';
+  const label = diagnostic.severity === 'error' ? 'Error' : 'Warning';
+  return `${label} ${diagnostic.code}${location}: ${diagnostic.message}`;
+}
+
 function qualifiedNameToString(name: XamlQualifiedName): string {
   return name.prefix ? `${name.prefix}:${name.localName}` : name.localName;
 }
@@ -729,8 +742,46 @@ export function lowerXamlDocument(
 
 export const toLegacyXamlDocument = lowerXamlDocument;
 
-export function parseXaml(input: string): XamlDocument {
-  const result = parseXamlToInfoset(input);
+export function parseAndLowerXaml(
+  input: string,
+  options: XamlParseOptions = {},
+  registry: XamlVocabularyRegistry = uiDesignerVocabularyRegistry
+): XamlLoweredParseResult {
+  const result = parseAndValidateXaml(input, options, registry);
+
+  if (!result.document || result.validation.hasErrors) {
+    return {
+      ...result,
+      legacyDocument: null,
+      hasErrors: true
+    };
+  }
+
+  return {
+    ...result,
+    legacyDocument: lowerXamlDocument(result.document, registry),
+    hasErrors: false
+  };
+}
+
+export function parseRuntimeXaml(
+  input: string,
+  options: XamlParseOptions = {},
+  registry: XamlVocabularyRegistry = uiDesignerVocabularyRegistry
+): XamlDocument {
+  const result = parseAndLowerXaml(input, options, registry);
+  if (!result.legacyDocument) {
+    const reason = result.diagnostics.length > 0
+      ? result.diagnostics.map(formatDiagnostic).join('\n')
+      : 'Invalid XAML document.';
+    throw new Error(reason);
+  }
+
+  return result.legacyDocument;
+}
+
+export function parseLegacyXaml(input: string, options: XamlParseOptions = {}): XamlDocument {
+  const result = parseXamlToInfoset(input, options);
   const error = result.diagnostics.find((diagnostic) => diagnostic.severity === 'error');
 
   if (error) {
@@ -742,4 +793,8 @@ export function parseXaml(input: string): XamlDocument {
   }
 
   return lowerXamlDocument(result.document);
+}
+
+export function parseXaml(input: string, options: XamlParseOptions = {}): XamlDocument {
+  return parseLegacyXaml(input, options);
 }

@@ -1,4 +1,4 @@
-import { parseXaml } from '@ui-designer/xaml-parser';
+import { parseRuntimeXaml } from '@ui-designer/xaml-parser';
 import {
   buildDrawCommands,
   type ColorRgba,
@@ -290,7 +290,7 @@ export class RuntimeHost {
   }
 
   setXaml(xaml: string): void {
-    const xamlDocument = parseXaml(xaml);
+    const xamlDocument = parseRuntimeXaml(xaml);
     this.root = buildUiTree(xamlDocument.root);
     if (this.rendererReady) {
       this.scheduleSceneWarmup();

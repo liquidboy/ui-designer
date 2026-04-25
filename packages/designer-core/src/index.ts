@@ -1,4 +1,4 @@
-import { lowerXamlDocument, parseAndValidateXaml } from '@ui-designer/xaml-parser';
+import { parseAndLowerXaml } from '@ui-designer/xaml-parser';
 import type { ColorRgba, Point as CorePoint } from '@ui-designer/ui-core';
 import type { XamlDiagnostic, XamlDocument, XamlNode, XamlPrimitive } from '@ui-designer/xaml-schema';
 
@@ -107,11 +107,11 @@ export function formatDesignerDocumentDiagnostic(diagnostic: DesignerDocumentDia
 }
 
 export function parseDesignerDocumentWithDiagnostics(xaml: string): DesignerDocumentParseResult {
-  const result = parseAndValidateXaml(xaml);
-  const diagnostics = result.validation.diagnostics;
-  const hasErrors = result.validation.hasErrors;
+  const result = parseAndLowerXaml(xaml);
+  const diagnostics = result.diagnostics;
+  const hasErrors = result.hasErrors;
 
-  if (!result.document || hasErrors) {
+  if (!result.legacyDocument || hasErrors) {
     return {
       document: null,
       diagnostics,
@@ -120,7 +120,7 @@ export function parseDesignerDocumentWithDiagnostics(xaml: string): DesignerDocu
   }
 
   return {
-    document: lowerXamlDocument(result.document),
+    document: result.legacyDocument,
     diagnostics,
     hasErrors: false
   };
