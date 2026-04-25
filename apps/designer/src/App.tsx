@@ -133,6 +133,11 @@ const THEME_DOCUMENT_FILE_NAME = 'DesignerTheme.xaml';
 
 type SourceDocumentId = 'document' | 'chrome' | 'panels' | 'theme';
 type InsertionToolId = 'rectangle' | 'text' | 'image' | 'grid';
+type EditableAttributeValue = string | number | boolean | null;
+
+function editableAttributeValue(value: unknown): EditableAttributeValue {
+  return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' ? value : null;
+}
 
 interface VisualStateOption {
   id: string;
@@ -733,7 +738,7 @@ export function App() {
   const buildAttributeDocument = (
     document: DesignerDocument,
     elementId: string,
-    patch: Record<string, string | number | boolean | null>
+    patch: Record<string, EditableAttributeValue>
   ) => updateDocumentNodeAttributes(document, elementId, patch);
 
   const buildResetDocument = (
@@ -747,11 +752,11 @@ export function App() {
       return document;
     }
 
-    const patch: Record<string, string | number | boolean | null> = {
-      'Designer.OffsetX': baseNode.attributes['Designer.OffsetX'] ?? null,
-      'Designer.OffsetY': baseNode.attributes['Designer.OffsetY'] ?? null,
-      Width: baseNode.attributes.Width ?? null,
-      Height: baseNode.attributes.Height ?? null
+    const patch: Record<string, EditableAttributeValue> = {
+      'Designer.OffsetX': editableAttributeValue(baseNode.attributes['Designer.OffsetX']),
+      'Designer.OffsetY': editableAttributeValue(baseNode.attributes['Designer.OffsetY']),
+      Width: editableAttributeValue(baseNode.attributes.Width),
+      Height: editableAttributeValue(baseNode.attributes.Height)
     };
 
     for (const key of [
@@ -770,7 +775,7 @@ export function App() {
       'FlowDirection'
     ] as const) {
       if (key in currentNode.attributes || key in baseNode.attributes) {
-        patch[key] = baseNode.attributes[key] ?? null;
+        patch[key] = editableAttributeValue(baseNode.attributes[key]);
       }
     }
 
@@ -803,8 +808,8 @@ export function App() {
       buildAttributeDocument(currentDocument, id, {
         Source: asset.source,
         Background: readStringAttribute(node, 'Background') || asset.background,
-        Width: node.attributes.Width ?? natural?.width ?? null,
-        Height: node.attributes.Height ?? natural?.height ?? null
+        Width: editableAttributeValue(node.attributes.Width) ?? natural?.width ?? null,
+        Height: editableAttributeValue(node.attributes.Height) ?? natural?.height ?? null
       })
     );
     setStatus(`Applied ${asset.title} to the selected image.`);
