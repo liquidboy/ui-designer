@@ -68,12 +68,13 @@ The repo now has the core compliance foundation in place:
 30. Preserved-only declaration intrinsics now cover `x:Subclass`, `x:Members`, `x:Member`, and `x:Property`, including root/class dependency validation, declaration item validation, and serialization round-trip coverage.
 31. Declaration `Type` values on `x:Member` and `x:Property` now validate against inherited and local property-element/object XML namespace mappings without executing CLR code or loading arbitrary assemblies.
 32. The vocabulary registry now exposes selected no-execution CLR namespace mappings for `Liquidboy.UI.Designer*`, so object elements and type tokens can validate against configured schema metadata without reflection or arbitrary assembly loading.
+33. Lexical CLR metadata validation now rejects malformed `x:Class`, `x:Subclass`, `x:FactoryMethod`, and declaration `Name` values without compiling code or generating CLR members.
 
-Approximate targeted core `MS-XAML-2017` support: **97%**. This is a progress estimate for the scoped language/object-mapping work, not a claim of complete XAML or WPF vocabulary parity.
+Approximate targeted core `MS-XAML-2017` support: **98%**. This is a progress estimate for the scoped language/object-mapping work, not a claim of complete XAML or WPF vocabulary parity.
 
 The main remaining gaps are now:
 
-1. Lexical validation for CLR identifier metadata such as `x:Class`, `x:Subclass`, construction names, and declaration names.
+1. Validation for markup-compilation modifier directive values such as `x:ClassModifier` and `x:FieldModifier`.
 2. Arbitrary CLR type loading, generic execution, constructor execution, and CLR static value execution.
 3. Full template/style runtime behavior beyond validation-only namescope boundaries.
 
@@ -85,7 +86,7 @@ Current limitation:
 4. Designer infoset edit propagation is intentionally conservative: if a lowered compatibility path cannot be mapped safely back to the infoset, the designer falls back to lowered serialization instead of risking stale or corrupt semantic output.
 5. Construction directives are preserved and validated, but constructors and factory methods are not executed.
 6. Markup-compilation/code directives and XML data islands are preserved and validated, but no code is compiled or executed.
-7. Declaration intrinsics are preserved and validated, including namespace-aware declaration `Type` metadata and configured CLR schema aliases, but no CLR members or types are generated.
+7. Declaration intrinsics are preserved and validated, including namespace-aware declaration `Type` metadata, configured CLR schema aliases, and lexical declaration `Name` checks, but no CLR members or types are generated.
 8. `ResourceDictionary`, `ControlTemplate`, `DataTemplate`, and `ObjectIsland` are schema-marked nested namescope boundaries; the template/object-island forms are validation-only and emit unrenderable warnings until runtime support exists.
 9. `xml:space` handling and default text normalization are implemented for current scalar/content lowering, but whitespace behavior around validation-only template/object-island shapes is still partial.
 
@@ -392,8 +393,8 @@ We should call this initiative complete only when all of the following are true:
 
 The next concrete work item should be:
 
-1. add lexical validation for CLR identifier metadata such as `x:Class`, `x:Subclass`, construction names, and declaration names
-2. validate malformed identifiers without compiling code or generating CLR members
-3. keep metadata preserved with warnings so valid source can round-trip
+1. validate `x:ClassModifier` and `x:FieldModifier` values against the supported markup-compilation modifier set
+2. reject unsupported modifier metadata without compiling code or generating CLR members
+3. keep valid modifier metadata preserved with warnings so valid source can round-trip
 
 That keeps us on the safer parser/validator side of the spec before we consider deeper CLR execution.

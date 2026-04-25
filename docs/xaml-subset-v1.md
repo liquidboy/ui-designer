@@ -185,9 +185,10 @@ Current status:
 
 1. `x:FactoryMethod`, `x:Arguments`, `x:ConstructorArgs`, and `x:InitializationText` parse as intrinsic XAML directives.
 2. `x:Arguments` and `x:ConstructorArgs` parse as directive property elements rather than object elements.
-3. Construction argument directives must use property-element syntax and provide at least one object or markup-extension argument value.
-4. Text-only argument lists, empty argument lists, and duplicate `x:Arguments`/`x:ConstructorArgs` forms produce validation errors.
-5. Construction directives are preserved and serialized with unsupported-directive warnings; constructors and factory methods are not executed in v1.
+3. `x:FactoryMethod` requires a CLR identifier such as `Create`.
+4. Construction argument directives must use property-element syntax and provide at least one object or markup-extension argument value.
+5. Text-only argument lists, empty argument lists, and duplicate `x:Arguments`/`x:ConstructorArgs` forms produce validation errors.
+6. Construction directives are preserved and serialized with unsupported-directive warnings; constructors and factory methods are not executed in v1.
 
 Supported preserved form:
 
@@ -207,9 +208,10 @@ Current status:
 1. `x:ClassModifier` and `x:FieldModifier` parse as preserved intrinsic XAML directives.
 2. `x:ClassModifier` is valid only on the document root object and requires `x:Class` on that object.
 3. `x:FieldModifier` requires root `x:Class` and same-object `x:Name`.
-4. `x:Code` parses as an intrinsic XAML object and is valid only as direct document-root content when the root has `x:Class`.
-5. `x:XData` parses as an intrinsic XAML object and preserves raw XML island content without validating island elements as UI objects.
-6. These constructs are preserved and serialized with warnings; no code is compiled, generated, or executed in v1.
+4. `x:Class` requires a non-empty CLR-style qualified type name such as `Example.RootView`.
+5. `x:Code` parses as an intrinsic XAML object and is valid only as direct document-root content when the root has `x:Class`.
+6. `x:XData` parses as an intrinsic XAML object and preserves raw XML island content without validating island elements as UI objects.
+7. These constructs are preserved and serialized with warnings; no code is compiled, generated, or executed in v1.
 
 Supported preserved forms:
 
@@ -239,12 +241,13 @@ Supported preserved forms:
 Current status:
 
 1. `x:Subclass` parses as a preserved intrinsic XAML directive.
-2. `x:Subclass` is valid only on the document root object and requires `x:Class` on that object.
+2. `x:Subclass` is valid only on the document root object, requires `x:Class` on that object, and requires a CLR-style qualified type name.
 3. `x:Members` parses as a preserved directive property element on the document root object and requires root `x:Class`.
 4. `x:Members` accepts only `x:Member` and `x:Property` object declarations.
 5. `x:Member` and `x:Property` declarations require `Name` and `Type` metadata.
-6. Declaration `Type` values validate against in-scope XML namespace mappings, including namespace-qualified `ui-designer` types, XAML primitive types, validation-only `clr-namespace:System` primitive aliases, and configured no-execution `Liquidboy.UI.Designer*` CLR namespace aliases.
-7. Declaration metadata is preserved and serialized with warnings; no CLR members or types are generated in v1.
+6. Declaration `Name` values must be CLR identifiers such as `Title` or `_Title2`.
+7. Declaration `Type` values validate against in-scope XML namespace mappings, including namespace-qualified `ui-designer` types, XAML primitive types, validation-only `clr-namespace:System` primitive aliases, and configured no-execution `Liquidboy.UI.Designer*` CLR namespace aliases.
+8. Declaration metadata is preserved and serialized with warnings; no CLR members or types are generated in v1.
 
 Supported preserved form:
 

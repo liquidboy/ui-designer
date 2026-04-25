@@ -237,6 +237,7 @@ export interface XamlValidationResult {
 
 const XAML_HEX_COLOR_PATTERN = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 const XAML_DECIMAL_PATTERN = /^[+-]?(?:(?:\d+)(?:\.\d*)?|\.\d+)$/;
+const CLR_IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 export function coerceXamlTextValue(value: string, syntax: XamlTextSyntaxKind): XamlPrimitive {
   const trimmed = value.trim();
@@ -2272,6 +2273,23 @@ function validateDirectiveSemantics(
     return;
   }
 
+  if (definition.name === 'Class') {
+    validateRequiredDirectiveText(member, definition.name, diagnostics);
+    if (textValue) {
+      validateClrQualifiedNameText(textValue, diagnostics, member, 'Directive "x:Class"');
+    }
+
+    if (object !== context.rootObject) {
+      diagnostics.push(validationDiagnostic(
+        'error',
+        'invalid-directive-placement',
+        'Directive "x:Class" is only valid on the document root object.',
+        member
+      ));
+    }
+    return;
+  }
+
   if (definition.name === 'ClassModifier' || definition.name === 'FieldModifier') {
     validateXamlMarkupCompileDirective(object, member, definition, diagnostics, context);
     return;
@@ -2291,14 +2309,6 @@ function validateDirectiveSemantics(
     return;
   }
 
-  if (definition.name === 'Class' && object !== context.rootObject) {
-    diagnostics.push(validationDiagnostic(
-      'error',
-      'invalid-directive-placement',
-      'Directive "x:Class" is only valid on the document root object.',
-      member
-    ));
-  }
 }
 
 function validateResolvedDirective(
@@ -2397,6 +2407,51 @@ function validateRequiredDirectiveText(
   ));
 }
 
+function isValidClrIdentifier(value: string): boolean {
+  return CLR_IDENTIFIER_PATTERN.test(value);
+}
+
+function isValidClrQualifiedName(value: string): boolean {
+  const parts = value.split('.');
+  return parts.length > 0 && parts.every(isValidClrIdentifier);
+}
+
+function validateClrIdentifierText(
+  value: string,
+  diagnostics: XamlDiagnostic[],
+  node: { span?: XamlSourceSpan },
+  label: string
+): void {
+  if (isValidClrIdentifier(value)) {
+    return;
+  }
+
+  diagnostics.push(validationDiagnostic(
+    'error',
+    'invalid-clr-identifier',
+    `${label} expects a CLR identifier such as "Create" or "Title".`,
+    node
+  ));
+}
+
+function validateClrQualifiedNameText(
+  value: string,
+  diagnostics: XamlDiagnostic[],
+  node: { span?: XamlSourceSpan },
+  label: string
+): void {
+  if (isValidClrQualifiedName(value)) {
+    return;
+  }
+
+  diagnostics.push(validationDiagnostic(
+    'error',
+    'invalid-clr-type-name',
+    `${label} expects a CLR-style qualified type name such as "Example.RootView".`,
+    node
+  ));
+}
+
 function validateXamlMarkupCompileDirective(
   object: XamlObjectNode,
   member: XamlMemberNode,
@@ -2464,6 +2519,10 @@ function validateXamlDeclarationDirective(
 ): void {
   if (definition.name === 'Subclass') {
     validateRequiredDirectiveText(member, definition.name, diagnostics);
+    const subclassName = textFromValues(member.values).trim();
+    if (subclassName) {
+      validateClrQualifiedNameText(subclassName, diagnostics, member, 'Directive "x:Subclass"');
+    }
 
     if (object !== context.rootObject) {
       diagnostics.push(validationDiagnostic(
@@ -2560,13 +2619,16 @@ function validateXamlConstructionDirective(
   diagnostics: XamlDiagnostic[]
 ): void {
   if (definition.name === 'FactoryMethod') {
-    if (!textFromValues(member.values).trim()) {
+    const methodName = textFromValues(member.values).trim();
+    if (!methodName) {
       diagnostics.push(validationDiagnostic(
         'error',
         'missing-construction-directive-value',
         'Directive "x:FactoryMethod" requires a factory method name.',
         member
       ));
+    } else {
+      validateClrIdentifierText(methodName, diagnostics, member, 'Directive "x:FactoryMethod"');
     }
     return;
   }
@@ -3081,13 +3143,16 @@ function validateDeclarationMemberObject(
     return;
   }
 
-  if (!objectMemberText(object, type, 'Name', registry)) {
+  const declarationName = objectMemberText(object, type, 'Name', registry);
+  if (!declarationName) {
     diagnostics.push(validationDiagnostic(
       'error',
       'missing-required-member',
       `Intrinsic "x:${type.name}" requires a Name member.`,
       object
     ));
+  } else {
+    validateClrIdentifierText(declarationName, diagnostics, object, `Intrinsic "x:${type.name}" Name`);
   }
 
   const declarationType = objectMemberText(object, type, 'Type', registry);

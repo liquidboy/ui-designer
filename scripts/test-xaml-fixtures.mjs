@@ -2183,6 +2183,64 @@ async function runPhase31ClrSchemaMappingFixtures() {
   return files.length;
 }
 
+async function runPhase32ClrIdentifierMetadataFixtures() {
+  const declarationWarnings = [
+    'unsupported-directive',
+    'unsupported-directive',
+    'unrenderable-type',
+    'unrenderable-member',
+    'unrenderable-member'
+  ];
+  const expectations = {
+    'class-empty-invalid.xaml': { errors: ['missing-directive-value'], warnings: [] },
+    'class-invalid-empty-segment.xaml': { errors: ['invalid-clr-type-name'], warnings: [] },
+    'class-invalid-leading-digit.xaml': { errors: ['invalid-clr-type-name'], warnings: [] },
+    'declaration-member-name-invalid.xaml': { errors: ['invalid-clr-identifier'], warnings: declarationWarnings },
+    'declaration-property-name-invalid.xaml': { errors: ['invalid-clr-identifier'], warnings: declarationWarnings },
+    'factory-method-name-invalid.xaml': { errors: ['invalid-clr-identifier'], warnings: [] },
+    'subclass-invalid-qualified-name.xaml': { errors: ['invalid-clr-type-name'], warnings: ['unsupported-directive'] },
+    'valid-identifiers-preserved.xaml': {
+      errors: [],
+      warnings: [
+        'unsupported-directive',
+        'unsupported-directive',
+        'unsupported-directive',
+        'unsupported-directive',
+        'unrenderable-type',
+        'unrenderable-member',
+        'unrenderable-member'
+      ]
+    }
+  };
+  const files = await listFixtureFiles('phase32-clr-identifier-metadata');
+
+  for (const fileName of files) {
+    const input = await readFixture('phase32-clr-identifier-metadata', fileName);
+    const result = parseAndValidateXaml(input);
+    const expected = expectations[fileName];
+    assert.ok(expected, `Missing CLR identifier metadata expectation for ${fileName}`);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'error'), expected.errors, `${fileName} validation errors`);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'warning'), expected.warnings, `${fileName} validation warnings`);
+
+    if (expected.errors.length > 0) {
+      continue;
+    }
+
+    const serialized = serializeXamlDocumentNode(result.document);
+    const reparsed = parseAndValidateXaml(serialized);
+    assert.deepEqual(diagnosticsWithSeverity(reparsed.validation, 'error'), [], `${fileName} round-trip validation errors`);
+
+    if (fileName === 'valid-identifiers-preserved.xaml') {
+      assert.match(serialized, /x:Class="_Example\.Root_View2"/);
+      assert.match(serialized, /x:Subclass="_Example\.Root_ViewBase2"/);
+      assert.match(serialized, /x:FactoryMethod="_Create2"/);
+      assert.match(serialized, /<x:Property Name="_Title2" Type="x:String" \/>/);
+    }
+  }
+
+  return files.length;
+}
+
 async function runPhase6CollectionFixtures() {
   const expectations = {
     'theme-dictionary-xkey.xaml': { errors: [], warnings: [] },
@@ -2253,7 +2311,8 @@ const phase28Count = await runPhase28MetadataCodeDirectiveFixtures();
 const phase29Count = await runPhase29DeclarationIntrinsicFixtures();
 const phase30Count = await runPhase30DeclarationTypeResolutionFixtures();
 const phase31Count = await runPhase31ClrSchemaMappingFixtures();
+const phase32Count = await runPhase32ClrIdentifierMetadataFixtures();
 
 console.log(
-  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources, ${phase9Count} serializer, ${phase10Count} designer serializer, ${phase11Count} XML scope, ${phase12Count} object resources, ${phase13Count} dynamic resources, ${phase14Count} whitespace normalization, ${phase15Count} intrinsic arrays, ${phase16Count} intrinsic static references, ${phase17Count} intrinsic references, ${phase18Count} namescope boundaries, ${phase19Count} reference identity, ${phase20Count} schema text syntax, ${phase21Count} intrinsic object elements, ${phase22Count} CLR type resolution, ${phase23Count} primitive decimals, ${phase24Count} static resolution, ${phase25Count} type arguments, ${phase26Count} template namescopes, ${phase27Count} construction directives, ${phase28Count} metadata/code directives, ${phase29Count} declaration intrinsics, ${phase30Count} declaration type resolution, ${phase31Count} CLR schema mappings).`
+  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources, ${phase9Count} serializer, ${phase10Count} designer serializer, ${phase11Count} XML scope, ${phase12Count} object resources, ${phase13Count} dynamic resources, ${phase14Count} whitespace normalization, ${phase15Count} intrinsic arrays, ${phase16Count} intrinsic static references, ${phase17Count} intrinsic references, ${phase18Count} namescope boundaries, ${phase19Count} reference identity, ${phase20Count} schema text syntax, ${phase21Count} intrinsic object elements, ${phase22Count} CLR type resolution, ${phase23Count} primitive decimals, ${phase24Count} static resolution, ${phase25Count} type arguments, ${phase26Count} template namescopes, ${phase27Count} construction directives, ${phase28Count} metadata/code directives, ${phase29Count} declaration intrinsics, ${phase30Count} declaration type resolution, ${phase31Count} CLR schema mappings, ${phase32Count} CLR identifier metadata).`
 );
