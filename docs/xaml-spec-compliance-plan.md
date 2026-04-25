@@ -58,14 +58,15 @@ The repo now has the core compliance foundation in place:
 20. Text syntax conversion now belongs to schema metadata: known members coerce number/boolean values and preserve string-like numeric text without parser-wide guessing.
 21. Object-element forms for supported intrinsic `x:Null`, `x:Type`, `x:Static`, and `x:Reference` now validate, serialize, and runtime-lower when the target member can safely represent the value.
 22. The validator currently covers known namespaces/types/members, duplicate scalar members, content rules, enum/primitive/color checks, scoped namescope collisions for `x:Name`, root-only placement for `x:Class`, collection item-type constraints, dictionary key validation, and warning-only preservation for unsupported markup extensions.
+23. Type-name validation now resolves in-scope XML namespace declarations for `x:Type` and `x:Array Type`, including prefix-qualified `ui-designer` object types and validation-only `clr-namespace:System` primitive aliases such as `sys:Int32`.
 
-Approximate targeted core `MS-XAML-2017` support: **86%**. This is a progress estimate for the scoped language/object-mapping work, not a claim of complete XAML or WPF vocabulary parity.
+Approximate targeted core `MS-XAML-2017` support: **88%**. This is a progress estimate for the scoped language/object-mapping work, not a claim of complete XAML or WPF vocabulary parity.
 
 The main remaining gaps are now:
 
-1. Fuller CLR namespace/type-name resolution beyond scoped primitive aliases, including XML namespace mapping for `clr-namespace` forms.
+1. Decimal precision enforcement and remaining numeric edge-case fidelity.
 2. Richer namescope boundaries for future templates and object islands.
-3. Decimal precision enforcement, CLR static value resolution, and generic type execution.
+3. Arbitrary CLR type loading, CLR static value resolution, and generic type execution.
 
 Current limitation:
 
@@ -379,8 +380,8 @@ We should call this initiative complete only when all of the following are true:
 
 The next concrete work item should be:
 
-1. expand CLR namespace/type-name resolution beyond scoped primitive aliases
-2. support XML namespace mapping for `clr-namespace` type references in validation-only form
-3. add fixtures for namespace-qualified type references, unresolved CLR namespaces, and generic argument preservation
+1. add decimal precision/range fidelity for `x:Decimal`
+2. cover invalid decimal text and overflow-like edge cases with fixtures
+3. update runtime coercion notes so decimal support remains honest about JavaScript number limitations
 
-That improves type-name fidelity without taking on full generic type execution yet.
+That closes the largest remaining primitive-value fidelity gap without taking on arbitrary CLR type execution yet.

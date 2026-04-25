@@ -1,0 +1,7 @@
+<Button xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:sys="clr-namespace:System;assembly=mscorlib">
+  <Button.Content>
+    <x:Array Type="{x:Type sys:Guid}">
+      <x:String>unsupported</x:String>
+    </x:Array>
+  </Button.Content>
+</Button>

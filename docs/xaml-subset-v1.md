@@ -141,14 +141,14 @@ Current status:
 
 1. `x:Array` object elements validate as intrinsic XAML language objects.
 2. `Type` is required and simple object item types are checked against direct content or `x:Array.Items`.
-3. `{x:Type ...}` item-type expressions validate known simple object type names plus supported XAML primitive type names, and runtime-lower to type-name strings.
+3. `{x:Type ...}` item-type expressions validate known simple object type names, namespace-qualified `ui-designer` object type names, and supported XAML/`clr-namespace:System` primitive type names, then runtime-lower to type-name strings.
 4. `<x:Type TypeName="..." />` object elements validate and runtime-lower to type-name strings in scalar member positions.
 5. Authoring serialization preserves `x:Array` namespace prefixes, property-element form, and raw/object `x:Type` source.
 6. Authoring compatibility lowering emits a structural `Array` node with item children so source round-tripping remains stable.
 7. Runtime lowering evaluates single `x:Array` member values and keyed `ResourceDictionary` entries to JavaScript arrays of supported runtime values.
 8. Supported primitive item elements such as `x:String`, `x:Int32`, `x:Double`, and `x:Boolean` coerce to JavaScript string, number, and boolean values.
-9. Integer primitive aliases and `x:Single` enforce scoped numeric ranges; `System.Int32`-style primitive type tokens are accepted by local type name.
-10. Full CLR namespace/type resolution, decimal precision enforcement, and generic type execution remain outside v1.
+9. Integer primitive aliases and `x:Single` enforce scoped numeric ranges; `System.Int32`-style primitive type tokens and `xmlns:sys="clr-namespace:System;assembly=mscorlib"` aliases such as `sys:Int32` are accepted for validation-only primitive resolution.
+10. Arbitrary CLR type loading, decimal precision enforcement, and generic type execution remain outside v1.
 
 Supported structural form:
 
@@ -204,6 +204,21 @@ Supported primitive boundary form:
     <x:Array Type="x:Int32">
       <x:Int32>-2147483648</x:Int32>
       <x:Int32>2147483647</x:Int32>
+    </x:Array>
+  </Button.Content>
+</Button>
+```
+
+Supported CLR primitive namespace form:
+
+```xaml
+<Button
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:sys="clr-namespace:System;assembly=mscorlib">
+  <Button.Content>
+    <x:Array Type="{x:Type sys:Int32}">
+      <x:Int32>7</x:Int32>
+      <x:Int32>8</x:Int32>
     </x:Array>
   </Button.Content>
 </Button>

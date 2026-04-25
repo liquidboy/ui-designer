@@ -215,6 +215,8 @@ export interface XamlVocabularyRegistry {
   directives: readonly XamlMemberDefinition[];
 }
 
+type XamlNamespaceScope = ReadonlyMap<string | null, string>;
+
 export interface XamlValidationResult {
   diagnostics: XamlDiagnostic[];
   hasErrors: boolean;
@@ -487,6 +489,9 @@ const xamlPrimitiveIntegerRanges = {
 } as const;
 
 const XAML_SINGLE_MAX_VALUE = 3.4028234663852886e38;
+const CLR_NAMESPACE_PREFIX = 'clr-namespace:';
+const supportedClrPrimitiveNamespaces = new Set(['System']);
+const supportedClrPrimitiveAssemblies = new Set(['mscorlib', 'System', 'System.Runtime', 'System.Private.CoreLib', 'netstandard']);
 
 function xamlPrimitiveTypeDefinition(name: keyof typeof xamlPrimitiveTypeSyntax): XamlTypeDefinition {
   return typeDefinition(name, {
@@ -1144,37 +1149,186 @@ function xamlTypeNameFromValues(values: readonly XamlValueNode[]): string {
   return scalarTextFromValues(values).trim();
 }
 
-function localTypeNameFromTextSyntax(value: string): string | null {
+function valuesContainStructuredXamlTypeReference(values: readonly XamlValueNode[]): boolean {
+  return values.some((value) => {
+    return (
+      (value.kind === 'markupExtension' && isXamlTypeExtension(value)) ||
+      (value.kind === 'object' && isXamlObjectElement(value, ['Type', 'TypeExtension']))
+    );
+  });
+}
+
+interface XamlTypeNameParts {
+  rawName: string;
+  prefix: string | null;
+  localName: string;
+  clrNamespace: string | null;
+}
+
+interface ClrNamespaceMapping {
+  clrNamespace: string;
+  assembly: string | null;
+}
+
+interface XamlTypeNameResolution {
+  localName: string;
+  namespaceUri: string | null;
+  isPrimitive: boolean;
+}
+
+function parseXamlTypeNameText(value: string): XamlTypeNameParts | null {
   const trimmed = value.trim();
   if (!trimmed || trimmed.startsWith('{')) {
     return null;
   }
 
-  const separator = trimmed.lastIndexOf(':');
+  const separator = trimmed.indexOf(':');
+  const prefix = separator >= 0 ? trimmed.slice(0, separator) : null;
   const unprefixed = separator >= 0 ? trimmed.slice(separator + 1) : trimmed;
   const dot = unprefixed.lastIndexOf('.');
-  return dot >= 0 ? unprefixed.slice(dot + 1) : unprefixed;
+  const localName = dot >= 0 ? unprefixed.slice(dot + 1) : unprefixed;
+  if (!localName) {
+    return null;
+  }
+
+  return {
+    rawName: trimmed,
+    prefix,
+    localName,
+    clrNamespace: dot >= 0 ? unprefixed.slice(0, dot) : null
+  };
+}
+
+function localTypeNameFromTextSyntax(value: string): string | null {
+  return parseXamlTypeNameText(value)?.localName ?? null;
 }
 
 function typeNameHasExplicitQualifier(value: string): boolean {
-  return value.includes(':') || value.includes('.');
+  const typeName = parseXamlTypeNameText(value);
+  return Boolean(typeName?.prefix || typeName?.clrNamespace);
 }
 
-function primitiveTextSyntaxFromTypeName(typeName: string): XamlTextSyntaxKind | null {
-  const localName = localTypeNameFromTextSyntax(typeName);
-  if (!localName || !(localName in xamlPrimitiveTypeSyntax)) {
+function parseClrNamespaceUri(namespaceUri: string | null): ClrNamespaceMapping | null {
+  if (!namespaceUri?.startsWith(CLR_NAMESPACE_PREFIX)) {
     return null;
   }
 
-  if (localName === 'String' && !typeNameHasExplicitQualifier(typeName)) {
+  const [namespacePart, ...optionParts] = namespaceUri.split(';');
+  const clrNamespace = namespacePart.slice(CLR_NAMESPACE_PREFIX.length).trim();
+  if (!clrNamespace) {
     return null;
   }
 
-  return xamlPrimitiveTypeSyntax[localName as keyof typeof xamlPrimitiveTypeSyntax];
+  const assemblyOption = optionParts.find((part) => part.trim().toLowerCase().startsWith('assembly='));
+  const assembly = assemblyOption ? assemblyOption.slice(assemblyOption.indexOf('=') + 1).trim() : null;
+  return {
+    clrNamespace,
+    assembly: assembly || null
+  };
 }
 
-function isPrimitiveXamlTypeName(typeName: string): boolean {
-  return primitiveTextSyntaxFromTypeName(typeName) != null;
+function isSupportedClrPrimitiveNamespace(mapping: ClrNamespaceMapping): boolean {
+  return (
+    supportedClrPrimitiveNamespaces.has(mapping.clrNamespace) &&
+    (mapping.assembly == null || supportedClrPrimitiveAssemblies.has(mapping.assembly))
+  );
+}
+
+function resolveClrPrimitiveTypeName(parts: XamlTypeNameParts, mapping: ClrNamespaceMapping): XamlTypeNameResolution | null {
+  if (!isSupportedClrPrimitiveNamespace(mapping) || !(parts.localName in xamlPrimitiveTypeSyntax)) {
+    return null;
+  }
+
+  return {
+    localName: parts.localName,
+    namespaceUri: null,
+    isPrimitive: true
+  };
+}
+
+function resolveRegistryTypeName(
+  localName: string,
+  namespaceUri: string | null,
+  registry: XamlVocabularyRegistry
+): XamlTypeNameResolution | null {
+  const type = registry.types.find((candidate) => {
+    return candidate.name === localName && namespacesMatch(namespaceUri, candidate.namespaceUri);
+  });
+
+  return type
+    ? {
+        localName: type.name,
+        namespaceUri: type.namespaceUri,
+        isPrimitive: type.namespaceUri === XAML_LANGUAGE_NAMESPACE && type.name in xamlPrimitiveTypeSyntax
+      }
+    : null;
+}
+
+function resolveXamlTypeNameReference(
+  typeName: string,
+  registry: XamlVocabularyRegistry,
+  context?: XamlValidationContext
+): XamlTypeNameResolution | null {
+  const parts = parseXamlTypeNameText(typeName);
+  if (!parts) {
+    return null;
+  }
+
+  if (parts.prefix) {
+    if (!context?.namespaceScope.has(parts.prefix)) {
+      return null;
+    }
+
+    const namespaceUri = context.namespaceScope.get(parts.prefix) ?? null;
+    const clrMapping = parseClrNamespaceUri(namespaceUri);
+    if (clrMapping) {
+      return resolveClrPrimitiveTypeName(parts, clrMapping);
+    }
+
+    return resolveRegistryTypeName(parts.localName, namespaceUri, registry);
+  }
+
+  if (parts.clrNamespace) {
+    return resolveClrPrimitiveTypeName(parts, {
+      clrNamespace: parts.clrNamespace,
+      assembly: null
+    });
+  }
+
+  if (parts.localName !== 'String' && parts.localName in xamlPrimitiveTypeSyntax) {
+    return {
+      localName: parts.localName,
+      namespaceUri: null,
+      isPrimitive: true
+    };
+  }
+
+  return resolveRegistryTypeName(parts.localName, null, registry);
+}
+
+function primitiveTextSyntaxFromTypeName(
+  typeName: string,
+  registry: XamlVocabularyRegistry,
+  context?: XamlValidationContext
+): XamlTextSyntaxKind | null {
+  const resolution = resolveXamlTypeNameReference(typeName, registry, context);
+  if (!resolution?.isPrimitive || !(resolution.localName in xamlPrimitiveTypeSyntax)) {
+    return null;
+  }
+
+  if (resolution.localName === 'String' && !typeNameHasExplicitQualifier(typeName)) {
+    return null;
+  }
+
+  return xamlPrimitiveTypeSyntax[resolution.localName as keyof typeof xamlPrimitiveTypeSyntax];
+}
+
+function isPrimitiveXamlTypeName(
+  typeName: string,
+  registry: XamlVocabularyRegistry,
+  context?: XamlValidationContext
+): boolean {
+  return primitiveTextSyntaxFromTypeName(typeName, registry, context) != null;
 }
 
 function isPrimitiveXamlObject(object: XamlObjectNode): boolean {
@@ -1228,13 +1382,16 @@ function isValidPrimitiveRangeValue(typeName: string, value: string): boolean {
   return true;
 }
 
-function registryHasTypeName(typeName: string, registry: XamlVocabularyRegistry): boolean {
-  if (isPrimitiveXamlTypeName(typeName)) {
+function registryHasTypeName(
+  typeName: string,
+  registry: XamlVocabularyRegistry,
+  context?: XamlValidationContext
+): boolean {
+  if (isPrimitiveXamlTypeName(typeName, registry, context)) {
     return true;
   }
 
-  const localName = localTypeNameFromTextSyntax(typeName);
-  return localName ? registry.types.some((type) => type.name === localName) : false;
+  return resolveXamlTypeNameReference(typeName, registry, context) != null;
 }
 
 function xamlStaticMemberFromExtension(extension: XamlMarkupExtensionNode): string {
@@ -1290,6 +1447,7 @@ function validateXamlTypeExtension(
   extension: XamlMarkupExtensionNode,
   diagnostics: XamlDiagnostic[],
   registry: XamlVocabularyRegistry,
+  context: XamlValidationContext,
   fallbackNode: XamlMemberNode
 ): void {
   const typeName = xamlTypeNameFromExtension(extension);
@@ -1303,7 +1461,7 @@ function validateXamlTypeExtension(
     return;
   }
 
-  if (!registryHasTypeName(typeName, registry)) {
+  if (!registryHasTypeName(typeName, registry, context)) {
     diagnostics.push(validationDiagnostic(
       'error',
       'unknown-xaml-type',
@@ -1374,7 +1532,7 @@ function validateMarkupExtensions(
 ): void {
   for (const extension of markupExtensionsFromValues(member.values)) {
     if (isXamlTypeExtension(extension)) {
-      validateXamlTypeExtension(extension, diagnostics, registry, member);
+      validateXamlTypeExtension(extension, diagnostics, registry, context, member);
       continue;
     }
 
@@ -1406,6 +1564,7 @@ interface XamlValidationContext {
   knownNames: Set<string>;
   namescope: Map<string, XamlMemberNode>;
   dictionaryKeyMembers: WeakSet<XamlMemberNode>;
+  namespaceScope: XamlNamespaceScope;
 }
 
 function errorCount(diagnostics: readonly XamlDiagnostic[]): number {
@@ -1646,6 +1805,32 @@ function collectKnownNamesForScope(
   }
 }
 
+function namespaceScopeWithObjectDeclarations(
+  parentScope: XamlNamespaceScope,
+  object: XamlObjectNode
+): XamlNamespaceScope {
+  if (object.namespaceDeclarations.length === 0) {
+    return parentScope;
+  }
+
+  const namespaceScope = new Map(parentScope);
+  for (const declaration of object.namespaceDeclarations) {
+    namespaceScope.set(declaration.prefix, declaration.namespaceUri);
+  }
+
+  return namespaceScope;
+}
+
+function withObjectNamespaceScope(context: XamlValidationContext, object: XamlObjectNode): XamlValidationContext {
+  const namespaceScope = namespaceScopeWithObjectDeclarations(context.namespaceScope, object);
+  return namespaceScope === context.namespaceScope
+    ? context
+    : {
+        ...context,
+        namespaceScope
+      };
+}
+
 function createNamescopeContext(
   object: XamlObjectNode,
   registry: XamlVocabularyRegistry,
@@ -1658,7 +1843,8 @@ function createNamescopeContext(
     rootObject: parentContext?.rootObject ?? object,
     knownNames,
     namescope: new Map(),
-    dictionaryKeyMembers: parentContext?.dictionaryKeyMembers ?? new WeakSet()
+    dictionaryKeyMembers: parentContext?.dictionaryKeyMembers ?? new WeakSet(),
+    namespaceScope: parentContext?.namespaceScope ?? namespaceScopeWithObjectDeclarations(new Map(), object)
   };
 }
 
@@ -1723,7 +1909,8 @@ function validateXamlArraySemantics(
   object: XamlObjectNode,
   type: XamlTypeDefinition,
   diagnostics: XamlDiagnostic[],
-  registry: XamlVocabularyRegistry
+  registry: XamlVocabularyRegistry,
+  context: XamlValidationContext
 ): void {
   if (type.namespaceUri !== XAML_LANGUAGE_NAMESPACE || type.name !== 'Array') {
     return;
@@ -1751,17 +1938,19 @@ function validateXamlArraySemantics(
     return;
   }
 
-  if (!registryHasTypeName(typeText, registry)) {
-    diagnostics.push(validationDiagnostic(
-      'error',
-      'unknown-xaml-type',
-      `Intrinsic "x:Array" references unknown item type "${typeText}".`,
-      typeMember ?? object
-    ));
+  if (!registryHasTypeName(typeText, registry, context)) {
+    if (!valuesContainStructuredXamlTypeReference(typeMember?.values ?? [])) {
+      diagnostics.push(validationDiagnostic(
+        'error',
+        'unknown-xaml-type',
+        `Intrinsic "x:Array" references unknown item type "${typeText}".`,
+        typeMember ?? object
+      ));
+    }
     return;
   }
 
-  const primitiveSyntax = primitiveTextSyntaxFromTypeName(typeText);
+  const primitiveSyntax = primitiveTextSyntaxFromTypeName(typeText, registry, context);
   const itemValues = valuesForResolvedMember(object, type, 'Items', registry);
 
   if (primitiveSyntax) {
@@ -1903,7 +2092,7 @@ function validateXamlIntrinsicObjectSemantics(
 
   if (type.name === 'Type' || type.name === 'TypeExtension') {
     const typeName = textFromRequiredMember(object, type, 'TypeName', diagnostics, registry);
-    if (typeName && !registryHasTypeName(typeName, registry)) {
+    if (typeName && !registryHasTypeName(typeName, registry, context)) {
       diagnostics.push(validationDiagnostic(
         'error',
         'unknown-xaml-type',
@@ -2116,9 +2305,10 @@ function validateObjectNode(
     return;
   }
 
+  const namespaceContext = withObjectNamespaceScope(context, object);
   const localContext = object !== context.rootObject && type.createsNamescope
-    ? createNamescopeContext(object, registry, context)
-    : context;
+    ? createNamescopeContext(object, registry, namespaceContext)
+    : namespaceContext;
   const assignedMembers = new Set<string>();
 
   for (const memberNode of object.members) {
@@ -2197,7 +2387,7 @@ function validateObjectNode(
     }
   }
 
-  validateXamlArraySemantics(object, type, diagnostics, registry);
+  validateXamlArraySemantics(object, type, diagnostics, registry, localContext);
   validateXamlIntrinsicObjectSemantics(object, type, diagnostics, registry, localContext);
 }
 

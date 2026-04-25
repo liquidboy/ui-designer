@@ -1572,6 +1572,58 @@ async function runPhase21IntrinsicObjectElementFixtures() {
   return files.length;
 }
 
+async function runPhase22ClrTypeResolutionFixtures() {
+  const expectations = {
+    'clr-primitive-array-runtime.xaml': { errors: [], warnings: [] },
+    'prefixed-ui-type-array.xaml': { errors: [], warnings: [] },
+    'type-arguments-preserved.xaml': { errors: [], warnings: ['unsupported-directive'] },
+    'type-object-clr-primitive.xaml': { errors: [], warnings: [] },
+    'unknown-clr-namespace.xaml': { errors: ['unknown-xaml-type'], warnings: [] },
+    'unknown-clr-type.xaml': { errors: ['unknown-xaml-type'], warnings: [] },
+    'unknown-prefix-type.xaml': { errors: ['unknown-xaml-type'], warnings: [] }
+  };
+  const files = await listFixtureFiles('phase22-clr-type-resolution');
+
+  for (const fileName of files) {
+    const input = await readFixture('phase22-clr-type-resolution', fileName);
+    const result = parseAndValidateXaml(input);
+    const expected = expectations[fileName];
+    assert.ok(expected, `Missing CLR type-resolution expectation for ${fileName}`);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'error'), expected.errors, `${fileName} validation errors`);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'warning'), expected.warnings, `${fileName} validation warnings`);
+
+    if (expected.errors.length > 0) {
+      continue;
+    }
+
+    const serialized = serializeXamlDocumentNode(result.document);
+    const runtime = parseRuntimeXaml(input);
+
+    if (fileName === 'clr-primitive-array-runtime.xaml') {
+      assert.deepEqual(runtime.root.attributes.Content, [7, 8]);
+      assert.match(serialized, /xmlns:sys="clr-namespace:System;assembly=mscorlib"/);
+    }
+
+    if (fileName === 'prefixed-ui-type-array.xaml') {
+      assert.equal(runtime.root.attributes.Type, 'ui:TextBlock');
+      assert.equal(runtime.root.children[0]?.type, 'TextBlock');
+      assert.equal(runtime.root.children[0]?.attributes.Text, 'Prefixed type');
+    }
+
+    if (fileName === 'type-arguments-preserved.xaml') {
+      assert.match(serialized, /x:TypeArguments="sys:Int32"/);
+      assert.equal(runtime.root.type, 'Canvas');
+    }
+
+    if (fileName === 'type-object-clr-primitive.xaml') {
+      assert.equal(runtime.root.attributes.Text, 'sys:Int32');
+      assert.match(serialized, /<x:Type TypeName="sys:Int32" \/>/);
+    }
+  }
+
+  return files.length;
+}
+
 async function runPhase6CollectionFixtures() {
   const expectations = {
     'theme-dictionary-xkey.xaml': { errors: [], warnings: [] },
@@ -1632,7 +1684,8 @@ const phase18Count = await runPhase18NamescopeBoundaryFixtures();
 const phase19Count = await runPhase19ReferenceIdentityFixtures();
 const phase20Count = await runPhase20SchemaTextSyntaxFixtures();
 const phase21Count = await runPhase21IntrinsicObjectElementFixtures();
+const phase22Count = await runPhase22ClrTypeResolutionFixtures();
 
 console.log(
-  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources, ${phase9Count} serializer, ${phase10Count} designer serializer, ${phase11Count} XML scope, ${phase12Count} object resources, ${phase13Count} dynamic resources, ${phase14Count} whitespace normalization, ${phase15Count} intrinsic arrays, ${phase16Count} intrinsic static references, ${phase17Count} intrinsic references, ${phase18Count} namescope boundaries, ${phase19Count} reference identity, ${phase20Count} schema text syntax, ${phase21Count} intrinsic object elements).`
+  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources, ${phase9Count} serializer, ${phase10Count} designer serializer, ${phase11Count} XML scope, ${phase12Count} object resources, ${phase13Count} dynamic resources, ${phase14Count} whitespace normalization, ${phase15Count} intrinsic arrays, ${phase16Count} intrinsic static references, ${phase17Count} intrinsic references, ${phase18Count} namescope boundaries, ${phase19Count} reference identity, ${phase20Count} schema text syntax, ${phase21Count} intrinsic object elements, ${phase22Count} CLR type resolution).`
 );
