@@ -200,6 +200,40 @@ Supported preserved form:
 </Button>
 ```
 
+## Markup Compilation and XML Data Directives
+
+Current status:
+
+1. `x:ClassModifier` and `x:FieldModifier` parse as preserved intrinsic XAML directives.
+2. `x:ClassModifier` is valid only on the document root object and requires `x:Class` on that object.
+3. `x:FieldModifier` requires root `x:Class` and same-object `x:Name`.
+4. `x:Code` parses as an intrinsic XAML object and is valid only as direct document-root content when the root has `x:Class`.
+5. `x:XData` parses as an intrinsic XAML object and preserves raw XML island content without validating island elements as UI objects.
+6. These constructs are preserved and serialized with warnings; no code is compiled, generated, or executed in v1.
+
+Supported preserved forms:
+
+```xaml
+<Canvas xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="Example.RootView" x:ClassModifier="internal">
+  <TextBlock x:Name="TitleText" x:FieldModifier="private" Text="Named field" />
+  <x:Code><![CDATA[
+    void WireUp() { /* preserved only */ }
+  ]]></x:Code>
+</Canvas>
+```
+
+```xaml
+<Button xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Button.Content>
+    <x:XData>
+      <payload xmlns="urn:example">
+        <item name="A">{literal}</item>
+      </payload>
+    </x:XData>
+  </Button.Content>
+</Button>
+```
+
 ## Intrinsic Arrays
 
 Current status:

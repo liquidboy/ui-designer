@@ -904,8 +904,89 @@ function isXamlPropertyElementDirective(element: Element): boolean {
   );
 }
 
+function isXamlElement(element: Element, localName: string): boolean {
+  const namespaceUri = element.namespaceURI ?? element.lookupNamespaceURI(element.prefix);
+  return element.localName === localName && (namespaceUri === XAML_LANGUAGE_NAMESPACE || element.prefix === 'x');
+}
+
 function isPropertyElement(element: Element): boolean {
   return element.localName.includes('.') || isXamlPropertyElementDirective(element);
+}
+
+function tagNameFromTagSource(tagSource: string): string {
+  return tagSource.replace(/^<\/?\s*/, '').trim().split(/[\s>/]/)[0] ?? '';
+}
+
+function findMatchingClosingElementStart(input: string, rawName: string, startOffset: number, locator: SourceLocator): number {
+  let depth = 1;
+  let cursor = startOffset;
+
+  while (cursor < input.length) {
+    const tagStart = input.indexOf('<', cursor);
+    if (tagStart < 0) {
+      return -1;
+    }
+
+    if (input.startsWith('<!--', tagStart)) {
+      const commentEnd = input.indexOf('-->', tagStart + 4);
+      cursor = commentEnd < 0 ? input.length : commentEnd + 3;
+      continue;
+    }
+
+    if (input.startsWith('<![CDATA[', tagStart)) {
+      const cdataEnd = input.indexOf(']]>', tagStart + 9);
+      cursor = cdataEnd < 0 ? input.length : cdataEnd + 3;
+      continue;
+    }
+
+    if (input.startsWith('<?', tagStart)) {
+      const instructionEnd = input.indexOf('?>', tagStart + 2);
+      cursor = instructionEnd < 0 ? input.length : instructionEnd + 2;
+      continue;
+    }
+
+    const tagEnd = locator.findTagEnd(tagStart);
+    if (tagEnd < 0) {
+      return -1;
+    }
+
+    const tagSource = input.slice(tagStart, tagEnd);
+    const isClosingTag = tagSource.startsWith('</');
+    const isSelfClosingTag = /\/\s*>$/.test(tagSource);
+    if (tagNameFromTagSource(tagSource) === rawName) {
+      if (isClosingTag) {
+        depth -= 1;
+        if (depth === 0) {
+          return tagStart;
+        }
+      } else if (!isSelfClosingTag) {
+        depth += 1;
+      }
+    }
+
+    cursor = tagEnd;
+  }
+
+  return -1;
+}
+
+function createRawXmlContentMember(rawXml: string, context: ParseContext, startOffset: number, endOffset: number): XamlMemberNode {
+  return {
+    kind: 'member',
+    name: createSyntheticQualifiedName(CONTENT_MEMBER_NAME),
+    syntax: 'content',
+    values: rawXml
+      ? [{
+          kind: 'text',
+          text: rawXml,
+          isRawXml: true,
+          preservesXmlSpace: true,
+          span: context.locator.span(startOffset, endOffset)
+        }]
+      : [],
+    isDirective: false,
+    isAttached: false
+  };
 }
 
 function flushContentValues(members: XamlMemberNode[], values: XamlValueNode[]): void {
@@ -1006,6 +1087,27 @@ function elementToObject(element: Element, context: ParseContext, parentScope: X
     if (member) {
       members.push(member);
     }
+  }
+
+  if (isXamlElement(element, 'XData')) {
+    const closingStart = tagStart >= 0 && tagEnd >= 0
+      ? findMatchingClosingElementStart(context.input, rawName, tagEnd, context.locator)
+      : -1;
+    const closingEnd = closingStart >= 0 ? context.locator.findTagEnd(closingStart) : -1;
+    const rawXml = closingStart >= tagEnd ? context.input.slice(tagEnd, closingStart) : '';
+    if (closingEnd >= 0) {
+      context.searchOffset = closingEnd;
+    }
+    members.push(createRawXmlContentMember(rawXml, context, tagEnd, closingStart >= tagEnd ? closingStart : tagEnd));
+    return {
+      kind: 'object',
+      type: createQualifiedName(element, rawName),
+      members,
+      namespaceDeclarations,
+      xmlLang: xmlScope.language,
+      preservesXmlSpace: xmlScope.preservesXmlSpace || undefined,
+      span
+    };
   }
 
   const contentValues: XamlValueNode[] = [];
@@ -1166,8 +1268,20 @@ function serializeValueNodeText(value: XamlValueNode, escapeMarkupLiteral: boole
   return '';
 }
 
+function serializeValueNodeElementContent(value: XamlValueNode, escapeMarkupLiteral: boolean): string {
+  if (value.kind === 'text' && value.isRawXml) {
+    return value.text;
+  }
+
+  return escapeXmlText(serializeValueNodeText(value, escapeMarkupLiteral));
+}
+
 function serializeValueNodesText(values: readonly XamlValueNode[], escapeMarkupLiteral: boolean): string {
   return values.map((value) => serializeValueNodeText(value, escapeMarkupLiteral)).join('');
+}
+
+function serializeValueNodesElementContent(values: readonly XamlValueNode[], escapeMarkupLiteral: boolean): string {
+  return values.map((value) => serializeValueNodeElementContent(value, escapeMarkupLiteral)).join('');
 }
 
 function serializeAttributeValue(values: readonly XamlValueNode[]): string {
@@ -1199,7 +1313,7 @@ function serializeBlockValues(
       return [serializeObjectNode(value, depth, options)];
     }
 
-    const serialized = escapeXmlText(serializeValueNodeText(value, escapeMarkupLiteral));
+    const serialized = serializeValueNodeElementContent(value, escapeMarkupLiteral);
     return serialized ? [`${indent}${serialized}`] : [];
   });
 }
@@ -1217,7 +1331,7 @@ function serializeMemberNode(
   }
 
   if (!valueNodesContainObjects(member.values)) {
-    return `${indent}<${tagName}>${escapeXmlText(serializeValueNodesText(member.values, true))}</${tagName}>`;
+    return `${indent}<${tagName}>${serializeValueNodesElementContent(member.values, true)}</${tagName}>`;
   }
 
   const children = serializeBlockValues(member.values, depth + 1, options, true).join('\n');
@@ -1249,7 +1363,7 @@ function serializeObjectNode(
     childMembers[0].syntax === 'content' &&
     !valueNodesContainObjects(childMembers[0].values)
   ) {
-    return `${indent}${tagOpen}>${escapeXmlText(serializeValueNodesText(childMembers[0].values, false))}</${tagName}>`;
+    return `${indent}${tagOpen}>${serializeValueNodesElementContent(childMembers[0].values, false)}</${tagName}>`;
   }
 
   const children = childMembers.flatMap((member) => {

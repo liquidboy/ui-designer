@@ -1,0 +1,9 @@
+<Button xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Button.Content>
+    <x:XData>
+      <payload xmlns="urn:example">
+        <item name="A">{literal}</item>
+      </payload>
+    </x:XData>
+  </Button.Content>
+</Button>
