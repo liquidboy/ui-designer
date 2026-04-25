@@ -593,7 +593,7 @@ function lowerMemberName(
 
   if (member.dotted) {
     if (ownerType && member.dotted.owner.localName === ownerType.name) {
-      return resolveXamlMember(ownerType.name, member.dotted.member, registry)?.name ?? member.dotted.member;
+      return resolveXamlMember(ownerType, member.dotted.member, registry)?.name ?? member.dotted.member;
     }
 
     const attached = resolveXamlAttachedMember(member.dotted.owner.localName, member.dotted.member, registry);
@@ -601,7 +601,7 @@ function lowerMemberName(
   }
 
   return ownerType
-    ? resolveXamlMember(ownerType.name, member.name, registry)?.name ?? qualifiedNameToString(member.name)
+    ? resolveXamlMember(ownerType, member.name, registry)?.name ?? qualifiedNameToString(member.name)
     : qualifiedNameToString(member.name);
 }
 
@@ -778,6 +778,14 @@ export function parseRuntimeXaml(
   }
 
   return result.legacyDocument;
+}
+
+export function parseStrictXaml(
+  input: string,
+  options: XamlParseOptions = {},
+  registry: XamlVocabularyRegistry = uiDesignerVocabularyRegistry
+): XamlDocument {
+  return parseRuntimeXaml(input, options, registry);
 }
 
 export function parseLegacyXaml(input: string, options: XamlParseOptions = {}): XamlDocument {

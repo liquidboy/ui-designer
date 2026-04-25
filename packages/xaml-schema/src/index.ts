@@ -117,6 +117,9 @@ export const XML_NAMESPACE = 'http://www.w3.org/XML/1998/namespace';
 export const XMLNS_NAMESPACE = 'http://www.w3.org/2000/xmlns/';
 export const UI_DESIGNER_NAMESPACE = 'https://liquidboy.dev/ui-designer';
 export const DESIGNER_METADATA_NAMESPACE = 'https://liquidboy.dev/ui-designer/designer';
+export const DESIGNER_THEME_NAMESPACE = 'https://liquidboy.dev/ui-designer/designer-theme';
+export const DESIGNER_CHROME_NAMESPACE = 'https://liquidboy.dev/ui-designer/designer-chrome';
+export const DESIGNER_PANELS_NAMESPACE = 'https://liquidboy.dev/ui-designer/designer-panels';
 
 export type XamlTextSyntaxKind =
   | 'any'
@@ -274,18 +277,19 @@ const eventMembers = [
   member('Click', 'string', { isRuntimeSupported: false })
 ] as const;
 
-function typeDefinition(
-  name: ControlType,
-  options: Pick<XamlTypeDefinition, 'members' | 'contentProperty' | 'allowsText' | 'allowsChildren'> & {
-    isRuntimeSupported?: boolean;
-  }
-): XamlTypeDefinition {
+type TypeDefinitionOptions = Pick<XamlTypeDefinition, 'members' | 'contentProperty' | 'allowsText' | 'allowsChildren'> & {
+  namespaceUri?: string | null;
+  collectionKind?: XamlCollectionKind;
+  isRuntimeSupported?: boolean;
+};
+
+function typeDefinition(name: string, options: TypeDefinitionOptions): XamlTypeDefinition {
   return {
     name,
-    namespaceUri: UI_DESIGNER_NAMESPACE,
+    namespaceUri: options.namespaceUri ?? UI_DESIGNER_NAMESPACE,
     members: options.members,
     contentProperty: options.contentProperty,
-    collectionKind: 'none',
+    collectionKind: options.collectionKind ?? 'none',
     allowsText: options.allowsText,
     allowsChildren: options.allowsChildren,
     isRuntimeSupported: options.isRuntimeSupported ?? true
@@ -402,6 +406,181 @@ export const uiDesignerTypes = [
   })
 ] as const;
 
+export const designerThemeTypes = [
+  typeDefinition('DesignerTheme', {
+    namespaceUri: DESIGNER_THEME_NAMESPACE,
+    members: [],
+    contentProperty: 'Children',
+    allowsText: false,
+    allowsChildren: true
+  }),
+  typeDefinition('Colors', {
+    namespaceUri: DESIGNER_THEME_NAMESPACE,
+    members: [],
+    contentProperty: 'Children',
+    allowsText: false,
+    allowsChildren: true
+  }),
+  typeDefinition('Color', {
+    namespaceUri: DESIGNER_THEME_NAMESPACE,
+    members: [member('Id', 'string'), member('Value', 'color')],
+    allowsText: false,
+    allowsChildren: false
+  })
+] as const;
+
+export const designerChromeTypes = [
+  typeDefinition('DesignerChrome', {
+    namespaceUri: DESIGNER_CHROME_NAMESPACE,
+    members: [],
+    contentProperty: 'Children',
+    allowsText: false,
+    allowsChildren: true
+  }),
+  typeDefinition('TopMenu', {
+    namespaceUri: DESIGNER_CHROME_NAMESPACE,
+    members: [],
+    contentProperty: 'Children',
+    allowsText: false,
+    allowsChildren: true
+  }),
+  typeDefinition('MenuItem', {
+    namespaceUri: DESIGNER_CHROME_NAMESPACE,
+    members: [member('Id', 'string'), member('Label', 'string')],
+    allowsText: false,
+    allowsChildren: false
+  }),
+  typeDefinition('CommandBar', {
+    namespaceUri: DESIGNER_CHROME_NAMESPACE,
+    members: [],
+    contentProperty: 'Children',
+    allowsText: false,
+    allowsChildren: true
+  }),
+  typeDefinition('Command', {
+    namespaceUri: DESIGNER_CHROME_NAMESPACE,
+    members: [member('Id', 'string'), member('Label', 'string')],
+    allowsText: false,
+    allowsChildren: false
+  }),
+  typeDefinition('DockTabs', {
+    namespaceUri: DESIGNER_CHROME_NAMESPACE,
+    members: [member('Slot', 'enum', { allowedValues: ['left', 'inspector'] })],
+    contentProperty: 'Children',
+    allowsText: false,
+    allowsChildren: true
+  }),
+  typeDefinition('DockTab', {
+    namespaceUri: DESIGNER_CHROME_NAMESPACE,
+    members: [member('Id', 'string'), member('Label', 'string'), member('Active', 'boolean')],
+    allowsText: false,
+    allowsChildren: false
+  }),
+  typeDefinition('DocumentTabs', {
+    namespaceUri: DESIGNER_CHROME_NAMESPACE,
+    members: [],
+    contentProperty: 'Children',
+    allowsText: false,
+    allowsChildren: true
+  }),
+  typeDefinition('DocumentTab', {
+    namespaceUri: DESIGNER_CHROME_NAMESPACE,
+    members: [
+      member('Id', 'string'),
+      member('Label', 'string'),
+      member('LabelBinding', 'string'),
+      member('Active', 'boolean')
+    ],
+    allowsText: false,
+    allowsChildren: false
+  }),
+  typeDefinition('ToolStrip', {
+    namespaceUri: DESIGNER_CHROME_NAMESPACE,
+    members: [],
+    contentProperty: 'Children',
+    allowsText: false,
+    allowsChildren: true
+  }),
+  typeDefinition('Tool', {
+    namespaceUri: DESIGNER_CHROME_NAMESPACE,
+    members: [
+      member('Id', 'string'),
+      member('Label', 'string'),
+      member('Glyph', 'string'),
+      member('Active', 'boolean')
+    ],
+    allowsText: false,
+    allowsChildren: false
+  }),
+  typeDefinition('SourceTabs', {
+    namespaceUri: DESIGNER_CHROME_NAMESPACE,
+    members: [],
+    contentProperty: 'Children',
+    allowsText: false,
+    allowsChildren: true
+  }),
+  typeDefinition('SourceTab', {
+    namespaceUri: DESIGNER_CHROME_NAMESPACE,
+    members: [member('Id', 'string'), member('Label', 'string'), member('Active', 'boolean')],
+    allowsText: false,
+    allowsChildren: false
+  }),
+  typeDefinition('StatusBar', {
+    namespaceUri: DESIGNER_CHROME_NAMESPACE,
+    members: [],
+    contentProperty: 'Children',
+    allowsText: false,
+    allowsChildren: true
+  }),
+  typeDefinition('StatusSegment', {
+    namespaceUri: DESIGNER_CHROME_NAMESPACE,
+    members: [member('Id', 'string'), member('Label', 'string'), member('ValueBinding', 'string')],
+    allowsText: false,
+    allowsChildren: false
+  })
+] as const;
+
+export const designerPanelsTypes = [
+  typeDefinition('DesignerPanels', {
+    namespaceUri: DESIGNER_PANELS_NAMESPACE,
+    members: [],
+    contentProperty: 'Children',
+    allowsText: false,
+    allowsChildren: true
+  }),
+  typeDefinition('LeftRail', {
+    namespaceUri: DESIGNER_PANELS_NAMESPACE,
+    members: [],
+    contentProperty: 'Children',
+    allowsText: false,
+    allowsChildren: true
+  }),
+  typeDefinition('Panel', {
+    namespaceUri: DESIGNER_PANELS_NAMESPACE,
+    members: [
+      member('Id', 'string'),
+      member('DockTab', 'string'),
+      member('Title', 'string'),
+      member('Caption', 'string')
+    ],
+    allowsText: false,
+    allowsChildren: false
+  }),
+  typeDefinition('InspectorGroups', {
+    namespaceUri: DESIGNER_PANELS_NAMESPACE,
+    members: [],
+    contentProperty: 'Children',
+    allowsText: false,
+    allowsChildren: true
+  }),
+  typeDefinition('Group', {
+    namespaceUri: DESIGNER_PANELS_NAMESPACE,
+    members: [member('Id', 'string'), member('Title', 'string')],
+    allowsText: false,
+    allowsChildren: false
+  })
+] as const;
+
 export const uiDesignerVocabularyRegistry: XamlVocabularyRegistry = {
   namespaces: [
     {
@@ -428,9 +607,24 @@ export const uiDesignerVocabularyRegistry: XamlVocabularyRegistry = {
       prefix: 'Designer',
       namespaceUri: DESIGNER_METADATA_NAMESPACE,
       description: 'ui-designer authoring metadata namespace.'
+    },
+    {
+      prefix: 'theme',
+      namespaceUri: DESIGNER_THEME_NAMESPACE,
+      description: 'Designer theme configuration vocabulary.'
+    },
+    {
+      prefix: 'chrome',
+      namespaceUri: DESIGNER_CHROME_NAMESPACE,
+      description: 'Designer chrome configuration vocabulary.'
+    },
+    {
+      prefix: 'panels',
+      namespaceUri: DESIGNER_PANELS_NAMESPACE,
+      description: 'Designer panel configuration vocabulary.'
     }
   ],
-  types: uiDesignerTypes,
+  types: [...uiDesignerTypes, ...designerThemeTypes, ...designerChromeTypes, ...designerPanelsTypes],
   attachedMembers: uiDesignerAttachedMembers,
   directives: xamlIntrinsicDirectives
 };
@@ -480,11 +674,14 @@ export function resolveXamlAttachedMember(
 }
 
 export function resolveXamlMember(
-  typeName: string | XamlQualifiedName,
+  typeName: string | XamlQualifiedName | XamlTypeDefinition,
   memberName: string | XamlQualifiedName,
   registry: XamlVocabularyRegistry = uiDesignerVocabularyRegistry
 ): XamlMemberDefinition | null {
-  const type = resolveXamlType(typeName, registry);
+  const type =
+    typeof typeName === 'object' && 'members' in typeName
+      ? typeName
+      : resolveXamlType(typeName, registry);
   if (!type) {
     return null;
   }
@@ -712,7 +909,7 @@ function validateObjectNode(
       }
     } else if (memberNode.dotted) {
       if (memberNode.dotted.owner.localName === type.name) {
-        definition = resolveXamlMember(type.name, memberNode.dotted.member, registry);
+        definition = resolveXamlMember(type, memberNode.dotted.member, registry);
       } else {
         definition = resolveXamlAttachedMember(memberNode.dotted.owner.localName, memberNode.dotted.member, registry);
       }
@@ -727,7 +924,7 @@ function validateObjectNode(
         continue;
       }
     } else {
-      definition = resolveXamlMember(type.name, memberNode.name, registry);
+      definition = resolveXamlMember(type, memberNode.name, registry);
       if (!definition) {
         diagnostics.push(validationDiagnostic(
           'error',

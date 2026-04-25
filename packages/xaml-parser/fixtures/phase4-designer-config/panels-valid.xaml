@@ -1,0 +1,8 @@
+<DesignerPanels xmlns="https://liquidboy.dev/ui-designer/designer-panels">
+  <LeftRail>
+    <Panel Id="solution" DockTab="project" Title="Solution Explorer" />
+  </LeftRail>
+  <InspectorGroups>
+    <Group Id="element" Title="Element" />
+  </InspectorGroups>
+</DesignerPanels>

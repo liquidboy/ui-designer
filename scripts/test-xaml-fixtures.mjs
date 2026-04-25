@@ -482,8 +482,62 @@ async function runPhase3LoweringFixtures() {
   return files.length;
 }
 
+async function runPhase4DesignerConfigFixtures() {
+  const expectations = {
+    'theme-valid.xaml': { errors: [] },
+    'chrome-valid.xaml': { errors: [] },
+    'panels-valid.xaml': { errors: [] },
+    'theme-unknown-member.xaml': { errors: ['unknown-member'] }
+  };
+
+  const files = await listFixtureFiles('phase4-designer-config');
+
+  for (const fileName of files) {
+    const input = await readFixture('phase4-designer-config', fileName);
+    const result = parseAndValidateXaml(input);
+    const expected = expectations[fileName];
+    assert.ok(expected, `Missing designer-config expectation for ${fileName}`);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'error'), expected.errors, `${fileName} error diagnostics`);
+
+    if (expected.errors.length > 0) {
+      continue;
+    }
+
+    const lowered = lowerXamlDocument(result.document);
+
+    if (fileName === 'theme-valid.xaml') {
+      assert.equal(lowered.root.type, 'DesignerTheme');
+      assert.equal(lowered.root.children[0]?.type, 'Colors');
+      assert.equal(lowered.root.children[0]?.children[0]?.type, 'Color');
+      assert.equal(lowered.root.children[0]?.children[0]?.attributes.Id, 'app-bg');
+    }
+
+    if (fileName === 'chrome-valid.xaml') {
+      assert.equal(lowered.root.type, 'DesignerChrome');
+      assert.equal(lowered.root.children[0]?.type, 'TopMenu');
+      assert.equal(lowered.root.children[0]?.children[0]?.type, 'MenuItem');
+      assert.equal(lowered.root.children[0]?.children[0]?.attributes.Label, 'File');
+      assert.equal(lowered.root.children[2]?.type, 'DockTabs');
+      assert.equal(lowered.root.children[2]?.attributes.Slot, 'left');
+    }
+
+    if (fileName === 'panels-valid.xaml') {
+      assert.equal(lowered.root.type, 'DesignerPanels');
+      assert.equal(lowered.root.children[0]?.type, 'LeftRail');
+      assert.equal(lowered.root.children[0]?.children[0]?.type, 'Panel');
+      assert.equal(lowered.root.children[1]?.type, 'InspectorGroups');
+      assert.equal(lowered.root.children[1]?.children[0]?.type, 'Group');
+    }
+  }
+
+  return files.length;
+}
+
 const phase1Count = await runPhase1Fixtures();
 const phase2Count = await runPhase2ValidationFixtures();
 const phase3Count = await runPhase3LoweringFixtures();
+const phase4Count = await runPhase4DesignerConfigFixtures();
 
-console.log(`XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering).`);
+console.log(
+  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config).`
+);

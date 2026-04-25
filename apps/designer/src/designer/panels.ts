@@ -1,4 +1,4 @@
-import { parseLegacyXaml } from '@ui-designer/xaml-parser';
+import { parseStrictXaml } from '@ui-designer/xaml-parser';
 import type { XamlNode } from '@ui-designer/xaml-schema';
 import defaultDesignerPanelsXaml from './DesignerPanels.xaml';
 
@@ -141,7 +141,7 @@ function invalidDefinition(message: string): DesignerPanelsParseResult {
 
 export function parseDesignerPanelsDefinition(source: string): DesignerPanelsParseResult {
   try {
-    const document = parseLegacyXaml(source);
+    const document = parseStrictXaml(source);
     const root = document.root;
 
     if (root.type !== 'DesignerPanels') {

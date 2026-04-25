@@ -1,0 +1,23 @@
+<DesignerChrome xmlns="https://liquidboy.dev/ui-designer/designer-chrome">
+  <TopMenu>
+    <MenuItem Id="file" Label="File" />
+  </TopMenu>
+  <CommandBar>
+    <Command Id="undo" Label="Undo" />
+  </CommandBar>
+  <DockTabs Slot="left">
+    <DockTab Id="project" Label="Project" Active="true" />
+  </DockTabs>
+  <DocumentTabs>
+    <DocumentTab Id="document" LabelBinding="documentFileName" Active="true" />
+  </DocumentTabs>
+  <ToolStrip>
+    <Tool Id="selection" Label="Selection" Glyph="V" Active="true" />
+  </ToolStrip>
+  <SourceTabs>
+    <SourceTab Id="xaml" Label="XAML" Active="true" />
+  </SourceTabs>
+  <StatusBar>
+    <StatusSegment Id="status" ValueBinding="status" />
+  </StatusBar>
+</DesignerChrome>
