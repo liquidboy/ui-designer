@@ -1,0 +1,2 @@
+<TextBlock>Hello <Run Text="structured" /> content.</TextBlock>
+

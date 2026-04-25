@@ -1,0 +1,8 @@
+<Grid Width="320" Height="240">
+  <Grid.RowDefinitions>
+    <RowDefinition Height="Auto" />
+    <RowDefinition Height="*" />
+  </Grid.RowDefinitions>
+  <TextBlock Grid.Row="1" Text="Property element fixture" />
+</Grid>
+

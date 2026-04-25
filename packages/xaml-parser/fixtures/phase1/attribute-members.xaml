@@ -1,0 +1,4 @@
+<Grid Width="320" Height="240">
+  <Rectangle Grid.Row="1" Grid.Column="2" Designer.OffsetX="16" Designer.OffsetY="24" Fill="#3fca9d" />
+</Grid>
+
