@@ -130,9 +130,10 @@ Current status:
 
 1. `x:Array` object elements validate as intrinsic XAML language objects.
 2. `Type` is required and simple object item types are checked against direct content or `x:Array.Items`.
-3. Authoring serialization preserves `x:Array` namespace prefixes and property-element form.
-4. Compatibility lowering emits a structural `Array` node with item children.
-5. True array-valued runtime assignment, primitive CLR item types, and `{x:Type ...}` item-type expressions remain outside v1.
+3. `{x:Type ...}` item-type expressions validate known simple object type names and runtime-lower to type-name strings.
+4. Authoring serialization preserves `x:Array` namespace prefixes, property-element form, and raw `{x:Type ...}` source.
+5. Compatibility lowering emits a structural `Array` node with item children.
+6. True array-valued runtime assignment, primitive CLR item types, CLR type resolution, and generic type execution remain outside v1.
 
 Supported structural form:
 
@@ -140,6 +141,14 @@ Supported structural form:
 <x:Array xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Type="TextBlock">
   <TextBlock Text="First" />
   <TextBlock Text="Second" />
+</x:Array>
+```
+
+Supported `x:Type` form:
+
+```xaml
+<x:Array xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Type="{x:Type TextBlock}">
+  <TextBlock Text="Typed" />
 </x:Array>
 ```
 

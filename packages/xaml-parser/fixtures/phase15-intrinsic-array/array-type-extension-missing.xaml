@@ -1,0 +1,3 @@
+<x:Array xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Type="{x:Type}">
+  <TextBlock Text="Untyped" />
+</x:Array>

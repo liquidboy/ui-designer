@@ -1281,6 +1281,13 @@ function isDynamicResourceExtension(extension: XamlMarkupExtensionNode): boolean
   return extension.type.localName === 'DynamicResource' && extension.type.namespaceUri == null;
 }
 
+function isTypeExtension(extension: XamlMarkupExtensionNode): boolean {
+  return (
+    (extension.type.localName === 'Type' || extension.type.localName === 'TypeExtension') &&
+    extension.type.namespaceUri === XAML_LANGUAGE_NAMESPACE
+  );
+}
+
 function coerceRuntimePrimitive(value: unknown): XamlPrimitive {
   if (value == null) {
     return null;
@@ -1324,6 +1331,22 @@ function resourceKeyFromExtension(extension: XamlMarkupExtensionNode): string {
 
   const positionalKey = extension.arguments.find((argument) => argument.kind === 'positional');
   return positionalKey ? markupExtensionArgumentToText(positionalKey.value).trim() : '';
+}
+
+function typeNameFromExtension(extension: XamlMarkupExtensionNode): string {
+  const namedType = extension.arguments.find((argument) => {
+    return (
+      argument.kind === 'named' &&
+      ['type', 'typename'].includes(argument.name.toLowerCase())
+    );
+  });
+
+  if (namedType) {
+    return markupExtensionArgumentToText(namedType.value).trim();
+  }
+
+  const positionalType = extension.arguments.find((argument) => argument.kind === 'positional');
+  return positionalType ? markupExtensionArgumentToText(positionalType.value).trim() : '';
 }
 
 function readBindingPathSegment(value: unknown, segment: string): unknown {
@@ -1409,6 +1432,10 @@ function evaluateMarkupExtension(extension: XamlMarkupExtensionNode, options: Xa
     }
 
     return resolveRuntimeResource(key, options.resources, 'DynamicResource');
+  }
+
+  if (isTypeExtension(extension)) {
+    return typeNameFromExtension(extension) || extension.raw;
   }
 
   return extension.raw;

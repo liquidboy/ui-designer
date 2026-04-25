@@ -1148,7 +1148,9 @@ async function runPhase15IntrinsicArrayFixtures() {
     'array-content.xaml': { errors: [], warnings: [] },
     'array-items-property.xaml': { errors: [], warnings: [] },
     'array-invalid-item.xaml': { errors: ['invalid-array-item-type'], warnings: [] },
-    'array-missing-type.xaml': { errors: ['missing-required-member'], warnings: [] }
+    'array-missing-type.xaml': { errors: ['missing-required-member'], warnings: [] },
+    'array-type-extension.xaml': { errors: [], warnings: [] },
+    'array-type-extension-missing.xaml': { errors: ['missing-markup-extension-argument'], warnings: [] }
   };
   const files = await listFixtureFiles('phase15-intrinsic-array');
 
@@ -1185,6 +1187,14 @@ async function runPhase15IntrinsicArrayFixtures() {
       assert.equal(lowered.root.children.length, 1);
       assert.equal(lowered.root.children[0]?.type, 'Button');
       assert.equal(lowered.root.children[0]?.attributes.Content, 'One');
+    }
+
+    if (fileName === 'array-type-extension.xaml') {
+      const runtime = parseRuntimeXaml(input);
+      assert.equal(lowered.root.attributes.Type, '{x:Type TextBlock}');
+      assert.equal(runtime.root.attributes.Type, 'TextBlock');
+      assert.equal(runtime.root.children[0]?.type, 'TextBlock');
+      assert.match(serializeXamlDocumentNode(result.document), /Type="\{x:Type TextBlock\}"/);
     }
   }
 

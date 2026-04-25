@@ -894,17 +894,104 @@ function markupExtensionsFromValues(values: readonly XamlValueNode[]): XamlMarku
   return extensions;
 }
 
+function isXamlTypeExtension(extension: XamlMarkupExtensionNode): boolean {
+  return (
+    (extension.type.localName === 'Type' || extension.type.localName === 'TypeExtension') &&
+    extension.type.namespaceUri === XAML_LANGUAGE_NAMESPACE
+  );
+}
+
+function xamlTypeNameFromExtension(extension: XamlMarkupExtensionNode): string {
+  const namedType = extension.arguments.find((argument) => {
+    return (
+      argument.kind === 'named' &&
+      ['type', 'typename'].includes(argument.name.toLowerCase()) &&
+      typeof argument.value === 'string'
+    );
+  });
+  if (namedType?.kind === 'named' && typeof namedType.value === 'string') {
+    return namedType.value.trim();
+  }
+
+  const positionalType = extension.arguments.find((argument) => {
+    return argument.kind === 'positional' && typeof argument.value === 'string';
+  });
+  return positionalType?.kind === 'positional' && typeof positionalType.value === 'string'
+    ? positionalType.value.trim()
+    : '';
+}
+
+function xamlTypeNameFromValues(values: readonly XamlValueNode[]): string {
+  if (values.length === 1 && values[0].kind === 'markupExtension' && isXamlTypeExtension(values[0])) {
+    return xamlTypeNameFromExtension(values[0]);
+  }
+
+  return scalarTextFromValues(values).trim();
+}
+
+function localTypeNameFromTextSyntax(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.startsWith('{')) {
+    return null;
+  }
+
+  const separator = trimmed.lastIndexOf(':');
+  return separator >= 0 ? trimmed.slice(separator + 1) : trimmed;
+}
+
+function registryHasTypeName(typeName: string, registry: XamlVocabularyRegistry): boolean {
+  const localName = localTypeNameFromTextSyntax(typeName);
+  return localName ? registry.types.some((type) => type.name === localName) : false;
+}
+
 function isRuntimeSupportedMarkupExtension(extension: XamlMarkupExtensionNode): boolean {
   return (
     (extension.type.localName === 'Binding' && extension.type.namespaceUri == null) ||
     (extension.type.localName === 'StaticResource' && extension.type.namespaceUri == null) ||
     (extension.type.localName === 'DynamicResource' && extension.type.namespaceUri == null) ||
-    (extension.type.localName === 'Null' && extension.type.namespaceUri === XAML_LANGUAGE_NAMESPACE)
+    (extension.type.localName === 'Null' && extension.type.namespaceUri === XAML_LANGUAGE_NAMESPACE) ||
+    isXamlTypeExtension(extension)
   );
 }
 
-function warnUnsupportedMarkupExtensions(member: XamlMemberNode, diagnostics: XamlDiagnostic[]): void {
+function validateXamlTypeExtension(
+  extension: XamlMarkupExtensionNode,
+  diagnostics: XamlDiagnostic[],
+  registry: XamlVocabularyRegistry,
+  fallbackNode: XamlMemberNode
+): void {
+  const typeName = xamlTypeNameFromExtension(extension);
+  if (!typeName) {
+    diagnostics.push(validationDiagnostic(
+      'error',
+      'missing-markup-extension-argument',
+      'Markup extension "x:Type" requires a type name.',
+      extension.span ? extension : fallbackNode
+    ));
+    return;
+  }
+
+  if (!registryHasTypeName(typeName, registry)) {
+    diagnostics.push(validationDiagnostic(
+      'error',
+      'unknown-xaml-type',
+      `Markup extension "x:Type" references unknown type "${typeName}".`,
+      extension.span ? extension : fallbackNode
+    ));
+  }
+}
+
+function validateMarkupExtensions(
+  member: XamlMemberNode,
+  diagnostics: XamlDiagnostic[],
+  registry: XamlVocabularyRegistry
+): void {
   for (const extension of markupExtensionsFromValues(member.values)) {
+    if (isXamlTypeExtension(extension)) {
+      validateXamlTypeExtension(extension, diagnostics, registry, member);
+      continue;
+    }
+
     if (isRuntimeSupportedMarkupExtension(extension)) {
       continue;
     }
@@ -993,11 +1080,12 @@ function warnUnsupportedMember(member: XamlMemberNode, definition: XamlMemberDef
 function validateResolvedMember(
   member: XamlMemberNode,
   definition: XamlMemberDefinition,
-  diagnostics: XamlDiagnostic[]
+  diagnostics: XamlDiagnostic[],
+  registry: XamlVocabularyRegistry
 ): void {
   validateTextSyntax(member, definition, diagnostics);
   warnUnsupportedMember(member, definition, diagnostics);
-  warnUnsupportedMarkupExtensions(member, diagnostics);
+  validateMarkupExtensions(member, diagnostics, registry);
 }
 
 function validateDirectiveSemantics(
@@ -1060,7 +1148,8 @@ function validateResolvedDirective(
   member: XamlMemberNode,
   definition: XamlMemberDefinition,
   diagnostics: XamlDiagnostic[],
-  context: XamlValidationContext
+  context: XamlValidationContext,
+  registry: XamlVocabularyRegistry
 ): void {
   const startingErrors = errorCount(diagnostics);
   const isValidatedDictionaryKey =
@@ -1072,7 +1161,7 @@ function validateResolvedDirective(
   validateDirectiveSemantics(object, member, definition, diagnostics, context);
 
   if (isValidatedDictionaryKey) {
-    warnUnsupportedMarkupExtensions(member, diagnostics);
+    validateMarkupExtensions(member, diagnostics, registry);
     return;
   }
 
@@ -1080,7 +1169,7 @@ function validateResolvedDirective(
     warnUnsupportedMember(member, definition, diagnostics);
   }
 
-  warnUnsupportedMarkupExtensions(member, diagnostics);
+  validateMarkupExtensions(member, diagnostics, registry);
 }
 
 function memberDuplicateKey(member: XamlMemberNode, definition: XamlMemberDefinition): string | null {
@@ -1122,16 +1211,6 @@ function findResolvedPropertyMember(
   });
 }
 
-function simpleTypeNameFromTextSyntax(value: string): string | null {
-  const trimmed = value.trim();
-  if (!trimmed || trimmed.startsWith('{')) {
-    return null;
-  }
-
-  const separator = trimmed.lastIndexOf(':');
-  return separator >= 0 ? trimmed.slice(separator + 1) : trimmed;
-}
-
 function objectValuesForResolvedMember(
   object: XamlObjectNode,
   type: XamlTypeDefinition,
@@ -1168,9 +1247,13 @@ function validateXamlArraySemantics(
   }
 
   const typeMember = findResolvedPropertyMember(object, type, 'Type', registry);
-  const typeText = typeMember ? scalarTextFromValues(typeMember.values).trim() : '';
+  const typeText = typeMember ? xamlTypeNameFromValues(typeMember.values) : '';
 
   if (!typeText) {
+    if (typeMember) {
+      return;
+    }
+
     diagnostics.push(validationDiagnostic(
       'error',
       'missing-required-member',
@@ -1180,7 +1263,7 @@ function validateXamlArraySemantics(
     return;
   }
 
-  const itemTypeName = simpleTypeNameFromTextSyntax(typeText);
+  const itemTypeName = localTypeNameFromTextSyntax(typeText);
   if (!itemTypeName) {
     return;
   }
@@ -1339,7 +1422,7 @@ function validateContentMember(
     ));
   }
 
-  warnUnsupportedMarkupExtensions(member, diagnostics);
+  validateMarkupExtensions(member, diagnostics, registry);
 }
 
 function validateObjectNode(
@@ -1435,9 +1518,9 @@ function validateObjectNode(
     }
 
     if (definition.kind === 'directive') {
-      validateResolvedDirective(object, memberNode, definition, diagnostics, context);
+      validateResolvedDirective(object, memberNode, definition, diagnostics, context, registry);
     } else {
-      validateResolvedMember(memberNode, definition, diagnostics);
+      validateResolvedMember(memberNode, definition, diagnostics, registry);
     }
 
     for (const value of memberNode.values) {

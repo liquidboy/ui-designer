@@ -50,13 +50,14 @@ The repo now has the core compliance foundation in place:
 12. `DynamicResource` runtime lowering now supports primitive/object fallback to scoped resources and runtime override maps for update semantics without changing XAML source.
 13. Default text lowering now collapses XML whitespace runs and trims text values, while `xml:space="preserve"` keeps exact scoped text and `xml:space="default"` resets back to normalized behavior.
 14. Intrinsic `x:Array` object elements now parse, validate required `Type`, validate simple object item types, serialize, and lower as structural `Array` compatibility nodes.
-15. The validator currently covers known namespaces/types/members, duplicate scalar members, content rules, enum/primitive checks, namescope collisions for `x:Name`, root-only placement for `x:Class`, collection item-type constraints, dictionary key validation, and warning-only preservation for unsupported markup extensions.
+15. `{x:Type ...}` now validates known simple object type names, preserves authoring source, and runtime-lowers to type-name strings for scenarios such as `x:Array Type`.
+16. The validator currently covers known namespaces/types/members, duplicate scalar members, content rules, enum/primitive checks, namescope collisions for `x:Name`, root-only placement for `x:Class`, collection item-type constraints, dictionary key validation, and warning-only preservation for unsupported markup extensions.
 
 The main remaining gaps are now:
 
 1. Deferred intrinsic forms such as `x:Static` and `x:Reference`.
 2. Richer namescope boundaries for future templates, resources, and object islands.
-3. True array-valued runtime assignment, primitive CLR item types, `{x:Type ...}` item-type expressions, and full schema-driven text conversion.
+3. True array-valued runtime assignment, primitive CLR item types, CLR type resolution, generic type execution, and full schema-driven text conversion.
 
 Current limitation:
 
@@ -129,7 +130,7 @@ Deliverables:
 2. Decide which intrinsic directives are in scope for v1:
    - required: `x:Name`, `x:Key`, `x:Class`, `x:Uid`, `x:TypeArguments`
    - optional early: `xml:lang`, `xml:space`
-   - implemented incrementally: `x:Null`, `x:Array`
+   - implemented incrementally: `x:Null`, `x:Array`, `x:Type`
    - optional later: `x:Reference`, `x:Static`
 3. Decide whether unsupported but well-formed constructs should:
    - fail validation
