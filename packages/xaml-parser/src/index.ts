@@ -85,6 +85,11 @@ interface ParseContext {
   searchOffset: number;
 }
 
+interface XmlScope {
+  preservesXmlSpace: boolean;
+  language?: string;
+}
+
 interface MarkupExtensionParseSuccess {
   node: XamlMarkupExtensionNode;
   nextIndex: number;
@@ -616,6 +621,40 @@ function isDirectiveName(name: XamlQualifiedName): boolean {
   );
 }
 
+function findXmlAttribute(element: Element, localName: string): Attr | undefined {
+  return Array.from(element.attributes).find((attr) => {
+    return (
+      attr.localName === localName &&
+      (attr.namespaceURI === XML_NAMESPACE || attr.prefix === 'xml' || attr.name === `xml:${localName}`)
+    );
+  });
+}
+
+function xmlScopeForElement(element: Element, parentScope: XmlScope, options: XamlParseOptions): XmlScope {
+  const xmlSpace = findXmlAttribute(element, 'space')?.value;
+  const xmlLang = findXmlAttribute(element, 'lang')?.value;
+  let preservesXmlSpace = parentScope.preservesXmlSpace;
+
+  if (!options.preserveWhitespace) {
+    if (xmlSpace === 'preserve') {
+      preservesXmlSpace = true;
+    } else if (xmlSpace === 'default') {
+      preservesXmlSpace = false;
+    }
+  }
+
+  return {
+    preservesXmlSpace,
+    language: xmlLang ?? parentScope.language
+  };
+}
+
+function initialXmlScope(options: XamlParseOptions): XmlScope {
+  return {
+    preservesXmlSpace: options.preserveWhitespace === true
+  };
+}
+
 function registerNamespaceDeclaration(context: ParseContext, declaration: XamlNamespaceDeclaration): void {
   const key = `${declaration.prefix ?? ''}\u0000${declaration.namespaceUri}`;
   if (context.namespaceKeys.has(key)) {
@@ -652,9 +691,9 @@ function collectNamespaceDeclarations(
   return declarations;
 }
 
-function createTextNode(domNode: ChildNode, context: ParseContext): XamlTextNode | null {
+function createTextNode(domNode: ChildNode, context: ParseContext, xmlScope: XmlScope): XamlTextNode | null {
   const text = domNode.nodeValue ?? '';
-  if (!context.options.preserveWhitespace && text.trim().length === 0) {
+  if (!xmlScope.preservesXmlSpace && text.trim().length === 0) {
     return null;
   }
 
@@ -666,6 +705,7 @@ function createTextNode(domNode: ChildNode, context: ParseContext): XamlTextNode
   return {
     kind: 'text',
     text,
+    preservesXmlSpace: xmlScope.preservesXmlSpace || undefined,
     span
   };
 }
@@ -739,13 +779,24 @@ function createPropertyElementTextValueNode(
   ownerElement: Element,
   span: XamlSourceSpan | undefined,
   diagnostics: XamlDiagnostic[],
-  locator: SourceLocator
+  locator: SourceLocator,
+  xmlScope: XmlScope
 ): XamlValueNode {
   const trimmed = value.trim();
+  if (xmlScope.preservesXmlSpace && value !== trimmed) {
+    return {
+      kind: 'text',
+      text: value,
+      preservesXmlSpace: true,
+      span
+    };
+  }
+
   if (trimmed.startsWith('{}')) {
     return {
       kind: 'text',
       text: trimmed.slice(2),
+      preservesXmlSpace: xmlScope.preservesXmlSpace || undefined,
       span: spanForTrimmedValue(value, span, locator)
     };
   }
@@ -754,6 +805,7 @@ function createPropertyElementTextValueNode(
     return {
       kind: 'text',
       text: value,
+      preservesXmlSpace: xmlScope.preservesXmlSpace || undefined,
       span
     };
   }
@@ -836,33 +888,35 @@ function flushContentValues(members: XamlMemberNode[], values: XamlValueNode[]):
   values.length = 0;
 }
 
-function readValueNodes(element: Element, context: ParseContext): XamlValueNode[] {
+function readValueNodes(element: Element, context: ParseContext, parentScope: XmlScope): XamlValueNode[] {
+  const xmlScope = xmlScopeForElement(element, parentScope, context.options);
   const values: XamlValueNode[] = [];
 
   for (const child of Array.from(element.childNodes)) {
     if (child.nodeType === Node.TEXT_NODE || child.nodeType === Node.CDATA_SECTION_NODE) {
-      const textNode = createTextNode(child, context);
+      const textNode = createTextNode(child, context, xmlScope);
       if (textNode) {
         values.push(createPropertyElementTextValueNode(
           textNode.text,
           element,
           textNode.span,
           context.diagnostics,
-          context.locator
+          context.locator,
+          xmlScope
         ));
       }
       continue;
     }
 
     if (child.nodeType === Node.ELEMENT_NODE) {
-      values.push(elementToObject(child as Element, context));
+      values.push(elementToObject(child as Element, context, xmlScope));
     }
   }
 
   return values;
 }
 
-function propertyElementToMember(element: Element, context: ParseContext): XamlMemberNode {
+function propertyElementToMember(element: Element, context: ParseContext, parentScope: XmlScope): XamlMemberNode {
   const rawName = element.tagName;
   const tagStart = context.locator.findElementStart(rawName, context.searchOffset);
   const tagEnd = tagStart >= 0 ? context.locator.findTagEnd(tagStart) : -1;
@@ -874,7 +928,7 @@ function propertyElementToMember(element: Element, context: ParseContext): XamlM
   const dotted = createDottedMember(name);
   const namespaceDeclarations = collectNamespaceDeclarations(element, context, tagStart, tagEnd);
   const span = tagStart >= 0 && tagEnd >= 0 ? context.locator.span(tagStart, tagEnd) : undefined;
-  const values = readValueNodes(element, context);
+  const values = readValueNodes(element, context, parentScope);
 
   if (namespaceDeclarations.length > 0) {
     context.diagnostics.push({
@@ -897,7 +951,8 @@ function propertyElementToMember(element: Element, context: ParseContext): XamlM
   };
 }
 
-function elementToObject(element: Element, context: ParseContext): XamlObjectNode {
+function elementToObject(element: Element, context: ParseContext, parentScope: XmlScope): XamlObjectNode {
+  const xmlScope = xmlScopeForElement(element, parentScope, context.options);
   const rawName = element.tagName;
   const tagStart = context.locator.findElementStart(rawName, context.searchOffset);
   const tagEnd = tagStart >= 0 ? context.locator.findTagEnd(tagStart) : -1;
@@ -920,7 +975,7 @@ function elementToObject(element: Element, context: ParseContext): XamlObjectNod
 
   for (const child of Array.from(element.childNodes)) {
     if (child.nodeType === Node.TEXT_NODE || child.nodeType === Node.CDATA_SECTION_NODE) {
-      const textNode = createTextNode(child, context);
+      const textNode = createTextNode(child, context, xmlScope);
       if (textNode) {
         contentValues.push(textNode);
       }
@@ -934,11 +989,11 @@ function elementToObject(element: Element, context: ParseContext): XamlObjectNod
     const childElement = child as Element;
     if (isPropertyElement(childElement)) {
       flushContentValues(members, contentValues);
-      members.push(propertyElementToMember(childElement, context));
+      members.push(propertyElementToMember(childElement, context, xmlScope));
       continue;
     }
 
-    contentValues.push(elementToObject(childElement, context));
+    contentValues.push(elementToObject(childElement, context, xmlScope));
   }
 
   flushContentValues(members, contentValues);
@@ -948,6 +1003,8 @@ function elementToObject(element: Element, context: ParseContext): XamlObjectNod
     type: createQualifiedName(element, rawName),
     members,
     namespaceDeclarations,
+    xmlLang: xmlScope.language,
+    preservesXmlSpace: xmlScope.preservesXmlSpace || undefined,
     span
   };
 }
@@ -995,7 +1052,7 @@ export function parseXamlToInfoset(input: string, options: XamlParseOptions = {}
     searchOffset: 0
   };
 
-  const root = elementToObject(xml.documentElement, context);
+  const root = elementToObject(xml.documentElement, context, initialXmlScope(options));
   const document: XamlDocumentNode = {
     kind: 'document',
     root,
@@ -1353,8 +1410,13 @@ function lowerTypeName(object: XamlObjectNode, registry: XamlVocabularyRegistry)
   return resolveXamlType(object.type, registry)?.name ?? qualifiedNameToString(object.type);
 }
 
+function valuesPreserveXmlSpace(values: readonly XamlValueNode[]): boolean {
+  return values.some((value) => value.kind === 'text' && value.preservesXmlSpace);
+}
+
 function textValueFromValues(values: readonly XamlValueNode[], options: XamlLoweringContext): string {
-  return values.map((value) => scalarTextFromValue(value, options)).join('').trim();
+  const text = values.map((value) => scalarTextFromValue(value, options)).join('');
+  return valuesPreserveXmlSpace(values) ? text : text.trim();
 }
 
 function lowerDirectiveName(member: XamlMemberNode, registry: XamlVocabularyRegistry): string {
@@ -1623,6 +1685,10 @@ function lowerObjectNode(
     attributes,
     children: []
   };
+
+  if (object.xmlLang != null) {
+    attributes.lang = object.xmlLang;
+  }
 
   for (const declaration of object.namespaceDeclarations) {
     if (!resolveXamlType(object.type, registry)) {

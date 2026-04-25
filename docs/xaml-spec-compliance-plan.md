@@ -45,12 +45,13 @@ The repo now has the core compliance foundation in place:
 7. Runtime lowering also collects scoped primitive `ResourceDictionary` entries and resolves top-level `{StaticResource ...}` references.
 8. The infoset semantic serializer round-trips namespace declarations, directives, markup extensions, property elements, and resource collection structures.
 9. Designer source import/export now serializes from the semantic infoset, and mapped designer mutations propagate attribute, property-element, insert, remove, and move edits into that infoset.
-10. The validator currently covers known namespaces/types/members, duplicate scalar members, content rules, enum/primitive checks, namescope collisions for `x:Name`, root-only placement for `x:Class`, collection item-type constraints, dictionary key validation, and warning-only preservation for unsupported markup extensions.
+10. XML scope handling now preserves whitespace-only text under `xml:space="preserve"`, resets that behavior with `xml:space="default"`, and propagates `xml:lang` through infoset objects and lowered compatibility nodes.
+11. The validator currently covers known namespaces/types/members, duplicate scalar members, content rules, enum/primitive checks, namescope collisions for `x:Name`, root-only placement for `x:Class`, collection item-type constraints, dictionary key validation, and warning-only preservation for unsupported markup extensions.
 
 The main remaining gaps are now:
 
-1. `xml:space` whitespace behavior and `xml:lang` propagation semantics.
-2. Object-valued resources and dynamic resource updates.
+1. Object-valued resources and dynamic resource updates.
+2. Schema-aware whitespace collapse/trim rules beyond scoped `xml:space` preservation.
 
 Current limitation:
 
@@ -58,6 +59,7 @@ Current limitation:
 2. Runtime resource lookup is intentionally primitive-only: `Color`, `Number`, and `String` entries are supported in `ResourceDictionary`; object resources and dynamic resources are still deferred.
 3. Runtime `Binding` support is intentionally v1-only: one-way path lookup, no converters, and no multi-binding.
 4. Designer infoset edit propagation is intentionally conservative: if a lowered compatibility path cannot be mapped safely back to the infoset, the designer falls back to lowered serialization instead of risking stale or corrupt semantic output.
+5. `xml:space` handling preserves scoped whitespace, but broader schema-aware whitespace normalization rules are still partial.
 
 This document remains the long-term roadmap. The current implementation status now lives in [XAML Compliance Matrix](./xaml-compliance-matrix.md).
 

@@ -126,6 +126,15 @@ Current status:
 3. Inspector, palette, component-tree, drag, and resize edits now propagate mapped attribute, property-element, insert, remove, and move operations into the semantic infoset.
 4. If a future lowered compatibility edit cannot be mapped safely to the infoset, the designer drops back to lowered serialization rather than saving stale semantic source.
 
+## XML Scope Directives
+
+Current status:
+
+1. `xml:space="preserve"` preserves whitespace-only text nodes within its scope.
+2. `xml:space="default"` resets inherited whitespace preservation for descendants.
+3. `xml:lang` is inherited by descendant object nodes and lowers to compatibility `lang` metadata.
+4. Full schema-aware whitespace collapse/trim rules remain outside the v1 subset.
+
 ## Example Document
 
 ```xaml

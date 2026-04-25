@@ -955,6 +955,61 @@ async function runPhase10DesignerSerializerFixtures() {
   return 6;
 }
 
+async function runPhase11XmlScopeFixtures() {
+  const files = await listFixtureFiles('phase11-xml-scope');
+
+  for (const fileName of files) {
+    const input = await readFixture('phase11-xml-scope', fileName);
+    const parsed = parseXamlToInfoset(input);
+    assert.deepEqual(diagnosticsWithSeverity(parsed, 'error'), [], `${fileName} parse errors`);
+    assert.ok(parsed.document?.root, `${fileName} should produce a root object`);
+
+    const validated = parseAndValidateXaml(input);
+    assert.deepEqual(diagnosticsWithSeverity(validated.validation, 'error'), [], `${fileName} validation errors`);
+    const lowered = lowerXamlDocument(validated.document);
+    const root = parsed.document.root;
+
+    if (fileName === 'xml-space-preserve.xaml') {
+      const content = findMember(root, 'Content', 'content');
+      assert.equal(root.preservesXmlSpace, true);
+      assert.equal(content?.values[0]?.kind, 'text');
+      assert.equal(content.values[0].text, '   ');
+      assert.equal(content.values[0].preservesXmlSpace, true);
+      assert.equal(lowered.root.attributes.Text, '   ');
+      assert.equal(lowered.root.text, '   ');
+      assert.match(serializeXamlDocumentNode(parsed.document), /xml:space="preserve">   <\/TextBlock>/);
+    }
+
+    if (fileName === 'xml-space-default.xaml') {
+      const stackPanelContent = findMember(root, 'Content', 'content');
+      const textBlock = stackPanelContent?.values[0];
+      assert.equal(root.preservesXmlSpace, true);
+      assert.equal(textBlock?.kind, 'object');
+      assert.equal(textBlock.preservesXmlSpace, undefined);
+      assert.equal(findMember(textBlock, 'Content', 'content'), undefined);
+      assert.equal(lowered.root.children[0]?.attributes.Text, undefined);
+      assert.equal(lowered.root.children[0]?.text, undefined);
+    }
+
+    if (fileName === 'xml-lang-inheritance.xaml') {
+      const stackPanel = findMember(root, 'Content', 'content')?.values[0];
+      const textBlock = stackPanel?.kind === 'object'
+        ? findMember(stackPanel, 'Content', 'content')?.values[0]
+        : undefined;
+      assert.equal(root.xmlLang, 'en-US');
+      assert.equal(stackPanel?.kind, 'object');
+      assert.equal(stackPanel.xmlLang, 'en-US');
+      assert.equal(textBlock?.kind, 'object');
+      assert.equal(textBlock.xmlLang, 'en-US');
+      assert.equal(lowered.root.attributes.lang, 'en-US');
+      assert.equal(lowered.root.children[0]?.attributes.lang, 'en-US');
+      assert.equal(lowered.root.children[0]?.children[0]?.attributes.lang, 'en-US');
+    }
+  }
+
+  return files.length;
+}
+
 async function runPhase6CollectionFixtures() {
   const expectations = {
     'theme-dictionary-xkey.xaml': { errors: [], warnings: [] },
@@ -1004,7 +1059,8 @@ const phase7Count = await runPhase7RuntimeExtensionFixtures();
 const phase8Count = await runPhase8ResourceFixtures();
 const phase9Count = await runPhase9SerializerFixtures();
 const phase10Count = await runPhase10DesignerSerializerFixtures();
+const phase11Count = await runPhase11XmlScopeFixtures();
 
 console.log(
-  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources, ${phase9Count} serializer, ${phase10Count} designer serializer).`
+  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources, ${phase9Count} serializer, ${phase10Count} designer serializer, ${phase11Count} XML scope).`
 );

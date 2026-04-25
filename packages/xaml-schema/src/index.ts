@@ -87,6 +87,8 @@ export interface XamlObjectNode {
   type: XamlQualifiedName;
   members: XamlMemberNode[];
   namespaceDeclarations: XamlNamespaceDeclaration[];
+  xmlLang?: string;
+  preservesXmlSpace?: boolean;
   span?: XamlSourceSpan;
 }
 
@@ -104,6 +106,7 @@ export interface XamlMemberNode {
 export interface XamlTextNode {
   kind: 'text';
   text: string;
+  preservesXmlSpace?: boolean;
   span?: XamlSourceSpan;
 }
 

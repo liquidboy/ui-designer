@@ -243,6 +243,7 @@ function cloneXamlValueNode(node: XamlValueNode): XamlValueNode {
   return {
     kind: 'text',
     text: node.text,
+    preservesXmlSpace: node.preservesXmlSpace,
     span: cloneXamlSourceSpan(node.span)
   };
 }
@@ -266,6 +267,8 @@ function cloneXamlObjectNode(node: XamlObjectNode): XamlObjectNode {
     type: cloneXamlQualifiedName(node.type),
     members: node.members.map(cloneXamlMemberNode),
     namespaceDeclarations: node.namespaceDeclarations.map(cloneXamlNamespaceDeclaration),
+    xmlLang: node.xmlLang,
+    preservesXmlSpace: node.preservesXmlSpace,
     span: cloneXamlSourceSpan(node.span)
   };
 }

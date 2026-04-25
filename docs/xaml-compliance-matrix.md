@@ -52,7 +52,7 @@ Default rule: parser support should be broader than runtime execution support. U
 | Collection members | Partial | Phase 3+ | Add list semantics to vocabulary metadata and lowering. | Known list containers now validate allowed item types; semantic collection lowering is still compatibility-shaped. |
 | Dictionary members | Partial | Phase 3+ | Add dictionary semantics, key validation, and lowering. | Designer theme `Colors` validates dictionary items with explicit `x:Key` or implicit `Color.Id`; runtime `ResourceDictionary` now lowers primitive `Color`/`Number`/`String` resources for `StaticResource` lookup. |
 | Text syntax conversion | Partial | Phase 2 | Move primitive conversion into schema-defined text syntax. | Validation is schema-aware today, but legacy lowering still uses shared primitive coercion. |
-| Whitespace handling | Missing | Phase 3+ | Add schema-aware whitespace preservation/collapse rules. | Include `xml:space` once directive propagation exists. |
+| Whitespace handling | Partial | Phase 3+ | Add schema-aware whitespace preservation/collapse rules. | `xml:space="preserve"` now preserves whitespace-only text in scope and `xml:space="default"` resets inherited preservation; full schema-aware whitespace normalization is still pending. |
 | Markup extension AST | Partial | Phase 5 | Parse brace syntax into structured expressions. | Attribute values and property-element text now parse into a structured AST; runtime lowering evaluates supported extensions while authoring lowering preserves raw text. |
 | Nested markup extensions | Partial | Phase 5 | Support nested extension arguments. | Nested attribute-value extensions now parse recursively; unsupported nested extensions still warn and preserve. |
 | Semantic serializer | Partial | Phase 7 | Serialize from infoset/semantic model, not string concatenation. | `serializeXamlDocumentNode` now canonicalizes namespace declarations, directives, markup extensions, property elements, and collection content; designer attribute edits and child insert/remove/move operations update the infoset when the lowered path maps safely. |
@@ -71,8 +71,8 @@ Default rule: parser support should be broader than runtime execution support. U
 | `x:Array` | Deferred | Deferred | Preserve as unsupported intrinsic object/extension. | Not lowered. | Needs array/list semantics first. |
 | `x:Static` | Deferred | Deferred | Preserve as unsupported markup extension. | Not evaluated. | Requires a static member resolution model. |
 | `x:Reference` | Deferred | Deferred | Preserve as unsupported markup extension. | Not evaluated. | Requires namescope and object reference resolution. |
-| `xml:lang` | Current | Phase 4 | Parse and preserve with warning. | May lower to text/layout metadata later. | Propagation semantics are still pending. |
-| `xml:space` | Current | Phase 4 | Parse and preserve; enum value validation works. | Affects text node whitespace handling later. | Propagation and whitespace-collapse behavior are still pending. |
+| `xml:lang` | Current | Phase 4 | Parse, preserve, validate, and propagate as effective object metadata. | Compatibility lowering emits inherited `lang` metadata on descendants. | Runtime text/layout consumers can now read inherited language metadata from lowered attributes. |
+| `xml:space` | Partial | Phase 4 | Parse, preserve, validate, and apply scoped whitespace preservation/reset. | Preserved whitespace-only text lowers into text-capable content. | Full schema-aware whitespace-collapse behavior is still pending. |
 
 ## `ui-designer` Vocabulary Matrix
 
@@ -141,8 +141,9 @@ Completed foundation work:
 7. Runtime lowering now evaluates v1 `Binding` paths against a supplied data context, maps `{x:Null}` to semantic `null`, and resolves scoped primitive `{StaticResource ...}` references.
 8. Infoset semantic serialization now round-trips namespace declarations, directives, markup extensions, property elements, and resource collection structures through fixture coverage.
 9. Designer source import/export now serializes from the parsed infoset, and mapped designer edits propagate into that infoset so namespace prefixes, directives, property elements, markup extensions, and resource property elements survive common visual editing flows.
+10. XML scope handling now applies `xml:space` preserve/default behavior to text parsing and propagates `xml:lang` through object metadata and compatibility lowering.
 
 Next slice:
 
-1. Implement `xml:space` whitespace behavior and `xml:lang` propagation.
-2. Expand resource support toward object-valued resources and dynamic updates.
+1. Expand resource support toward object-valued resources and dynamic updates.
+2. Add schema-aware whitespace collapse/trim rules beyond scoped `xml:space` preservation.
