@@ -40,14 +40,19 @@ The repo now has the core compliance foundation in place:
 2. `packages/xaml-parser` parses XML into the spec-shaped infoset, validates against active vocabularies, and lowers back into the legacy `XamlDocument` shape through compatibility adapters.
 3. `packages/ui-runtime-web` uses the strict parse/validate/lower path for app runtime documents.
 4. `packages/designer-core` and the designer config loaders use the registry-backed strict parser for authoring documents and designer vocabularies.
-5. The validator currently covers known namespaces/types/members, duplicate scalar members, content rules, enum/primitive checks, namescope collisions for `x:Name`, and root-only placement for `x:Class`.
+5. Attribute-value markup extensions now parse into structured AST nodes, including nested extensions, escaped `{}{...}` literals, and prefixed intrinsic forms such as `{x:Null}`.
+6. The validator currently covers known namespaces/types/members, duplicate scalar members, content rules, enum/primitive checks, namescope collisions for `x:Name`, root-only placement for `x:Class`, and warning-only preservation for parsed markup extensions.
 
 The main remaining gaps are now:
 
-1. Markup extension AST parsing and evaluation, including `{Binding ...}`.
-2. Dictionary/list semantics and meaningful `x:Key` validation.
+1. Collection/dictionary semantics and meaningful `x:Key` validation.
+2. Runtime markup extension evaluation, including `Binding` and lowering `{x:Null}` to semantic null values.
 3. `xml:space` whitespace behavior and `xml:lang` propagation semantics.
 4. Semantic serialization and round-trip guarantees from the infoset model.
+
+Current limitation:
+
+1. Structured markup extension parsing currently applies to attribute values. Property-element text markup extensions still need a follow-on slice.
 
 This document remains the long-term roadmap. The current implementation status now lives in [XAML Compliance Matrix](./xaml-compliance-matrix.md).
 

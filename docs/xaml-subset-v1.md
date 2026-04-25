@@ -78,8 +78,10 @@ Design target, not yet implemented:
 
 Current status:
 
-1. Markup extension parsing is not implemented yet, so binding expressions are still treated as plain text.
-2. Runtime binding evaluation is not available yet.
+1. Attribute-based binding expressions now parse into a structured markup extension AST instead of plain text.
+2. Escaped literals such as `{}{Binding Path=Title}` stay as literal text, and nested attribute-value extensions are preserved structurally.
+3. Runtime binding evaluation is not available yet, so parsed expressions currently lower back to raw strings for compatibility.
+4. Property-element text markup extensions are still pending.
 
 Planned constraints once binding lands:
 

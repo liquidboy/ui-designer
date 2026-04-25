@@ -58,9 +58,14 @@ export interface XamlNamespaceDeclaration {
   span?: XamlSourceSpan;
 }
 
-export type XamlInfosetNode = XamlDocumentNode | XamlObjectNode | XamlMemberNode | XamlTextNode;
+export type XamlInfosetNode =
+  | XamlDocumentNode
+  | XamlObjectNode
+  | XamlMemberNode
+  | XamlTextNode
+  | XamlMarkupExtensionNode;
 
-export type XamlValueNode = XamlObjectNode | XamlTextNode;
+export type XamlValueNode = XamlObjectNode | XamlTextNode | XamlMarkupExtensionNode;
 
 export type XamlMemberSyntax = 'attribute' | 'propertyElement' | 'content';
 
@@ -100,6 +105,29 @@ export interface XamlTextNode {
   kind: 'text';
   text: string;
   span?: XamlSourceSpan;
+}
+
+export type XamlMarkupExtensionValue = string | XamlMarkupExtensionNode;
+
+export type XamlMarkupExtensionArgument = XamlMarkupExtensionNamedArgument | XamlMarkupExtensionPositionalArgument;
+
+export interface XamlMarkupExtensionNode {
+  kind: 'markupExtension';
+  type: XamlQualifiedName;
+  arguments: XamlMarkupExtensionArgument[];
+  raw: string;
+  span?: XamlSourceSpan;
+}
+
+export interface XamlMarkupExtensionNamedArgument {
+  kind: 'named';
+  name: string;
+  value: XamlMarkupExtensionValue;
+}
+
+export interface XamlMarkupExtensionPositionalArgument {
+  kind: 'positional';
+  value: XamlMarkupExtensionValue;
 }
 
 export interface XamlParseOptions {
@@ -731,6 +759,48 @@ function hasObjectValue(values: readonly XamlValueNode[]): boolean {
   return values.some((value) => value.kind === 'object');
 }
 
+function visitMarkupExtensionValue(
+  value: XamlMarkupExtensionValue,
+  visit: (node: XamlMarkupExtensionNode) => void
+): void {
+  if (typeof value === 'string') {
+    return;
+  }
+
+  visit(value);
+
+  for (const argument of value.arguments) {
+    visitMarkupExtensionValue(argument.value, visit);
+  }
+}
+
+function markupExtensionsFromValues(values: readonly XamlValueNode[]): XamlMarkupExtensionNode[] {
+  const extensions: XamlMarkupExtensionNode[] = [];
+
+  for (const value of values) {
+    if (value.kind !== 'markupExtension') {
+      continue;
+    }
+
+    visitMarkupExtensionValue(value, (extension) => {
+      extensions.push(extension);
+    });
+  }
+
+  return extensions;
+}
+
+function warnUnsupportedMarkupExtensions(member: XamlMemberNode, diagnostics: XamlDiagnostic[]): void {
+  for (const extension of markupExtensionsFromValues(member.values)) {
+    diagnostics.push(validationDiagnostic(
+      'warning',
+      'unsupported-markup-extension',
+      `Markup extension "${formatQualifiedName(extension.type)}" is parsed structurally but not runtime-evaluated yet.`,
+      extension.span ? extension : member
+    ));
+  }
+}
+
 interface XamlValidationContext {
   rootObject: XamlObjectNode;
   documentNamescope: Map<string, XamlMemberNode>;
@@ -809,6 +879,7 @@ function validateResolvedMember(
 ): void {
   validateTextSyntax(member, definition, diagnostics);
   warnUnsupportedMember(member, definition, diagnostics);
+  warnUnsupportedMarkupExtensions(member, diagnostics);
 }
 
 function validateDirectiveSemantics(
@@ -868,6 +939,8 @@ function validateResolvedDirective(
   if (errorCount(diagnostics) === startingErrors) {
     warnUnsupportedMember(member, definition, diagnostics);
   }
+
+  warnUnsupportedMarkupExtensions(member, diagnostics);
 }
 
 function memberDuplicateKey(member: XamlMemberNode, definition: XamlMemberDefinition): string | null {
@@ -908,7 +981,7 @@ function validateContentMember(
       continue;
     }
 
-    if (value.text.trim() && !type.allowsText) {
+    if (value.kind === 'text' && value.text.trim() && !type.allowsText) {
       hasInvalidContent = true;
       diagnostics.push(validationDiagnostic(
         'error',
@@ -927,6 +1000,8 @@ function validateContentMember(
       object
     ));
   }
+
+  warnUnsupportedMarkupExtensions(member, diagnostics);
 }
 
 function validateObjectNode(

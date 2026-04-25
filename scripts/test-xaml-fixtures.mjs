@@ -37,6 +37,7 @@ class FixtureElement {
     this.prefix = prefix;
     this.localName = localName;
     this.namespaceURI = prefix ? namespaceMap.get(prefix) ?? null : namespaceMap.get(null) ?? null;
+    this.namespaceMap = namespaceMap;
     this.attributes = [];
     this.childNodes = [];
   }
@@ -47,6 +48,10 @@ class FixtureElement {
 
   get textContent() {
     return this.childNodes.map((node) => node.textContent ?? node.nodeValue ?? '').join('');
+  }
+
+  lookupNamespaceURI(prefix) {
+    return this.namespaceMap.get(prefix ?? null) ?? null;
   }
 }
 
@@ -540,11 +545,104 @@ async function runPhase4DesignerConfigFixtures() {
   return files.length;
 }
 
+async function runPhase5MarkupExtensionFixtures() {
+  const expectations = {
+    'binding-attribute.xaml': { errors: [], warnings: ['unsupported-markup-extension'] },
+    'nested-extension.xaml': {
+      errors: [],
+      warnings: ['unsupported-markup-extension', 'unsupported-markup-extension']
+    },
+    'escaped-literal.xaml': { errors: [], warnings: [] },
+    'x-null-attribute.xaml': { errors: [], warnings: ['unsupported-markup-extension'] },
+    'invalid-markup-extension.xaml': { errors: ['invalid-markup-extension-syntax'], warnings: [] }
+  };
+
+  const files = await listFixtureFiles('phase5-markup-extension');
+
+  for (const fileName of files) {
+    const input = await readFixture('phase5-markup-extension', fileName);
+    const parsed = parseXamlToInfoset(input);
+    const expected = expectations[fileName];
+    assert.ok(expected, `Missing markup-extension expectation for ${fileName}`);
+    assert.deepEqual(diagnosticsWithSeverity(parsed, 'error'), expected.errors, `${fileName} parse diagnostics`);
+
+    if (expected.errors.length > 0) {
+      continue;
+    }
+
+    const root = parsed.document.root;
+
+    if (fileName === 'binding-attribute.xaml') {
+      const textMember = findMember(root, 'Text', 'attribute');
+      assert.equal(textMember?.values[0]?.kind, 'markupExtension');
+      assert.equal(textMember.values[0].type.localName, 'Binding');
+      assert.equal(textMember.values[0].arguments[0]?.kind, 'named');
+      assert.equal(textMember.values[0].arguments[0]?.name, 'Path');
+      assert.equal(textMember.values[0].arguments[0]?.value, 'Title');
+    }
+
+    if (fileName === 'nested-extension.xaml') {
+      const textMember = findMember(root, 'Text', 'attribute');
+      const extension = textMember?.values[0];
+      assert.equal(extension?.kind, 'markupExtension');
+      assert.equal(extension.arguments[1]?.kind, 'named');
+      assert.equal(extension.arguments[1]?.name, 'Converter');
+      assert.equal(extension.arguments[1]?.value.kind, 'markupExtension');
+      assert.equal(extension.arguments[1]?.value.type.localName, 'StaticResource');
+      assert.equal(extension.arguments[1]?.value.arguments[0]?.kind, 'positional');
+      assert.equal(extension.arguments[1]?.value.arguments[0]?.value, 'TitleConverter');
+    }
+
+    if (fileName === 'escaped-literal.xaml') {
+      const textMember = findMember(root, 'Text', 'attribute');
+      assert.equal(textMember?.values[0]?.kind, 'text');
+      assert.equal(textMember.values[0].text, '{Binding Path=Title}');
+    }
+
+    if (fileName === 'x-null-attribute.xaml') {
+      const contentMember = findMember(root, 'Content', 'attribute');
+      assert.equal(contentMember?.values[0]?.kind, 'markupExtension');
+      assert.equal(contentMember.values[0].type.prefix, 'x');
+      assert.equal(contentMember.values[0].type.localName, 'Null');
+      assert.equal(contentMember.values[0].type.namespaceUri, XAML_LANGUAGE_NAMESPACE);
+    }
+
+    const validated = parseAndValidateXaml(input);
+    assert.deepEqual(diagnosticsWithSeverity(validated.validation, 'error'), expected.errors, `${fileName} validation errors`);
+    assert.deepEqual(
+      diagnosticsWithSeverity(validated.validation, 'warning'),
+      expected.warnings,
+      `${fileName} validation warnings`
+    );
+
+    const lowered = lowerXamlDocument(validated.document);
+
+    if (fileName === 'binding-attribute.xaml') {
+      assert.equal(lowered.root.attributes.Text, '{Binding Path=Title}');
+    }
+
+    if (fileName === 'nested-extension.xaml') {
+      assert.equal(lowered.root.attributes.Text, '{Binding Path=Title, Converter={StaticResource TitleConverter}}');
+    }
+
+    if (fileName === 'escaped-literal.xaml') {
+      assert.equal(lowered.root.attributes.Text, '{Binding Path=Title}');
+    }
+
+    if (fileName === 'x-null-attribute.xaml') {
+      assert.equal(lowered.root.attributes.Content, '{x:Null}');
+    }
+  }
+
+  return files.length;
+}
+
 const phase1Count = await runPhase1Fixtures();
 const phase2Count = await runPhase2ValidationFixtures();
 const phase3Count = await runPhase3LoweringFixtures();
 const phase4Count = await runPhase4DesignerConfigFixtures();
+const phase5Count = await runPhase5MarkupExtensionFixtures();
 
 console.log(
-  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config).`
+  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension).`
 );

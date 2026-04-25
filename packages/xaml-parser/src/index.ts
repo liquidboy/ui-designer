@@ -13,6 +13,8 @@ import {
   type XamlDocument,
   type XamlDocumentNode,
   type XamlDottedMember,
+  type XamlMarkupExtensionNode,
+  type XamlMarkupExtensionValue,
   type XamlMemberNode,
   type XamlNamespaceDeclaration,
   type XamlNode,
@@ -67,6 +69,17 @@ interface ParseContext {
   searchOffset: number;
 }
 
+interface MarkupExtensionParseSuccess {
+  node: XamlMarkupExtensionNode;
+  nextIndex: number;
+}
+
+interface MarkupExtensionParseFailure {
+  diagnostic: XamlDiagnostic;
+}
+
+type MarkupExtensionParseResult = MarkupExtensionParseSuccess | MarkupExtensionParseFailure;
+
 function parseAttributeValue(value: string): XamlPrimitive {
   const trimmed = value.trim();
   if (trimmed === 'true') return true;
@@ -78,6 +91,342 @@ function parseAttributeValue(value: string): XamlPrimitive {
   }
 
   return value;
+}
+
+function splitQualifiedName(rawName: string): { prefix: string | null; localName: string } {
+  const separator = rawName.indexOf(':');
+  if (separator < 0) {
+    return {
+      prefix: null,
+      localName: rawName
+    };
+  }
+
+  return {
+    prefix: rawName.slice(0, separator),
+    localName: rawName.slice(separator + 1)
+  };
+}
+
+function createQualifiedNameFromRawName(
+  rawName: string,
+  resolveNamespaceUri: (prefix: string | null) => string | null
+): XamlQualifiedName {
+  const { prefix, localName } = splitQualifiedName(rawName);
+  return {
+    rawName,
+    prefix,
+    localName,
+    namespaceUri: resolveNamespaceUri(prefix)
+  };
+}
+
+function markupExtensionDiagnostic(message: string, span?: XamlSourceSpan): XamlDiagnostic {
+  return {
+    severity: 'error',
+    code: 'invalid-markup-extension-syntax',
+    message,
+    span
+  };
+}
+
+function skipMarkupWhitespace(input: string, index: number): number {
+  let cursor = index;
+  while (cursor < input.length && /\s/.test(input[cursor])) {
+    cursor += 1;
+  }
+
+  return cursor;
+}
+
+function decodeMarkupExtensionEscapes(input: string): string {
+  let value = '';
+
+  for (let index = 0; index < input.length; index += 1) {
+    const character = input[index];
+    if (character === '\\' && index + 1 < input.length) {
+      value += input[index + 1];
+      index += 1;
+      continue;
+    }
+
+    value += character;
+  }
+
+  return value;
+}
+
+function parseQuotedMarkupExtensionValue(input: string, span?: XamlSourceSpan): string | XamlDiagnostic {
+  const quote = input[0];
+  let value = '';
+
+  for (let index = 1; index < input.length; index += 1) {
+    const character = input[index];
+    if (character === '\\') {
+      if (index + 1 >= input.length) {
+        return markupExtensionDiagnostic('Quoted markup extension value ends with an incomplete escape sequence.', span);
+      }
+
+      value += input[index + 1];
+      index += 1;
+      continue;
+    }
+
+    if (character === quote) {
+      if (input.slice(index + 1).trim().length > 0) {
+        return markupExtensionDiagnostic('Quoted markup extension value has trailing text after the closing quote.', span);
+      }
+
+      return value;
+    }
+
+    value += character;
+  }
+
+  return markupExtensionDiagnostic('Quoted markup extension value is missing a closing quote.', span);
+}
+
+function findMarkupArgumentSeparator(input: string, startIndex: number): number {
+  let depth = 0;
+  let quote: '"' | "'" | null = null;
+
+  for (let index = startIndex; index < input.length; index += 1) {
+    const character = input[index];
+
+    if (quote) {
+      if (character === '\\') {
+        index += 1;
+        continue;
+      }
+
+      if (character === quote) {
+        quote = null;
+      }
+
+      continue;
+    }
+
+    if (character === '\\') {
+      index += 1;
+      continue;
+    }
+
+    if (character === '"' || character === "'") {
+      quote = character;
+      continue;
+    }
+
+    if (character === '{') {
+      depth += 1;
+      continue;
+    }
+
+    if (character === '}') {
+      if (depth === 0) {
+        return index;
+      }
+
+      depth -= 1;
+      continue;
+    }
+
+    if (character === ',' && depth === 0) {
+      return index;
+    }
+  }
+
+  return input.length;
+}
+
+function findMarkupAssignment(input: string): number {
+  let depth = 0;
+  let quote: '"' | "'" | null = null;
+
+  for (let index = 0; index < input.length; index += 1) {
+    const character = input[index];
+
+    if (quote) {
+      if (character === '\\') {
+        index += 1;
+        continue;
+      }
+
+      if (character === quote) {
+        quote = null;
+      }
+
+      continue;
+    }
+
+    if (character === '\\') {
+      index += 1;
+      continue;
+    }
+
+    if (character === '"' || character === "'") {
+      quote = character;
+      continue;
+    }
+
+    if (character === '{') {
+      depth += 1;
+      continue;
+    }
+
+    if (character === '}') {
+      if (depth > 0) {
+        depth -= 1;
+      }
+      continue;
+    }
+
+    if (character === '=' && depth === 0) {
+      return index;
+    }
+  }
+
+  return -1;
+}
+
+function parseMarkupExtensionValue(
+  value: string,
+  resolveNamespaceUri: (prefix: string | null) => string | null,
+  span?: XamlSourceSpan
+): XamlMarkupExtensionValue | XamlDiagnostic {
+  const trimmed = value.trim();
+
+  if (trimmed.length === 0) {
+    return '';
+  }
+
+  if (trimmed.startsWith('{}')) {
+    return trimmed.slice(2);
+  }
+
+  if (trimmed.startsWith('{')) {
+    const parsed = parseMarkupExtension(trimmed, resolveNamespaceUri);
+    if ('diagnostic' in parsed) {
+      return parsed.diagnostic;
+    }
+
+    if (parsed.nextIndex !== trimmed.length) {
+      return markupExtensionDiagnostic('Nested markup extension contains trailing text after the closing brace.', span);
+    }
+
+    return parsed.node;
+  }
+
+  if (trimmed.startsWith('"') || trimmed.startsWith("'")) {
+    return parseQuotedMarkupExtensionValue(trimmed, span);
+  }
+
+  return decodeMarkupExtensionEscapes(trimmed);
+}
+
+function parseMarkupExtension(
+  input: string,
+  resolveNamespaceUri: (prefix: string | null) => string | null,
+  startIndex = 0,
+  nodeSpan?: XamlSourceSpan
+): MarkupExtensionParseResult {
+  if (input[startIndex] !== '{') {
+    return {
+      diagnostic: markupExtensionDiagnostic('Markup extension must start with "{".', nodeSpan)
+    };
+  }
+
+  let cursor = skipMarkupWhitespace(input, startIndex + 1);
+  const typeStart = cursor;
+
+  while (cursor < input.length && !/\s/.test(input[cursor]) && input[cursor] !== '}') {
+    cursor += 1;
+  }
+
+  const rawTypeName = input.slice(typeStart, cursor);
+  if (!rawTypeName) {
+    return {
+      diagnostic: markupExtensionDiagnostic('Markup extension is missing a type name.', nodeSpan)
+    };
+  }
+
+  const type = createQualifiedNameFromRawName(rawTypeName, resolveNamespaceUri);
+  const argumentsList: XamlMarkupExtensionNode['arguments'] = [];
+  cursor = skipMarkupWhitespace(input, cursor);
+  let sawNamedArgument = false;
+
+  while (cursor < input.length && input[cursor] !== '}') {
+    const segmentEnd = findMarkupArgumentSeparator(input, cursor);
+    const segment = input.slice(cursor, segmentEnd).trim();
+
+    if (!segment) {
+      return {
+        diagnostic: markupExtensionDiagnostic('Markup extension contains an empty argument segment.', nodeSpan)
+      };
+    }
+
+    const assignmentIndex = findMarkupAssignment(segment);
+    if (assignmentIndex >= 0) {
+      const name = segment.slice(0, assignmentIndex).trim();
+      if (!name) {
+        return {
+          diagnostic: markupExtensionDiagnostic('Markup extension named argument is missing its name.', nodeSpan)
+        };
+      }
+
+      const value = parseMarkupExtensionValue(segment.slice(assignmentIndex + 1), resolveNamespaceUri, nodeSpan);
+      if (typeof value !== 'string' && 'severity' in value) {
+        return { diagnostic: value };
+      }
+
+      argumentsList.push({
+        kind: 'named',
+        name,
+        value
+      });
+      sawNamedArgument = true;
+    } else {
+      if (sawNamedArgument) {
+        return {
+          diagnostic: markupExtensionDiagnostic(
+            'Markup extension positional arguments must appear before named arguments.',
+            nodeSpan
+          )
+        };
+      }
+
+      const value = parseMarkupExtensionValue(segment, resolveNamespaceUri, nodeSpan);
+      if (typeof value !== 'string' && 'severity' in value) {
+        return { diagnostic: value };
+      }
+
+      argumentsList.push({
+        kind: 'positional',
+        value
+      });
+    }
+
+    cursor = segmentEnd;
+    if (input[cursor] === ',') {
+      cursor = skipMarkupWhitespace(input, cursor + 1);
+    }
+  }
+
+  if (cursor >= input.length || input[cursor] !== '}') {
+    return {
+      diagnostic: markupExtensionDiagnostic('Markup extension is missing a closing "}".', nodeSpan)
+    };
+  }
+
+  return {
+    node: {
+      kind: 'markupExtension',
+      type,
+      arguments: argumentsList,
+      raw: input.slice(startIndex, cursor + 1),
+      span: nodeSpan
+    },
+    nextIndex: cursor + 1
+  };
 }
 
 function escapeRegExp(value: string): string {
@@ -205,10 +554,11 @@ function namespacePrefixFromAttribute(attr: Attr): string | null {
 
 function createQualifiedName(node: Element | Attr, fallbackRawName: string): XamlQualifiedName {
   const rawName = 'name' in node ? node.name : fallbackRawName;
+  const { localName } = splitQualifiedName(rawName);
   return {
     rawName,
     prefix: node.prefix || null,
-    localName: node.localName || rawName.split(':').pop() || rawName,
+    localName: node.localName || localName,
     namespaceUri: node.namespaceURI || null
   };
 }
@@ -304,7 +654,63 @@ function createTextNode(domNode: ChildNode, context: ParseContext): XamlTextNode
   };
 }
 
-function createAttributeMember(attr: Attr, context: ParseContext, tagStart: number, tagEnd: number): XamlMemberNode | null {
+function createAttributeValueNode(
+  value: string,
+  ownerElement: Element,
+  span: XamlSourceSpan | undefined,
+  diagnostics: XamlDiagnostic[]
+): XamlValueNode {
+  if (value.startsWith('{}')) {
+    return {
+      kind: 'text',
+      text: value.slice(2),
+      span
+    };
+  }
+
+  if (!value.startsWith('{')) {
+    return {
+      kind: 'text',
+      text: value,
+      span
+    };
+  }
+
+  const parsed = parseMarkupExtension(
+    value,
+    (prefix) => ownerElement.lookupNamespaceURI(prefix),
+    0,
+    span
+  );
+
+  if ('diagnostic' in parsed) {
+    diagnostics.push(parsed.diagnostic);
+    return {
+      kind: 'text',
+      text: value,
+      span
+    };
+  }
+
+  if (parsed.nextIndex !== value.length) {
+    diagnostics.push(markupExtensionDiagnostic('Markup extension contains trailing text after the closing brace.', span));
+    return {
+      kind: 'text',
+      text: value,
+      span
+    };
+  }
+
+  return parsed.node;
+}
+
+function createAttributeMember(
+  attr: Attr,
+  ownerElement: Element,
+  context: ParseContext,
+  tagStart: number,
+  tagEnd: number
+): XamlMemberNode | null {
   if (isNamespaceDeclaration(attr)) {
     return null;
   }
@@ -312,11 +718,7 @@ function createAttributeMember(attr: Attr, context: ParseContext, tagStart: numb
   const name = createQualifiedName(attr, attr.name);
   const dotted = createDottedMember(name);
   const span = context.locator.findAttributeSpan(tagStart, tagEnd, attr.name);
-  const valueNode: XamlTextNode = {
-    kind: 'text',
-    text: attr.value,
-    span
-  };
+  const valueNode = createAttributeValueNode(attr.value, ownerElement, span, context.diagnostics);
 
   return {
     kind: 'member',
@@ -419,7 +821,7 @@ function elementToObject(element: Element, context: ParseContext): XamlObjectNod
   const members: XamlMemberNode[] = [];
 
   for (const attr of Array.from(element.attributes)) {
-    const member = createAttributeMember(attr, context, tagStart, tagEnd);
+    const member = createAttributeMember(attr, element, context, tagStart, tagEnd);
     if (member) {
       members.push(member);
     }
@@ -555,11 +957,20 @@ function qualifiedNameToString(name: XamlQualifiedName): string {
   return name.prefix ? `${name.prefix}:${name.localName}` : name.localName;
 }
 
+function scalarTextFromValue(value: XamlValueNode): string {
+  if (value.kind === 'text') {
+    return value.text;
+  }
+
+  if (value.kind === 'markupExtension') {
+    return value.raw;
+  }
+
+  return '';
+}
+
 function textValueFromMember(member: XamlMemberNode): string {
-  return member.values
-    .filter((value): value is XamlTextNode => value.kind === 'text')
-    .map((value) => value.text)
-    .join('');
+  return member.values.map(scalarTextFromValue).join('');
 }
 
 function namespaceAttributeName(declaration: XamlNamespaceDeclaration): string {
@@ -571,11 +982,7 @@ function lowerTypeName(object: XamlObjectNode, registry: XamlVocabularyRegistry)
 }
 
 function textValueFromValues(values: readonly XamlValueNode[]): string {
-  return values
-    .filter((value): value is XamlTextNode => value.kind === 'text')
-    .map((value) => value.text)
-    .join('')
-    .trim();
+  return values.map(scalarTextFromValue).join('').trim();
 }
 
 function lowerDirectiveName(member: XamlMemberNode, registry: XamlVocabularyRegistry): string {
