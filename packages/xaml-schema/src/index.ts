@@ -884,6 +884,7 @@ function isRuntimeSupportedMarkupExtension(extension: XamlMarkupExtensionNode): 
   return (
     (extension.type.localName === 'Binding' && extension.type.namespaceUri == null) ||
     (extension.type.localName === 'StaticResource' && extension.type.namespaceUri == null) ||
+    (extension.type.localName === 'DynamicResource' && extension.type.namespaceUri == null) ||
     (extension.type.localName === 'Null' && extension.type.namespaceUri === XAML_LANGUAGE_NAMESPACE)
   );
 }

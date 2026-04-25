@@ -1050,6 +1050,64 @@ async function runPhase12ObjectResourceFixtures() {
   return files.length;
 }
 
+async function runPhase13DynamicResourceFixtures() {
+  const files = await listFixtureFiles('phase13-dynamic-resources');
+
+  for (const fileName of files) {
+    const input = await readFixture('phase13-dynamic-resources', fileName);
+    const result = parseAndValidateXaml(input);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'error'), [], `${fileName} validation errors`);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'warning'), [], `${fileName} validation warnings`);
+
+    if (fileName === 'missing-dynamic-resource.xaml') {
+      assert.throws(
+        () => parseRuntimeXaml(input),
+        /DynamicResource "Missing" could not be resolved/,
+        `${fileName} runtime dynamic resource lookup`
+      );
+      continue;
+    }
+
+    const runtime = parseRuntimeXaml(input);
+
+    if (fileName === 'dynamic-resource-primitive.xaml') {
+      assert.equal(runtime.root.children[0]?.children[0]?.attributes.Foreground, '#111111');
+      assert.equal(runtime.root.children[0]?.children[1]?.attributes.Foreground, '#222222');
+
+      const updated = parseRuntimeXaml(input, {}, undefined, {
+        dynamicResources: {
+          Accent: '#ff0000',
+          StaticAccent: '#00ff00'
+        }
+      });
+      assert.equal(updated.root.children[0]?.children[0]?.attributes.Foreground, '#ff0000');
+      assert.equal(updated.root.children[0]?.children[1]?.attributes.Foreground, '#222222');
+    }
+
+    if (fileName === 'dynamic-resource-object.xaml') {
+      assert.equal(runtime.root.children[0]?.children[0]?.attributes.Text, 'Original label');
+
+      const updated = parseRuntimeXaml(input, {}, undefined, {
+        dynamicResources: {
+          SharedLabel: {
+            type: 'TextBlock',
+            attributes: {
+              Text: 'Updated label',
+              Foreground: '#ff8157'
+            },
+            children: []
+          }
+        }
+      });
+      assert.equal(updated.root.children[0]?.children[0]?.type, 'TextBlock');
+      assert.equal(updated.root.children[0]?.children[0]?.attributes.Text, 'Updated label');
+      assert.equal(updated.root.children[0]?.children[0]?.attributes.Foreground, '#ff8157');
+    }
+  }
+
+  return files.length;
+}
+
 async function runPhase6CollectionFixtures() {
   const expectations = {
     'theme-dictionary-xkey.xaml': { errors: [], warnings: [] },
@@ -1101,7 +1159,8 @@ const phase9Count = await runPhase9SerializerFixtures();
 const phase10Count = await runPhase10DesignerSerializerFixtures();
 const phase11Count = await runPhase11XmlScopeFixtures();
 const phase12Count = await runPhase12ObjectResourceFixtures();
+const phase13Count = await runPhase13DynamicResourceFixtures();
 
 console.log(
-  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources, ${phase9Count} serializer, ${phase10Count} designer serializer, ${phase11Count} XML scope, ${phase12Count} object resources).`
+  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources, ${phase9Count} serializer, ${phase10Count} designer serializer, ${phase11Count} XML scope, ${phase12Count} object resources, ${phase13Count} dynamic resources).`
 );

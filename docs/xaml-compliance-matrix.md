@@ -50,7 +50,7 @@ Default rule: parser support should be broader than runtime execution support. U
 | Content property inference | Current | Current | Use vocabulary metadata to route child objects/text into content members. | Implemented for the current runtime and designer vocabularies. |
 | Attached member syntax | Current | Current | Represent attached owner/member names structurally. | Lowered to canonical `Owner.Member` attribute names for compatibility. |
 | Collection members | Partial | Phase 3+ | Add list semantics to vocabulary metadata and lowering. | Known list containers now validate allowed item types; semantic collection lowering is still compatibility-shaped. |
-| Dictionary members | Partial | Phase 3+ | Add dictionary semantics, key validation, and lowering. | Designer theme `Colors` validates dictionary items with explicit `x:Key` or implicit `Color.Id`; runtime `ResourceDictionary` now lowers primitive resources and known control object resources for scoped `StaticResource` lookup. |
+| Dictionary members | Partial | Phase 3+ | Add dictionary semantics, key validation, and lowering. | Designer theme `Colors` validates dictionary items with explicit `x:Key` or implicit `Color.Id`; runtime `ResourceDictionary` now lowers primitive resources and known control object resources for scoped `StaticResource` and `DynamicResource` lookup. |
 | Text syntax conversion | Partial | Phase 2 | Move primitive conversion into schema-defined text syntax. | Validation is schema-aware today, but legacy lowering still uses shared primitive coercion. |
 | Whitespace handling | Partial | Phase 3+ | Add schema-aware whitespace preservation/collapse rules. | `xml:space="preserve"` now preserves whitespace-only text in scope and `xml:space="default"` resets inherited preservation; full schema-aware whitespace normalization is still pending. |
 | Markup extension AST | Partial | Phase 5 | Parse brace syntax into structured expressions. | Attribute values and property-element text now parse into a structured AST; runtime lowering evaluates supported extensions while authoring lowering preserves raw text. |
@@ -113,7 +113,7 @@ Default rule: parser support should be broader than runtime execution support. U
 | Multiple values for single-child content property | Error | Prevents ambiguous lowering. |
 | Unsupported but preserved directive | Warning unless placement is invalid. | Keeps parser round-trip broader than runtime support. |
 | Unsupported markup extension | Warning until a member requires concrete value evaluation. | Keeps source round-trippable without pretending runtime support exists. |
-| Supported runtime markup extension | No warning. | `Binding`, `StaticResource`, and `{x:Null}` are evaluated by runtime lowering and preserved by authoring lowering. |
+| Supported runtime markup extension | No warning. | `Binding`, `StaticResource`, `DynamicResource`, and `{x:Null}` are evaluated by runtime lowering and preserved by authoring lowering. |
 | Invalid directive placement | Error | Placement rules are part of the language target. |
 | Namescope collision | Error | Required once `x:Name` validation exists. |
 | Invalid collection item type | Error | Collection metadata controls which known item types can appear in a list or dictionary. |
@@ -124,7 +124,7 @@ Current limitation:
 
 1. Namescope validation currently treats the document root as the only namescope. Nested namescopes for templates, resources, or future object islands are still deferred.
 2. Markup extension parsing currently covers attribute values and property-element text; object-element intrinsic forms such as `x:Array` remain deferred.
-3. Runtime resource lookup supports primitive resources and known control object resources, but dynamic resource updates and object-element intrinsic forms such as `x:Array` remain deferred.
+3. Runtime resource lookup supports primitive resources, known control object resources, and dynamic resource overrides; object-element intrinsic forms such as `x:Array` remain deferred.
 4. Runtime `Binding` evaluation is v1-only: one-way path lookup against a supplied data context, without converters or multi-binding.
 5. Designer infoset edit propagation currently covers mapped object paths, attribute/property-element values, and child insert/remove/move operations. If a future edit targets a lowered compatibility shape that cannot be mapped back to an infoset node safely, serialization still falls back to the lowered shape rather than saving stale semantic source.
 
@@ -143,8 +143,9 @@ Completed foundation work:
 9. Designer source import/export now serializes from the parsed infoset, and mapped designer edits propagate into that infoset so namespace prefixes, directives, property elements, markup extensions, and resource property elements survive common visual editing flows.
 10. XML scope handling now applies `xml:space` preserve/default behavior to text parsing and propagates `xml:lang` through object metadata and compatibility lowering.
 11. Runtime resource lowering now supports scoped object-valued resources for known controls, including object resources that depend on earlier primitive resources in the same dictionary.
+12. `DynamicResource` now evaluates from scoped resources by default and from runtime override maps when present; `RuntimeHost` can update and clear dynamic resource overrides without changing XAML source.
 
 Next slice:
 
-1. Expand resource support toward dynamic resource updates.
-2. Add schema-aware whitespace collapse/trim rules beyond scoped `xml:space` preservation.
+1. Add schema-aware whitespace collapse/trim rules beyond scoped `xml:space` preservation.
+2. Continue deferred intrinsic coverage such as `x:Array`, `x:Static`, and `x:Reference`.

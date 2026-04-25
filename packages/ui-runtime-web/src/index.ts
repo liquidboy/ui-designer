@@ -17,7 +17,7 @@ export {
   type SignalStateUpdate
 } from './signals';
 
-import { parseRuntimeXaml } from '@ui-designer/xaml-parser';
+import { parseRuntimeXaml, type XamlRuntimeResourceValue } from '@ui-designer/xaml-parser';
 import {
   buildDrawCommands,
   type ColorRgba,
@@ -153,6 +153,7 @@ export class RuntimeHost {
   private onRenderDiagnostics?: (diagnostics: RuntimeRenderDiagnostics) => void;
   private currentXaml = '';
   private dataContext: unknown;
+  private readonly dynamicResourceOverrides = new Map<string, XamlRuntimeResourceValue>();
   private readonly pointerMoveHandler = (event: PointerEvent) => this.handlePointerMove(event);
   private readonly pointerDownHandler = (event: PointerEvent) => this.handlePointerDown(event);
 
@@ -315,11 +316,44 @@ export class RuntimeHost {
   setXaml(xaml: string, dataContext = this.dataContext): void {
     this.currentXaml = xaml;
     this.dataContext = dataContext;
-    const xamlDocument = parseRuntimeXaml(xaml, {}, undefined, { dataContext });
+    const xamlDocument = parseRuntimeXaml(xaml, {}, undefined, {
+      dataContext,
+      dynamicResources: this.dynamicResourceOverrides
+    });
     this.root = buildUiTree(xamlDocument.root);
     if (this.rendererReady) {
       this.scheduleSceneWarmup();
     }
+  }
+
+  setDynamicResource(key: string, value: XamlRuntimeResourceValue): void {
+    this.dynamicResourceOverrides.set(key, value);
+    if (!this.currentXaml) {
+      return;
+    }
+
+    this.setXaml(this.currentXaml, this.dataContext);
+    this.layoutAndRender();
+  }
+
+  clearDynamicResource(key: string): void {
+    this.dynamicResourceOverrides.delete(key);
+    if (!this.currentXaml) {
+      return;
+    }
+
+    this.setXaml(this.currentXaml, this.dataContext);
+    this.layoutAndRender();
+  }
+
+  clearDynamicResources(): void {
+    this.dynamicResourceOverrides.clear();
+    if (!this.currentXaml) {
+      return;
+    }
+
+    this.setXaml(this.currentXaml, this.dataContext);
+    this.layoutAndRender();
   }
 
   setDataContext(dataContext: unknown): void {

@@ -49,9 +49,16 @@ export interface XamlLoweredParseResult extends XamlParseAndValidateResult {
   hasErrors: boolean;
 }
 
+export type XamlRuntimeResourceValue = XamlPrimitive | XamlNode;
+
+export type XamlRuntimeResourceMap =
+  | ReadonlyMap<string, XamlRuntimeResourceValue>
+  | Record<string, XamlRuntimeResourceValue>;
+
 export interface XamlLoweringOptions {
   evaluateMarkupExtensions?: boolean;
   dataContext?: unknown;
+  dynamicResources?: XamlRuntimeResourceMap;
 }
 
 export interface XamlSerializationOptions {
@@ -60,14 +67,13 @@ export interface XamlSerializationOptions {
 
 interface XamlLoweringContext extends XamlLoweringOptions {
   resources: Map<string, XamlRuntimeResourceValue>;
+  dynamicResources: Map<string, XamlRuntimeResourceValue>;
 }
 
 const CONTENT_MEMBER_NAME = 'Content';
 const RESOURCES_MEMBER_NAME = 'Resources';
 const RESOURCE_DICTIONARY_TYPE_NAME = 'ResourceDictionary';
 const PRIMITIVE_RESOURCE_TYPE_NAMES = new Set(['Color', 'Number', 'String']);
-
-type XamlRuntimeResourceValue = XamlPrimitive | XamlNode;
 
 interface SourceLocator {
   span(startOffset: number, endOffset: number): XamlSourceSpan;
@@ -1267,6 +1273,10 @@ function isStaticResourceExtension(extension: XamlMarkupExtensionNode): boolean 
   return extension.type.localName === 'StaticResource' && extension.type.namespaceUri == null;
 }
 
+function isDynamicResourceExtension(extension: XamlMarkupExtensionNode): boolean {
+  return extension.type.localName === 'DynamicResource' && extension.type.namespaceUri == null;
+}
+
 function coerceRuntimePrimitive(value: unknown): XamlPrimitive {
   if (value == null) {
     return null;
@@ -1350,6 +1360,22 @@ function isLoweredXamlNode(value: XamlRuntimeResourceValue): value is XamlNode {
   return typeof value === 'object' && value != null && 'type' in value && 'attributes' in value && 'children' in value;
 }
 
+function cloneRuntimeResourceValue(value: XamlRuntimeResourceValue): XamlRuntimeResourceValue {
+  return isLoweredXamlNode(value) ? cloneLoweredXamlNode(value) : value;
+}
+
+function resolveRuntimeResource(
+  key: string,
+  resources: ReadonlyMap<string, XamlRuntimeResourceValue>,
+  extensionName: string
+): XamlRuntimeResourceValue {
+  if (!resources.has(key)) {
+    throw new Error(`${extensionName} "${key}" could not be resolved.`);
+  }
+
+  return cloneRuntimeResourceValue(resources.get(key) ?? null);
+}
+
 function evaluateMarkupExtension(extension: XamlMarkupExtensionNode, options: XamlLoweringContext): XamlRuntimeResourceValue {
   if (isNullExtension(extension)) {
     return null;
@@ -1365,12 +1391,20 @@ function evaluateMarkupExtension(extension: XamlMarkupExtensionNode, options: Xa
       throw new Error('StaticResource markup extension requires a resource key.');
     }
 
-    if (!options.resources.has(key)) {
-      throw new Error(`StaticResource "${key}" could not be resolved.`);
+    return resolveRuntimeResource(key, options.resources, 'StaticResource');
+  }
+
+  if (isDynamicResourceExtension(extension)) {
+    const key = resourceKeyFromExtension(extension);
+    if (!key) {
+      throw new Error('DynamicResource markup extension requires a resource key.');
     }
 
-    const value = options.resources.get(key) ?? null;
-    return isLoweredXamlNode(value) ? cloneLoweredXamlNode(value) : value;
+    if (options.dynamicResources.has(key)) {
+      return cloneRuntimeResourceValue(options.dynamicResources.get(key) ?? null);
+    }
+
+    return resolveRuntimeResource(key, options.resources, 'DynamicResource');
   }
 
   return extension.raw;
@@ -1767,8 +1801,23 @@ function lowerObjectNode(
 function createLoweringContext(options: XamlLoweringOptions): XamlLoweringContext {
   return {
     ...options,
-    resources: new Map()
+    resources: new Map(),
+    dynamicResources: normalizeRuntimeResourceMap(options.dynamicResources)
   };
+}
+
+function normalizeRuntimeResourceMap(resources: XamlRuntimeResourceMap | undefined): Map<string, XamlRuntimeResourceValue> {
+  const map = new Map<string, XamlRuntimeResourceValue>();
+  if (!resources) {
+    return map;
+  }
+
+  const entries = resources instanceof Map ? resources.entries() : Object.entries(resources);
+  for (const [key, value] of entries) {
+    map.set(key, cloneRuntimeResourceValue(value));
+  }
+
+  return map;
 }
 
 export function lowerXamlDocument(

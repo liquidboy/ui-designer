@@ -79,7 +79,9 @@ Current status:
 5. Runtime `ResourceDictionary` also supports known control object resources keyed by `x:Key`.
 6. `{StaticResource ...}` references resolve against the nearest scoped runtime resources during runtime lowering.
 7. Object-valued resources can depend on earlier primitive resources in the same dictionary.
-8. Dynamic resources are still pending.
+8. `{DynamicResource ...}` references resolve against scoped resources by default and runtime override maps when present.
+9. `RuntimeHost` can update and clear dynamic resource overrides without changing XAML source.
+10. Full WPF-style resource invalidation and dependency tracking are outside v1.
 
 Supported runtime form:
 
@@ -106,6 +108,19 @@ Supported object-resource form:
   <Border>
     <Border.Child>{StaticResource SharedLabel}</Border.Child>
   </Border>
+</Canvas>
+```
+
+Supported dynamic-resource form:
+
+```xaml
+<Canvas xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Canvas.Resources>
+    <ResourceDictionary>
+      <Color x:Key="Accent">#67c7ff</Color>
+    </ResourceDictionary>
+  </Canvas.Resources>
+  <TextBlock Foreground="{DynamicResource Accent}" Text="Live resource-backed text" />
 </Canvas>
 ```
 
