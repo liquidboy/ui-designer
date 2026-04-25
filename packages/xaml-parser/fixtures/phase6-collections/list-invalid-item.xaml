@@ -1,0 +1,3 @@
+<Canvas xmlns:theme="https://liquidboy.dev/ui-designer/designer-theme">
+  <theme:Color Id="app-bg" Value="#111111" />
+</Canvas>

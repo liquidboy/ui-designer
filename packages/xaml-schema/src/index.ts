@@ -191,6 +191,8 @@ export interface XamlTypeDefinition {
   members: readonly XamlMemberDefinition[];
   contentProperty?: string;
   collectionKind: XamlCollectionKind;
+  allowedContentTypes?: readonly string[];
+  dictionaryKeyProperty?: string;
   allowsText: boolean;
   allowsChildren: boolean;
   isRuntimeSupported: boolean;
@@ -220,6 +222,8 @@ export const controlCatalog = [
 ] as const;
 
 export type ControlType = (typeof controlCatalog)[number];
+
+const runtimeControlContentTypes = [...controlCatalog] as const;
 
 type MemberOptions = Omit<XamlMemberDefinition, 'name' | 'namespaceUri' | 'kind' | 'valueSyntax' | 'isRuntimeSupported'> & {
   namespaceUri?: string | null;
@@ -308,6 +312,8 @@ const eventMembers = [
 type TypeDefinitionOptions = Pick<XamlTypeDefinition, 'members' | 'contentProperty' | 'allowsText' | 'allowsChildren'> & {
   namespaceUri?: string | null;
   collectionKind?: XamlCollectionKind;
+  allowedContentTypes?: readonly string[];
+  dictionaryKeyProperty?: string;
   isRuntimeSupported?: boolean;
 };
 
@@ -318,6 +324,8 @@ function typeDefinition(name: string, options: TypeDefinitionOptions): XamlTypeD
     members: options.members,
     contentProperty: options.contentProperty,
     collectionKind: options.collectionKind ?? 'none',
+    allowedContentTypes: options.allowedContentTypes,
+    dictionaryKeyProperty: options.dictionaryKeyProperty,
     allowsText: options.allowsText,
     allowsChildren: options.allowsChildren,
     isRuntimeSupported: options.isRuntimeSupported ?? true
@@ -386,6 +394,8 @@ export const uiDesignerTypes = [
   typeDefinition('Canvas', {
     members: [...commonLayoutMembers, ...eventMembers],
     contentProperty: 'Children',
+    collectionKind: 'list',
+    allowedContentTypes: runtimeControlContentTypes,
     allowsText: false,
     allowsChildren: true
   }),
@@ -395,12 +405,16 @@ export const uiDesignerTypes = [
       isRuntimeSupported: false
     }), ...eventMembers],
     contentProperty: 'Children',
+    collectionKind: 'list',
+    allowedContentTypes: runtimeControlContentTypes,
     allowsText: false,
     allowsChildren: true
   }),
   typeDefinition('Grid', {
     members: [...commonLayoutMembers, member('Rows', 'number'), member('Columns', 'number'), ...eventMembers],
     contentProperty: 'Children',
+    collectionKind: 'list',
+    allowedContentTypes: runtimeControlContentTypes,
     allowsText: false,
     allowsChildren: true
   }),
@@ -439,6 +453,8 @@ export const designerThemeTypes = [
     namespaceUri: DESIGNER_THEME_NAMESPACE,
     members: [],
     contentProperty: 'Children',
+    collectionKind: 'list',
+    allowedContentTypes: ['Colors'],
     allowsText: false,
     allowsChildren: true
   }),
@@ -446,12 +462,15 @@ export const designerThemeTypes = [
     namespaceUri: DESIGNER_THEME_NAMESPACE,
     members: [],
     contentProperty: 'Children',
+    collectionKind: 'dictionary',
+    allowedContentTypes: ['Color'],
     allowsText: false,
     allowsChildren: true
   }),
   typeDefinition('Color', {
     namespaceUri: DESIGNER_THEME_NAMESPACE,
     members: [member('Id', 'string'), member('Value', 'color')],
+    dictionaryKeyProperty: 'Id',
     allowsText: false,
     allowsChildren: false
   })
@@ -462,6 +481,8 @@ export const designerChromeTypes = [
     namespaceUri: DESIGNER_CHROME_NAMESPACE,
     members: [],
     contentProperty: 'Children',
+    collectionKind: 'list',
+    allowedContentTypes: ['TopMenu', 'CommandBar', 'DockTabs', 'DocumentTabs', 'ToolStrip', 'SourceTabs', 'StatusBar'],
     allowsText: false,
     allowsChildren: true
   }),
@@ -469,6 +490,8 @@ export const designerChromeTypes = [
     namespaceUri: DESIGNER_CHROME_NAMESPACE,
     members: [],
     contentProperty: 'Children',
+    collectionKind: 'list',
+    allowedContentTypes: ['MenuItem'],
     allowsText: false,
     allowsChildren: true
   }),
@@ -482,6 +505,8 @@ export const designerChromeTypes = [
     namespaceUri: DESIGNER_CHROME_NAMESPACE,
     members: [],
     contentProperty: 'Children',
+    collectionKind: 'list',
+    allowedContentTypes: ['Command'],
     allowsText: false,
     allowsChildren: true
   }),
@@ -495,6 +520,8 @@ export const designerChromeTypes = [
     namespaceUri: DESIGNER_CHROME_NAMESPACE,
     members: [member('Slot', 'enum', { allowedValues: ['left', 'inspector'] })],
     contentProperty: 'Children',
+    collectionKind: 'list',
+    allowedContentTypes: ['DockTab'],
     allowsText: false,
     allowsChildren: true
   }),
@@ -508,6 +535,8 @@ export const designerChromeTypes = [
     namespaceUri: DESIGNER_CHROME_NAMESPACE,
     members: [],
     contentProperty: 'Children',
+    collectionKind: 'list',
+    allowedContentTypes: ['DocumentTab'],
     allowsText: false,
     allowsChildren: true
   }),
@@ -526,6 +555,8 @@ export const designerChromeTypes = [
     namespaceUri: DESIGNER_CHROME_NAMESPACE,
     members: [],
     contentProperty: 'Children',
+    collectionKind: 'list',
+    allowedContentTypes: ['Tool'],
     allowsText: false,
     allowsChildren: true
   }),
@@ -544,6 +575,8 @@ export const designerChromeTypes = [
     namespaceUri: DESIGNER_CHROME_NAMESPACE,
     members: [],
     contentProperty: 'Children',
+    collectionKind: 'list',
+    allowedContentTypes: ['SourceTab'],
     allowsText: false,
     allowsChildren: true
   }),
@@ -557,6 +590,8 @@ export const designerChromeTypes = [
     namespaceUri: DESIGNER_CHROME_NAMESPACE,
     members: [],
     contentProperty: 'Children',
+    collectionKind: 'list',
+    allowedContentTypes: ['StatusSegment'],
     allowsText: false,
     allowsChildren: true
   }),
@@ -573,6 +608,8 @@ export const designerPanelsTypes = [
     namespaceUri: DESIGNER_PANELS_NAMESPACE,
     members: [],
     contentProperty: 'Children',
+    collectionKind: 'list',
+    allowedContentTypes: ['LeftRail', 'InspectorGroups'],
     allowsText: false,
     allowsChildren: true
   }),
@@ -580,6 +617,8 @@ export const designerPanelsTypes = [
     namespaceUri: DESIGNER_PANELS_NAMESPACE,
     members: [],
     contentProperty: 'Children',
+    collectionKind: 'list',
+    allowedContentTypes: ['Panel'],
     allowsText: false,
     allowsChildren: true
   }),
@@ -598,6 +637,8 @@ export const designerPanelsTypes = [
     namespaceUri: DESIGNER_PANELS_NAMESPACE,
     members: [],
     contentProperty: 'Children',
+    collectionKind: 'list',
+    allowedContentTypes: ['Group'],
     allowsText: false,
     allowsChildren: true
   }),
@@ -755,6 +796,22 @@ function textFromValues(values: readonly XamlValueNode[]): string {
     .join('');
 }
 
+function scalarTextFromValues(values: readonly XamlValueNode[]): string {
+  return values
+    .map((value) => {
+      if (value.kind === 'text') {
+        return value.text;
+      }
+
+      if (value.kind === 'markupExtension') {
+        return value.raw;
+      }
+
+      return '';
+    })
+    .join('');
+}
+
 function hasObjectValue(values: readonly XamlValueNode[]): boolean {
   return values.some((value) => value.kind === 'object');
 }
@@ -804,6 +861,7 @@ function warnUnsupportedMarkupExtensions(member: XamlMemberNode, diagnostics: Xa
 interface XamlValidationContext {
   rootObject: XamlObjectNode;
   documentNamescope: Map<string, XamlMemberNode>;
+  dictionaryKeyMembers: WeakSet<XamlMemberNode>;
 }
 
 function errorCount(diagnostics: readonly XamlDiagnostic[]): number {
@@ -915,6 +973,18 @@ function validateDirectiveSemantics(
     return;
   }
 
+  if (definition.name === 'Key') {
+    if (!context.dictionaryKeyMembers.has(member)) {
+      diagnostics.push(validationDiagnostic(
+        'error',
+        'invalid-directive-placement',
+        'Directive "x:Key" is only valid on dictionary items.',
+        member
+      ));
+    }
+    return;
+  }
+
   if (definition.name === 'Class' && object !== context.rootObject) {
     diagnostics.push(validationDiagnostic(
       'error',
@@ -933,8 +1003,18 @@ function validateResolvedDirective(
   context: XamlValidationContext
 ): void {
   const startingErrors = errorCount(diagnostics);
+  const isValidatedDictionaryKey =
+    definition.namespaceUri === XAML_LANGUAGE_NAMESPACE &&
+    definition.name === 'Key' &&
+    context.dictionaryKeyMembers.has(member);
+
   validateTextSyntax(member, definition, diagnostics);
   validateDirectiveSemantics(object, member, definition, diagnostics, context);
+
+  if (isValidatedDictionaryKey) {
+    warnUnsupportedMarkupExtensions(member, diagnostics);
+    return;
+  }
 
   if (errorCount(diagnostics) === startingErrors) {
     warnUnsupportedMember(member, definition, diagnostics);
@@ -955,6 +1035,115 @@ function memberDuplicateKey(member: XamlMemberNode, definition: XamlMemberDefini
   return `${definition.kind}:${definition.namespaceUri ?? ''}:${definition.name}`;
 }
 
+function isXamlKeyDirective(member: XamlMemberNode): boolean {
+  return (
+    member.isDirective &&
+    member.name.namespaceUri === XAML_LANGUAGE_NAMESPACE &&
+    member.name.localName === 'Key'
+  );
+}
+
+function findXamlKeyDirective(object: XamlObjectNode): XamlMemberNode | undefined {
+  return object.members.find(isXamlKeyDirective);
+}
+
+function findResolvedPropertyMember(
+  object: XamlObjectNode,
+  type: XamlTypeDefinition,
+  memberName: string,
+  registry: XamlVocabularyRegistry
+): XamlMemberNode | undefined {
+  return object.members.find((memberNode) => {
+    if (memberNode.syntax === 'content' || memberNode.isDirective) {
+      return false;
+    }
+
+    return resolveXamlMember(type, memberNode.name, registry)?.name === memberName;
+  });
+}
+
+function isAllowedCollectionItemType(
+  collectionType: XamlTypeDefinition,
+  item: XamlObjectNode,
+  registry: XamlVocabularyRegistry
+): boolean {
+  if (!collectionType.allowedContentTypes || collectionType.allowedContentTypes.length === 0) {
+    return true;
+  }
+
+  const itemType = resolveXamlType(item.type, registry);
+  return !itemType || collectionType.allowedContentTypes.includes(itemType.name);
+}
+
+function validateAllowedCollectionItemType(
+  collectionType: XamlTypeDefinition,
+  item: XamlObjectNode,
+  diagnostics: XamlDiagnostic[],
+  registry: XamlVocabularyRegistry
+): void {
+  if (isAllowedCollectionItemType(collectionType, item, registry)) {
+    return;
+  }
+
+  diagnostics.push(validationDiagnostic(
+    'error',
+    'invalid-collection-item-type',
+    `Type "${collectionType.name}" does not allow "${formatQualifiedName(item.type)}" items.`,
+    item
+  ));
+}
+
+function validateDictionaryItemKeys(
+  dictionaryType: XamlTypeDefinition,
+  items: readonly XamlObjectNode[],
+  diagnostics: XamlDiagnostic[],
+  registry: XamlVocabularyRegistry,
+  context: XamlValidationContext
+): void {
+  const assignedKeys = new Map<string, XamlMemberNode | XamlObjectNode>();
+
+  for (const item of items) {
+    if (!isAllowedCollectionItemType(dictionaryType, item, registry)) {
+      continue;
+    }
+
+    const itemType = resolveXamlType(item.type, registry);
+    const explicitKey = findXamlKeyDirective(item);
+    if (explicitKey) {
+      context.dictionaryKeyMembers.add(explicitKey);
+    }
+
+    const implicitKey = itemType?.dictionaryKeyProperty
+      ? findResolvedPropertyMember(item, itemType, itemType.dictionaryKeyProperty, registry)
+      : undefined;
+    const keyMember = explicitKey ?? implicitKey;
+    const key = keyMember ? scalarTextFromValues(keyMember.values).trim() : '';
+
+    if (!key) {
+      diagnostics.push(validationDiagnostic(
+        'error',
+        'missing-dictionary-key',
+        `Dictionary item "${formatQualifiedName(item.type)}" in "${dictionaryType.name}" must define x:Key or an implicit key property.`,
+        keyMember ?? item
+      ));
+      continue;
+    }
+
+    const existing = assignedKeys.get(key);
+    if (existing) {
+      diagnostics.push(validationDiagnostic(
+        'error',
+        'duplicate-dictionary-key',
+        `Dictionary "${dictionaryType.name}" already contains an item keyed "${key}".`,
+        keyMember
+      ));
+      continue;
+    }
+
+    assignedKeys.set(key, keyMember ?? item);
+  }
+}
+
 function validateContentMember(
   object: XamlObjectNode,
   type: XamlTypeDefinition,
@@ -964,6 +1153,17 @@ function validateContentMember(
   context: XamlValidationContext
 ): void {
   let hasInvalidContent = false;
+  const objectValues = member.values.filter((value): value is XamlObjectNode => value.kind === 'object');
+
+  if (type.collectionKind !== 'none') {
+    for (const value of objectValues) {
+      validateAllowedCollectionItemType(type, value, diagnostics, registry);
+    }
+  }
+
+  if (type.collectionKind === 'dictionary') {
+    validateDictionaryItemKeys(type, objectValues, diagnostics, registry, context);
+  }
 
   for (const value of member.values) {
     if (value.kind === 'object') {
@@ -1125,7 +1325,8 @@ export function validateXamlDocument(
   } else {
     const context: XamlValidationContext = {
       rootObject: document.root,
-      documentNamescope: new Map()
+      documentNamescope: new Map(),
+      dictionaryKeyMembers: new WeakSet()
     };
     validateObjectNode(document.root, diagnostics, registry, context);
   }

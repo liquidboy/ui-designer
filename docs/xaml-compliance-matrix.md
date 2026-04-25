@@ -49,8 +49,8 @@ Default rule: parser support should be broader than runtime execution support. U
 | Property element syntax | Current | Current | Convert dotted child elements to member nodes. | Attribute/property-element equivalence is covered by lowering fixtures. |
 | Content property inference | Current | Current | Use vocabulary metadata to route child objects/text into content members. | Implemented for the current runtime and designer vocabularies. |
 | Attached member syntax | Current | Current | Represent attached owner/member names structurally. | Lowered to canonical `Owner.Member` attribute names for compatibility. |
-| Collection members | Missing | Phase 3+ | Add list semantics to vocabulary metadata and lowering. | Needed for richer grid definitions and resource collections. |
-| Dictionary members | Missing | Phase 3+ | Add dictionary semantics, key validation, and lowering. | Needed for resource dictionaries and `x:Key`. |
+| Collection members | Partial | Phase 3+ | Add list semantics to vocabulary metadata and lowering. | Known list containers now validate allowed item types; semantic collection lowering is still compatibility-shaped. |
+| Dictionary members | Partial | Phase 3+ | Add dictionary semantics, key validation, and lowering. | Designer theme `Colors` now validates dictionary items with explicit `x:Key` or implicit `Color.Id`; broader resource dictionaries are still pending. |
 | Text syntax conversion | Partial | Phase 2 | Move primitive conversion into schema-defined text syntax. | Validation is schema-aware today, but legacy lowering still uses shared primitive coercion. |
 | Whitespace handling | Missing | Phase 3+ | Add schema-aware whitespace preservation/collapse rules. | Include `xml:space` once directive propagation exists. |
 | Markup extension AST | Partial | Phase 5 | Parse brace syntax into structured expressions. | Attribute values now parse into a structured AST and lower back to raw text for compatibility; property-element text and evaluation are still pending. |
@@ -63,7 +63,7 @@ Default rule: parser support should be broader than runtime execution support. U
 | Directive or namespace feature | Current status | Target | Current behavior | Runtime behavior | Notes |
 | --- | --- | --- | --- | --- | --- |
 | `x:Name` | Current | Phase 4 | Parse, preserve, and validate uniqueness within the current document namescope. | Lowered to `Name` in the legacy adapter; runtime still does not resolve object references by name. | Bare `Name` is still not a schema alias. |
-| `x:Key` | Partial | Phase 4 | Parse and preserve with warning only. | Runtime ignores until dictionaries/resources exist. | Validation becomes meaningful with dictionary members. |
+| `x:Key` | Partial | Phase 4 | Parse and validate as a dictionary item key. | Valid dictionary keys are accepted without preserved-only warnings; runtime resource lookup still ignores them. | Misplaced `x:Key`, missing dictionary keys, and duplicate dictionary keys now produce errors. |
 | `x:Class` | Current | Phase 4 | Parse, preserve, and enforce root-only placement. | Preserved-only; no markup compilation. | Non-root usage now raises `invalid-directive-placement`. |
 | `x:Uid` | Current | Phase 4 | Parse and preserve with warning. | Preserved-only. | Useful for localization metadata, not rendering. |
 | `x:TypeArguments` | Current | Phase 4 | Parse and preserve with warning. | Preserved-only. | Generic type execution can remain unsupported. |
@@ -115,6 +115,8 @@ Default rule: parser support should be broader than runtime execution support. U
 | Unsupported markup extension | Warning until a member requires concrete value evaluation. | Keeps source round-trippable without pretending runtime support exists. |
 | Invalid directive placement | Error | Placement rules are part of the language target. |
 | Namescope collision | Error | Required once `x:Name` validation exists. |
+| Invalid collection item type | Error | Collection metadata controls which known item types can appear in a list or dictionary. |
+| Missing or duplicate dictionary key | Error | Dictionary items require a stable key, either explicit `x:Key` or a type-level implicit key property. |
 | Unrenderable but schema-valid member | Warning | Valid source should not disappear silently at runtime. |
 
 Current limitation:
@@ -131,8 +133,9 @@ Completed foundation work:
 3. Validation fixtures cover parser structure, registry-backed validation, lowering behavior, and designer config namespaces.
 4. Intrinsic directive validation now includes `x:Name` document-namescope checks and root-only `x:Class` placement.
 5. Attribute-value markup extensions now parse into structured AST nodes, including nested extensions, escaped `{}{...}` literals, and prefixed forms such as `{x:Null}`, while lowering preserves the original raw text for runtime compatibility.
+6. Collection metadata now validates allowed item types for list containers, and dictionary metadata validates explicit `x:Key`, implicit key properties, missing keys, and duplicate keys.
 
 Next slice:
 
-1. Add collection and dictionary member semantics so resource-style containers and `x:Key` can validate meaningfully.
-2. Follow that with runtime markup extension evaluation, starting with `Binding` and `x:Null`, once lowered values can carry non-text semantics downstream.
+1. Add runtime markup extension evaluation, starting with `Binding` and `x:Null`, once lowered values can carry non-text semantics downstream.
+2. Follow that with broader resource dictionary lowering and semantic serializer coverage.

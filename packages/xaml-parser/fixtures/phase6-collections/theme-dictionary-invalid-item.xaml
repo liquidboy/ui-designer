@@ -1,0 +1,7 @@
+<DesignerTheme
+  xmlns="https://liquidboy.dev/ui-designer/designer-theme"
+  xmlns:ui="https://liquidboy.dev/ui-designer">
+  <Colors>
+    <ui:TextBlock Text="Not a color resource" />
+  </Colors>
+</DesignerTheme>

@@ -637,12 +637,52 @@ async function runPhase5MarkupExtensionFixtures() {
   return files.length;
 }
 
+async function runPhase6CollectionFixtures() {
+  const expectations = {
+    'theme-dictionary-xkey.xaml': { errors: [], warnings: [] },
+    'theme-dictionary-duplicate-key.xaml': { errors: ['duplicate-dictionary-key'], warnings: [] },
+    'theme-dictionary-missing-key.xaml': { errors: ['missing-dictionary-key'], warnings: [] },
+    'theme-dictionary-invalid-item.xaml': { errors: ['invalid-collection-item-type'], warnings: [] },
+    'list-invalid-item.xaml': { errors: ['invalid-collection-item-type'], warnings: [] },
+    'xkey-outside-dictionary.xaml': { errors: ['invalid-directive-placement'], warnings: [] }
+  };
+
+  const files = await listFixtureFiles('phase6-collections');
+
+  for (const fileName of files) {
+    const input = await readFixture('phase6-collections', fileName);
+    const result = parseAndValidateXaml(input);
+    const expected = expectations[fileName];
+    assert.ok(expected, `Missing collection expectation for ${fileName}`);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'error'), expected.errors, `${fileName} error diagnostics`);
+    assert.deepEqual(
+      diagnosticsWithSeverity(result.validation, 'warning'),
+      expected.warnings,
+      `${fileName} warning diagnostics`
+    );
+
+    if (expected.errors.length > 0) {
+      continue;
+    }
+
+    const lowered = lowerXamlDocument(result.document);
+    assert.equal(lowered.root.type, 'DesignerTheme');
+    const colors = lowered.root.children[0];
+    assert.equal(colors?.type, 'Colors');
+    assert.equal(colors.children[0]?.attributes.Key, 'app-bg');
+    assert.equal(colors.children[1]?.attributes.Id, 'text-primary');
+  }
+
+  return files.length;
+}
+
 const phase1Count = await runPhase1Fixtures();
 const phase2Count = await runPhase2ValidationFixtures();
 const phase3Count = await runPhase3LoweringFixtures();
 const phase4Count = await runPhase4DesignerConfigFixtures();
 const phase5Count = await runPhase5MarkupExtensionFixtures();
+const phase6Count = await runPhase6CollectionFixtures();
 
 console.log(
-  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension).`
+  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections).`
 );

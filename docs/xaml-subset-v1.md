@@ -68,6 +68,15 @@ Runtime notes:
 3. `PointerUp`
 4. `Click`
 
+## Collections and Keys
+
+Current status:
+
+1. Runtime child containers such as `Canvas`, `StackPanel`, and `Grid` validate their child content as list collections of known controls.
+2. Designer theme `Colors` validates as a dictionary, with entries keyed by explicit `x:Key` or implicit `Color.Id`.
+3. Missing keys, duplicate keys, invalid collection item types, and `x:Key` outside dictionary items produce validation errors.
+4. Runtime resource lookup and semantic dictionary lowering are not available yet.
+
 ## Binding v1
 
 Design target, not yet implemented:

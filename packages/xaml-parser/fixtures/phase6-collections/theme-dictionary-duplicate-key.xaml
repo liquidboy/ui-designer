@@ -1,0 +1,6 @@
+<DesignerTheme xmlns="https://liquidboy.dev/ui-designer/designer-theme">
+  <Colors>
+    <Color Id="app-bg" Value="#111111" />
+    <Color Id="app-bg" Value="#222222" />
+  </Colors>
+</DesignerTheme>
