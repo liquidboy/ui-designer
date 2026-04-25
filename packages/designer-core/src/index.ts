@@ -1,6 +1,6 @@
-import { parseAndLowerXaml } from '@ui-designer/xaml-parser';
+import { parseAndLowerXaml, serializeXamlDocumentNode } from '@ui-designer/xaml-parser';
 import type { ColorRgba, Point as CorePoint } from '@ui-designer/ui-core';
-import type { XamlDiagnostic, XamlDocument, XamlNode, XamlPrimitive } from '@ui-designer/xaml-schema';
+import type { XamlDiagnostic, XamlDocument, XamlDocumentNode, XamlNode, XamlPrimitive } from '@ui-designer/xaml-schema';
 
 export interface CameraState {
   x: number;
@@ -27,13 +27,20 @@ export interface DesignerTreeItem {
   parentId: string | null;
 }
 
-export type DesignerDocument = XamlDocument;
+export interface DesignerDocument extends XamlDocument {
+  readonly semanticInfoset?: XamlDocumentNode;
+}
+
 export type DesignerDocumentDiagnostic = XamlDiagnostic;
 
 export interface DesignerDocumentParseResult {
-  document: XamlDocument | null;
+  document: DesignerDocument | null;
   diagnostics: DesignerDocumentDiagnostic[];
   hasErrors: boolean;
+}
+
+export interface CloneXamlDocumentOptions {
+  preserveSemanticInfoset?: boolean;
 }
 
 export function createCameraState(): CameraState {
@@ -120,13 +127,16 @@ export function parseDesignerDocumentWithDiagnostics(xaml: string): DesignerDocu
   }
 
   return {
-    document: result.legacyDocument,
+    document: {
+      root: result.legacyDocument.root,
+      semanticInfoset: result.document ?? undefined
+    },
     diagnostics,
     hasErrors: false
   };
 }
 
-export function parseDesignerDocument(xaml: string): XamlDocument {
+export function parseDesignerDocument(xaml: string): DesignerDocument {
   const result = parseDesignerDocumentWithDiagnostics(xaml);
   if (!result.document) {
     const reason = result.diagnostics.length > 0
@@ -147,9 +157,27 @@ export function cloneXamlNode(node: XamlNode): XamlNode {
   };
 }
 
-export function cloneXamlDocument(document: XamlDocument): XamlDocument {
-  return {
+export function cloneXamlDocument(
+  document: DesignerDocument,
+  options: CloneXamlDocumentOptions = {}
+): DesignerDocument {
+  const next: DesignerDocument = {
     root: cloneXamlNode(document.root)
+  };
+
+  if ((options.preserveSemanticInfoset ?? true) && document.semanticInfoset) {
+    return {
+      ...next,
+      semanticInfoset: document.semanticInfoset
+    };
+  }
+
+  return next;
+}
+
+function markDesignerDocumentEdited(document: DesignerDocument): DesignerDocument {
+  return {
+    root: document.root
   };
 }
 
@@ -301,10 +329,10 @@ export function buildDesignerTree(document: XamlDocument): DesignerTreeItem[] {
 }
 
 export function updateDocumentNodeAttributes(
-  document: XamlDocument,
+  document: DesignerDocument,
   id: string,
   patch: Record<string, XamlPrimitive | null | undefined>
-): XamlDocument {
+): DesignerDocument {
   const next = cloneXamlDocument(document);
   const node = findDocumentNodeById(next, id);
   if (!node) {
@@ -320,15 +348,15 @@ export function updateDocumentNodeAttributes(
     node.attributes[key] = value;
   }
 
-  return next;
+  return markDesignerDocumentEdited(next);
 }
 
 export function insertDocumentChild(
-  document: XamlDocument,
+  document: DesignerDocument,
   parentId: string,
   node: XamlNode,
   index = Number.POSITIVE_INFINITY
-): XamlDocument {
+): DesignerDocument {
   const path = parseDocumentPath(parentId);
   if (path == null) {
     return cloneXamlDocument(document);
@@ -342,10 +370,10 @@ export function insertDocumentChild(
 
   const insertIndex = Math.max(0, Math.min(parent.children.length, Math.floor(index)));
   parent.children.splice(insertIndex, 0, cloneXamlNode(node));
-  return next;
+  return markDesignerDocumentEdited(next);
 }
 
-export function removeDocumentNode(document: XamlDocument, id: string): XamlDocument {
+export function removeDocumentNode(document: DesignerDocument, id: string): DesignerDocument {
   const path = parseDocumentPath(id);
   if (!path || path.length === 0) {
     return cloneXamlDocument(document);
@@ -358,15 +386,15 @@ export function removeDocumentNode(document: XamlDocument, id: string): XamlDocu
   }
 
   entry.parent.children.splice(entry.index, 1);
-  return next;
+  return markDesignerDocumentEdited(next);
 }
 
 export function moveDocumentNode(
-  document: XamlDocument,
+  document: DesignerDocument,
   sourceId: string,
   targetParentId: string,
   targetIndex: number
-): { document: XamlDocument; movedId: string } | null {
+): { document: DesignerDocument; movedId: string } | null {
   const sourcePath = parseDocumentPath(sourceId);
   const targetParentPath = parseDocumentPath(targetParentId);
   if (!sourcePath || !targetParentPath || sourcePath.length === 0) {
@@ -431,7 +459,11 @@ function serializeNode(node: XamlNode, depth: number): string {
   return `${indent}${tagOpen}>\n${children}\n${indent}</${node.type}>`;
 }
 
-export function serializeDesignerDocument(document: XamlDocument): string {
+export function serializeDesignerDocument(document: DesignerDocument): string {
+  if (document.semanticInfoset) {
+    return serializeXamlDocumentNode(document.semanticInfoset);
+  }
+
   return serializeNode(document.root, 0);
 }
 
@@ -461,9 +493,9 @@ function inferColorAttribute(node: XamlNode): string {
 }
 
 export function applyOverrideSnapshotToDocument(
-  document: XamlDocument,
+  document: DesignerDocument,
   snapshot: DesignerOverrideSnapshot
-): XamlDocument {
+): DesignerDocument {
   let next = cloneXamlDocument(document);
 
   for (const [id, point] of Object.entries(snapshot.offsets ?? {})) {

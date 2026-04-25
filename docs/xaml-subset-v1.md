@@ -117,6 +117,15 @@ Current constraints:
 2. Path lookup on a supplied data context object.
 3. No converters or multi-binding in v1.
 
+## Authoring Serialization
+
+Current status:
+
+1. Clean documents loaded through the designer source panel, import flow, draft load, or startup parse keep their semantic infoset for source serialization.
+2. Semantic serialization preserves namespace prefixes, directives, markup extensions, property elements, and resource collection structures for those clean documents.
+3. Inspector, palette, component-tree, drag, and resize edits currently mutate the lowered compatibility tree, so the designer drops the semantic infoset and serializes from the edited lowered shape.
+4. Keeping semantic serialization active after edits requires the next infoset edit-propagation slice.
+
 ## Example Document
 
 ```xaml

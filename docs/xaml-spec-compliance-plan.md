@@ -44,11 +44,12 @@ The repo now has the core compliance foundation in place:
 6. Runtime lowering evaluates v1 `Binding` paths against a supplied data context and maps `{x:Null}` to semantic `null`, while authoring lowering still preserves raw markup text.
 7. Runtime lowering also collects scoped primitive `ResourceDictionary` entries and resolves top-level `{StaticResource ...}` references.
 8. The infoset semantic serializer round-trips namespace declarations, directives, markup extensions, property elements, and resource collection structures.
-9. The validator currently covers known namespaces/types/members, duplicate scalar members, content rules, enum/primitive checks, namescope collisions for `x:Name`, root-only placement for `x:Class`, collection item-type constraints, dictionary key validation, and warning-only preservation for unsupported markup extensions.
+9. Designer source import/export now serializes clean parsed documents from the semantic infoset and invalidates that infoset once compatibility-tree edits occur.
+10. The validator currently covers known namespaces/types/members, duplicate scalar members, content rules, enum/primitive checks, namescope collisions for `x:Name`, root-only placement for `x:Class`, collection item-type constraints, dictionary key validation, and warning-only preservation for unsupported markup extensions.
 
 The main remaining gaps are now:
 
-1. Wiring the infoset serializer into the designer document editing flow.
+1. True infoset edit propagation for designer mutations after the current clean-document serializer bridge.
 2. `xml:space` whitespace behavior and `xml:lang` propagation semantics.
 3. Object-valued resources and dynamic resource updates.
 
@@ -57,7 +58,7 @@ Current limitation:
 1. Structured markup extension parsing currently applies to attribute values and property-element text. Object-element intrinsic forms such as `x:Array` remain deferred.
 2. Runtime resource lookup is intentionally primitive-only: `Color`, `Number`, and `String` entries are supported in `ResourceDictionary`; object resources and dynamic resources are still deferred.
 3. Runtime `Binding` support is intentionally v1-only: one-way path lookup, no converters, and no multi-binding.
-4. Designer editing still serializes the lowered compatibility document; the new semantic serializer is covered at the infoset layer first.
+4. Designer editing preserves and serializes the parsed infoset only until a compatibility-tree mutation occurs; after that, it falls back to lowered serialization to avoid stale saves.
 
 This document remains the long-term roadmap. The current implementation status now lives in [XAML Compliance Matrix](./xaml-compliance-matrix.md).
 

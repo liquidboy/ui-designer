@@ -93,6 +93,12 @@ const {
   serializeXamlDocumentNode
 } = await import('../packages/xaml-parser/dist/index.js');
 
+const {
+  parseDesignerDocumentWithDiagnostics,
+  serializeDesignerDocument,
+  updateDocumentNodeAttributes
+} = await import('../packages/designer-core/dist/index.js');
+
 function splitQualifiedName(rawName) {
   const separator = rawName.indexOf(':');
   if (separator < 0) {
@@ -859,6 +865,29 @@ async function runPhase9SerializerFixtures() {
   return files.length;
 }
 
+async function runPhase10DesignerSerializerFixtures() {
+  const input = await readFixture('phase9-serializer', 'namespaces-directives.xaml');
+  const parsed = parseDesignerDocumentWithDiagnostics(input);
+  assert.deepEqual(diagnosticsWithSeverity(parsed, 'error'), [], 'designer parse should not produce errors');
+  assert.ok(parsed.document, 'designer parse should produce a document');
+
+  const semanticSerialized = serializeDesignerDocument(parsed.document);
+  assert.match(semanticSerialized, /<ui:Canvas/);
+  assert.match(semanticSerialized, /xmlns:ui="https:\/\/liquidboy\.dev\/ui-designer"/);
+  assert.match(semanticSerialized, /x:Name="RootCanvas"/);
+  assert.match(semanticSerialized, /xml:space="preserve"/);
+  assert.match(semanticSerialized, /Width="320"/);
+
+  const edited = updateDocumentNodeAttributes(parsed.document, 'root.0', { Width: 480 });
+  const editedSerialized = serializeDesignerDocument(edited);
+  assert.match(editedSerialized, /<Canvas/);
+  assert.match(editedSerialized, /Width="480"/);
+  assert.doesNotMatch(editedSerialized, /Width="320"/);
+  assert.doesNotMatch(editedSerialized, /<ui:Canvas/);
+
+  return 1;
+}
+
 async function runPhase6CollectionFixtures() {
   const expectations = {
     'theme-dictionary-xkey.xaml': { errors: [], warnings: [] },
@@ -907,7 +936,8 @@ const phase6Count = await runPhase6CollectionFixtures();
 const phase7Count = await runPhase7RuntimeExtensionFixtures();
 const phase8Count = await runPhase8ResourceFixtures();
 const phase9Count = await runPhase9SerializerFixtures();
+const phase10Count = await runPhase10DesignerSerializerFixtures();
 
 console.log(
-  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources, ${phase9Count} serializer).`
+  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources, ${phase9Count} serializer, ${phase10Count} designer serializer).`
 );
