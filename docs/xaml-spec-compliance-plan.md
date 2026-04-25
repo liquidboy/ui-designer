@@ -55,13 +55,14 @@ The repo now has the core compliance foundation in place:
 17. `{x:Reference ...}` now validates required names, supports forward references within the active namescope, preserves authoring source, and runtime-lowers supported object-valued references to the same lowered object instance.
 18. `ResourceDictionary` now creates a local namescope boundary, so resource-local `x:Name` values are isolated from the visual tree while dictionary-local `x:Reference` expressions resolve within that dictionary.
 19. Runtime lowering caches lowered object nodes for `x:Reference`, preserves shared references during resource graph cloning, and still rejects circular reference chains.
-20. The validator currently covers known namespaces/types/members, duplicate scalar members, content rules, enum/primitive checks, scoped namescope collisions for `x:Name`, root-only placement for `x:Class`, collection item-type constraints, dictionary key validation, and warning-only preservation for unsupported markup extensions.
+20. Text syntax conversion now belongs to schema metadata: known members coerce number/boolean values and preserve string-like numeric text without parser-wide guessing.
+21. The validator currently covers known namespaces/types/members, duplicate scalar members, content rules, enum/primitive/color checks, scoped namescope collisions for `x:Name`, root-only placement for `x:Class`, collection item-type constraints, dictionary key validation, and warning-only preservation for unsupported markup extensions.
 
-Approximate targeted core `MS-XAML-2017` support: **76%**. This is a progress estimate for the scoped language/object-mapping work, not a claim of complete XAML or WPF vocabulary parity.
+Approximate targeted core `MS-XAML-2017` support: **78%**. This is a progress estimate for the scoped language/object-mapping work, not a claim of complete XAML or WPF vocabulary parity.
 
 The main remaining gaps are now:
 
-1. Full schema-driven text conversion instead of legacy parser-wide primitive coercion.
+1. Remaining object-element intrinsic forms for supported `x:` constructs.
 2. Richer namescope boundaries for future templates and object islands.
 3. True array-valued runtime assignment, primitive CLR item types, CLR type resolution, CLR static value resolution, and generic type execution.
 
@@ -377,8 +378,8 @@ We should call this initiative complete only when all of the following are true:
 
 The next concrete work item should be:
 
-1. move primitive/text conversion into schema-owned text syntax metadata for known runtime members
-2. keep compatibility lowering behavior stable while replacing parser-wide coercion paths incrementally
-3. add fixtures for invalid numeric, boolean, enum, and color values at member boundaries
+1. add structural object-element forms for supported intrinsic constructs where they are currently attribute/property-text only
+2. start with `x:Null`, `x:Type`, `x:Static`, and `x:Reference` preservation/validation
+3. keep runtime execution conservative unless the lowered target member can represent the value safely
 
-That moves more behavior under the XAML schema model instead of leaving it in compatibility-era parsing helpers.
+That closes another object-mapping gap without pulling CLR type resolution into the current slice.

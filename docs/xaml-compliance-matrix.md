@@ -45,13 +45,13 @@ Default rule: parser support should be broader than runtime execution support. U
 | Member nodes | Current | Current | Model attribute members and property elements as members. | Includes directives and attached-member forms. |
 | Text nodes | Current | Current | Preserve text as ordered text nodes. | Infoset preserves authoring text; compatibility lowering applies default whitespace normalization unless `xml:space` preserves it. |
 | Object element syntax | Current | Current | Convert XML elements to object nodes when schema says they are types. | Active vocabularies now cover runtime and designer config types. |
-| Attribute member syntax | Current | Current | Convert XML attributes to member nodes. | Lowering still uses legacy primitive coercion for compatibility. |
+| Attribute member syntax | Current | Current | Convert XML attributes to member nodes. | Known member values lower through schema-owned `valueSyntax`; unresolved compatibility shapes keep a legacy fallback. |
 | Property element syntax | Current | Current | Convert dotted child elements to member nodes. | Attribute/property-element equivalence is covered by lowering fixtures. |
 | Content property inference | Current | Current | Use vocabulary metadata to route child objects/text into content members. | Implemented for the current runtime and designer vocabularies. |
 | Attached member syntax | Current | Current | Represent attached owner/member names structurally. | Lowered to canonical `Owner.Member` attribute names for compatibility. |
 | Collection members | Partial | Phase 3+ | Add list semantics to vocabulary metadata and lowering. | Known list containers now validate allowed item types; semantic collection lowering is still compatibility-shaped. |
 | Dictionary members | Partial | Phase 3+ | Add dictionary semantics, key validation, and lowering. | Designer theme `Colors` validates dictionary items with explicit `x:Key` or implicit `Color.Id`; runtime `ResourceDictionary` now lowers primitive resources and known control object resources for scoped `StaticResource` and `DynamicResource` lookup, and `ResourceDictionary` is the first schema-marked nested namescope boundary. |
-| Text syntax conversion | Partial | Phase 2 | Move primitive conversion into schema-defined text syntax. | Validation is schema-aware today, but legacy lowering still uses shared primitive coercion. |
+| Text syntax conversion | Current | Current | Move primitive conversion into schema-defined text syntax. | Known members validate and lower through `XamlMemberDefinition.valueSyntax` for string, number, boolean, enum, color, URI, object, and any-valued members; unknown preserved shapes keep a legacy fallback. |
 | Whitespace handling | Partial | Phase 3+ | Add schema-aware whitespace preservation/collapse rules. | Default lowering now collapses XML whitespace runs and trims text values, while `xml:space="preserve"` keeps exact text and `xml:space="default"` resets inherited preservation. Remaining gaps are edge-case whitespace rules around future templates/object islands. |
 | Markup extension AST | Partial | Phase 5 | Parse brace syntax into structured expressions. | Attribute values and property-element text now parse into a structured AST; runtime lowering evaluates supported extensions while authoring lowering preserves raw text. |
 | Nested markup extensions | Partial | Phase 5 | Support nested extension arguments. | Nested attribute-value extensions now parse recursively; unsupported nested extensions still warn and preserve. |
@@ -92,12 +92,12 @@ Default rule: parser support should be broader than runtime execution support. U
 
 | Member family | Current support | Target status | Notes |
 | --- | --- | --- | --- |
-| Common sizing: `Width`, `Height` | Current | Phase 2 schema metadata | Values should use schema text syntax instead of parser-wide coercion. |
+| Common sizing: `Width`, `Height` | Current | Phase 2 schema metadata | Numeric values validate and coerce through schema text syntax. |
 | Box model: `Margin`, `Padding`, `BorderThickness` | Partial | Phase 2 schema metadata | Runtime support can remain incremental. |
-| Alignment: `HorizontalAlignment`, `VerticalAlignment` | Partial | Phase 2 schema metadata | Validate enum values later. |
-| Visual color: `Background`, `BorderBrush`, `Fill`, `Foreground` | Current | Phase 2 schema metadata | Preserve color parsing in runtime for now. |
+| Alignment: `HorizontalAlignment`, `VerticalAlignment` | Partial | Phase 2 schema metadata | Declared enum values validate through schema text syntax; runtime layout support can remain incremental. |
+| Visual color: `Background`, `BorderBrush`, `Fill`, `Foreground` | Current | Phase 2 schema metadata | Hex color values validate through schema text syntax and remain string values for runtime color parsing. |
 | Text: `Text`, `Content`, `FontSize`, `FontWeight`, `FontFamily`, `FontStyle`, `LineHeight`, `TextAlignment`, `TextWrapping`, `TextOverflow`, `TextTrimming`, `FlowDirection`, `Direction` | Current | Phase 2 schema metadata | `Direction` should remain a compatibility alias for `FlowDirection`. |
-| Image: `Source`, `Stretch`, `Opacity` | Current | Phase 2 schema metadata | Validate `Stretch` enum values later. |
+| Image: `Source`, `Stretch`, `Opacity` | Current | Phase 2 schema metadata | `Stretch` enum and numeric opacity values validate through schema text syntax. |
 | Panel placement: `Grid.Row`, `Grid.Column`, `Grid.RowSpan`, `Grid.ColumnSpan` | Current | Phase 2 attached member metadata | Attached member metadata and canonical lowering are now in place. |
 | Canvas placement: `Canvas.Left`, `Canvas.Top` | Current | Phase 2 attached member metadata | Attached member metadata exists even though most current documents still use `X`, `Y`, or designer offsets. |
 | Designer metadata: `Designer.OffsetX`, `Designer.OffsetY` | Current | Custom attached metadata namespace | Keep as authoring metadata, not core XAML language. |
@@ -117,6 +117,7 @@ Default rule: parser support should be broader than runtime execution support. U
 | Supported runtime markup extension | No warning. | `Binding`, `StaticResource`, `DynamicResource`, and `{x:Null}` are evaluated by runtime lowering and preserved by authoring lowering. |
 | Invalid directive placement | Error | Placement rules are part of the language target. |
 | Namescope collision | Error | Required once `x:Name` validation exists. |
+| Invalid text syntax value | Error | Number, boolean, enum, and color member values are validated from schema metadata. |
 | Invalid collection item type | Error | Collection metadata controls which known item types can appear in a list or dictionary. |
 | Missing or duplicate dictionary key | Error | Dictionary items require a stable key, either explicit `x:Key` or a type-level implicit key property. |
 | Unrenderable but schema-valid member | Warning | Valid source should not disappear silently at runtime. |
@@ -152,10 +153,11 @@ Completed foundation work:
 17. `{x:Reference ...}` now validates required names, supports forward references within the active namescope, preserves authoring source, and runtime-lowers supported object-valued references to the same lowered object instance.
 18. `ResourceDictionary` now creates a local namescope boundary, so duplicate names inside resources do not collide with visual-tree names, visual-tree references cannot see dictionary-local names, and dictionary-local references can resolve locally.
 19. Runtime lowering caches lowered object nodes for `x:Reference`, preserves shared references during resource graph cloning, and still rejects circular reference chains.
+20. Text syntax conversion now belongs to schema metadata: known members coerce number/boolean values and preserve string-like numeric text without parser-wide guessing, while invalid number, boolean, enum, and color values produce schema diagnostics.
 
-Approximate targeted core `MS-XAML-2017` support: **76%**. This estimate covers the scoped language/object-mapping target in this matrix, not full WPF vocabulary parity.
+Approximate targeted core `MS-XAML-2017` support: **78%**. This estimate covers the scoped language/object-mapping target in this matrix, not full WPF vocabulary parity.
 
 Next slice:
 
-1. Move primitive/text conversion into schema-owned text syntax metadata instead of relying on legacy parser-wide coercion.
+1. Add remaining object-element intrinsic forms for supported `x:` constructs where they can be represented structurally.
 2. Expand schema-marked namescope boundaries to templates and future object islands when those vocabulary types are introduced.

@@ -1387,6 +1387,43 @@ async function runPhase19ReferenceIdentityFixtures() {
   return files.length;
 }
 
+async function runPhase20SchemaTextSyntaxFixtures() {
+  const expectations = {
+    'boolean-literal.xaml': { errors: [], warnings: [] },
+    'invalid-boolean.xaml': { errors: ['invalid-boolean-value'], warnings: [] },
+    'invalid-color.xaml': { errors: ['invalid-color-value'], warnings: [] },
+    'invalid-number.xaml': { errors: ['invalid-number-value'], warnings: [] },
+    'string-literals.xaml': { errors: [], warnings: [] }
+  };
+  const files = await listFixtureFiles('phase20-schema-text-syntax');
+
+  for (const fileName of files) {
+    const input = await readFixture('phase20-schema-text-syntax', fileName);
+    const result = parseAndValidateXaml(input);
+    const expected = expectations[fileName];
+    assert.ok(expected, `Missing schema text syntax expectation for ${fileName}`);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'error'), expected.errors, `${fileName} validation errors`);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'warning'), expected.warnings, `${fileName} validation warnings`);
+
+    if (expected.errors.length > 0) {
+      continue;
+    }
+
+    const lowered = lowerXamlDocument(result.document);
+    if (fileName === 'boolean-literal.xaml') {
+      assert.strictEqual(lowered.root.attributes.Active, true);
+    }
+
+    if (fileName === 'string-literals.xaml') {
+      assert.strictEqual(lowered.root.children[0]?.attributes.Text, '123');
+      assert.strictEqual(lowered.root.children[0]?.attributes.FontWeight, '700');
+      assert.strictEqual(lowered.root.children[1]?.attributes.Content, '42');
+    }
+  }
+
+  return files.length;
+}
+
 async function runPhase6CollectionFixtures() {
   const expectations = {
     'theme-dictionary-xkey.xaml': { errors: [], warnings: [] },
@@ -1445,7 +1482,8 @@ const phase16Count = await runPhase16IntrinsicStaticFixtures();
 const phase17Count = await runPhase17IntrinsicReferenceFixtures();
 const phase18Count = await runPhase18NamescopeBoundaryFixtures();
 const phase19Count = await runPhase19ReferenceIdentityFixtures();
+const phase20Count = await runPhase20SchemaTextSyntaxFixtures();
 
 console.log(
-  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources, ${phase9Count} serializer, ${phase10Count} designer serializer, ${phase11Count} XML scope, ${phase12Count} object resources, ${phase13Count} dynamic resources, ${phase14Count} whitespace normalization, ${phase15Count} intrinsic arrays, ${phase16Count} intrinsic static references, ${phase17Count} intrinsic references, ${phase18Count} namescope boundaries, ${phase19Count} reference identity).`
+  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources, ${phase9Count} serializer, ${phase10Count} designer serializer, ${phase11Count} XML scope, ${phase12Count} object resources, ${phase13Count} dynamic resources, ${phase14Count} whitespace normalization, ${phase15Count} intrinsic arrays, ${phase16Count} intrinsic static references, ${phase17Count} intrinsic references, ${phase18Count} namescope boundaries, ${phase19Count} reference identity, ${phase20Count} schema text syntax).`
 );

@@ -214,6 +214,59 @@ export interface XamlValidationResult {
   hasErrors: boolean;
 }
 
+const XAML_HEX_COLOR_PATTERN = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+
+export function coerceXamlTextValue(value: string, syntax: XamlTextSyntaxKind): XamlPrimitive {
+  const trimmed = value.trim();
+
+  if (syntax === 'number' && trimmed) {
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : value;
+  }
+
+  if (syntax === 'boolean') {
+    if (trimmed === 'true') {
+      return true;
+    }
+
+    if (trimmed === 'false') {
+      return false;
+    }
+  }
+
+  return value;
+}
+
+export function isValidXamlTextValue(
+  value: string,
+  syntax: XamlTextSyntaxKind,
+  allowedValues?: readonly string[]
+): boolean {
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return true;
+  }
+
+  if (syntax === 'number') {
+    return Number.isFinite(Number(trimmed));
+  }
+
+  if (syntax === 'boolean') {
+    return trimmed === 'true' || trimmed === 'false';
+  }
+
+  if (syntax === 'color') {
+    return XAML_HEX_COLOR_PATTERN.test(trimmed);
+  }
+
+  if (syntax === 'enum' && allowedValues) {
+    return allowedValues.includes(value);
+  }
+
+  return true;
+}
+
 export const controlCatalog = [
   'Canvas',
   'StackPanel',
@@ -1158,7 +1211,7 @@ function validateTextSyntax(member: XamlMemberNode, definition: XamlMemberDefini
     return;
   }
 
-  if (definition.valueSyntax === 'number' && !Number.isFinite(Number(text))) {
+  if (definition.valueSyntax === 'number' && !isValidXamlTextValue(text, definition.valueSyntax)) {
     diagnostics.push(validationDiagnostic(
       'error',
       'invalid-number-value',
@@ -1167,7 +1220,7 @@ function validateTextSyntax(member: XamlMemberNode, definition: XamlMemberDefini
     ));
   }
 
-  if (definition.valueSyntax === 'boolean' && text !== 'true' && text !== 'false') {
+  if (definition.valueSyntax === 'boolean' && !isValidXamlTextValue(text, definition.valueSyntax)) {
     diagnostics.push(validationDiagnostic(
       'error',
       'invalid-boolean-value',
@@ -1176,7 +1229,20 @@ function validateTextSyntax(member: XamlMemberNode, definition: XamlMemberDefini
     ));
   }
 
-  if (definition.valueSyntax === 'enum' && definition.allowedValues && !definition.allowedValues.includes(text)) {
+  if (definition.valueSyntax === 'color' && !isValidXamlTextValue(text, definition.valueSyntax)) {
+    diagnostics.push(validationDiagnostic(
+      'error',
+      'invalid-color-value',
+      `Member "${definition.name}" expects a hex color value such as "#67c7ff".`,
+      member
+    ));
+  }
+
+  if (
+    definition.valueSyntax === 'enum' &&
+    definition.allowedValues &&
+    !isValidXamlTextValue(text, definition.valueSyntax, definition.allowedValues)
+  ) {
     diagnostics.push(validationDiagnostic(
       'error',
       'invalid-enum-value',

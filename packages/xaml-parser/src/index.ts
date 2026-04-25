@@ -2,6 +2,7 @@ import {
   XAML_LANGUAGE_NAMESPACE,
   XML_NAMESPACE,
   XMLNS_NAMESPACE,
+  coerceXamlTextValue,
   resolveXamlAttachedMember,
   resolveXamlDirective,
   resolveXamlMember,
@@ -15,6 +16,7 @@ import {
   type XamlDottedMember,
   type XamlMarkupExtensionNode,
   type XamlMarkupExtensionValue,
+  type XamlMemberDefinition,
   type XamlMemberNode,
   type XamlNamespaceDeclaration,
   type XamlNode,
@@ -115,7 +117,7 @@ interface MarkupExtensionParseFailure {
 
 type MarkupExtensionParseResult = MarkupExtensionParseSuccess | MarkupExtensionParseFailure;
 
-function parseAttributeValue(value: string): XamlPrimitive {
+function coerceLegacyTextValue(value: string): XamlPrimitive {
   const trimmed = value.trim();
   if (trimmed === 'true') return true;
   if (trimmed === 'false') return false;
@@ -1531,6 +1533,34 @@ function evaluateMarkupExtension(extension: XamlMarkupExtensionNode, options: Xa
   return extension.raw;
 }
 
+function resolveMemberDefinitionForLowering(
+  member: XamlMemberNode,
+  ownerType: XamlTypeDefinition | null,
+  registry: XamlVocabularyRegistry
+): XamlMemberDefinition | null {
+  if (member.syntax === 'content' && ownerType?.contentProperty) {
+    return resolveXamlMember(ownerType, ownerType.contentProperty, registry);
+  }
+
+  if (member.isDirective) {
+    return resolveXamlDirective(member.name, registry);
+  }
+
+  if (member.dotted) {
+    if (ownerType && member.dotted.owner.localName === ownerType.name) {
+      return resolveXamlMember(ownerType, member.dotted.member, registry);
+    }
+
+    return resolveXamlAttachedMember(member.dotted.owner.localName, member.dotted.member, registry);
+  }
+
+  return ownerType ? resolveXamlMember(ownerType, member.name, registry) : null;
+}
+
+function coerceTextValueForMember(value: string, definition: XamlMemberDefinition | null): XamlPrimitive {
+  return definition ? coerceXamlTextValue(value, definition.valueSyntax) : coerceLegacyTextValue(value);
+}
+
 function primitiveValueFromNode(value: XamlValueNode, options: XamlLoweringContext): XamlPrimitive | undefined {
   if (value.kind === 'text') {
     return value.text;
@@ -1552,11 +1582,15 @@ function scalarTextFromValue(value: XamlValueNode, options: XamlLoweringContext)
   return textFromPrimitive(primitiveValueFromNode(value, options));
 }
 
-function primitiveValueFromValues(values: readonly XamlValueNode[], options: XamlLoweringContext): XamlPrimitive | undefined {
+function primitiveValueFromValues(
+  values: readonly XamlValueNode[],
+  options: XamlLoweringContext,
+  definition: XamlMemberDefinition | null
+): XamlPrimitive | undefined {
   if (values.length === 1) {
     const value = primitiveValueFromNode(values[0], options);
     if (value !== undefined) {
-      return typeof value === 'string' ? parseAttributeValue(value) : value;
+      return typeof value === 'string' ? coerceTextValueForMember(value, definition) : value;
     }
 
     return undefined;
@@ -1567,17 +1601,23 @@ function primitiveValueFromValues(values: readonly XamlValueNode[], options: Xam
     return undefined;
   }
 
-  return parseAttributeValue(text);
+  return coerceTextValueForMember(text, definition);
 }
 
-function primitiveValueFromMember(member: XamlMemberNode, options: XamlLoweringContext): XamlPrimitive | undefined {
-  const primitiveValue = primitiveValueFromValues(member.values, options);
+function primitiveValueFromMember(
+  member: XamlMemberNode,
+  ownerType: XamlTypeDefinition | null,
+  registry: XamlVocabularyRegistry,
+  options: XamlLoweringContext
+): XamlPrimitive | undefined {
+  const definition = resolveMemberDefinitionForLowering(member, ownerType, registry);
+  const primitiveValue = primitiveValueFromValues(member.values, options, definition);
   if (member.syntax === 'attribute' || primitiveValue == null || typeof primitiveValue !== 'string') {
     return primitiveValue;
   }
 
   const textValue = textValueFromValues(member.values, options);
-  return textValue ? parseAttributeValue(textValue) : undefined;
+  return textValue ? coerceTextValueForMember(textValue, definition) : undefined;
 }
 
 function textValueFromMember(member: XamlMemberNode, options: XamlLoweringContext): string {
@@ -1823,7 +1863,7 @@ function lowerPropertyMember(
     return;
   }
 
-  const primitiveValue = primitiveValueFromMember(member, options);
+  const primitiveValue = primitiveValueFromMember(member, ownerType, registry, options);
   if (primitiveValue === undefined) {
     return;
   }
@@ -1861,7 +1901,7 @@ function lowerContentMember(
   const textValue = textValueFromValues(member.values, options);
   node.children.push(...valueObjects);
 
-  const primitiveValue = primitiveValueFromMember(member, options);
+  const primitiveValue = primitiveValueFromMember(member, ownerType, registry, options);
   if (primitiveValue === undefined) {
     return;
   }
@@ -1937,7 +1977,8 @@ function lowerObjectNode(
       if (member.syntax === 'attribute') {
         const memberName = lowerMemberName(member, ownerType, registry);
         const textValue = textValueFromMember(member, localOptions);
-        const primitiveValue = primitiveValueFromValues(member.values, localOptions);
+        const memberDefinition = resolveMemberDefinitionForLowering(member, ownerType, registry);
+        const primitiveValue = primitiveValueFromValues(member.values, localOptions, memberDefinition);
         if (primitiveValue !== undefined) {
           attributes[memberName] = primitiveValue;
         }

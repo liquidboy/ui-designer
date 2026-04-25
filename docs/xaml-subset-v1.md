@@ -68,6 +68,16 @@ Runtime notes:
 3. `PointerUp`
 4. `Click`
 
+## Text Syntax
+
+Current status:
+
+1. Known member values validate and lower through schema-owned `valueSyntax` metadata.
+2. `number` and `boolean` members coerce to runtime primitives only when the schema declares those syntaxes.
+3. `string`, `uri`, `color`, `enum`, and `any` members remain string-valued for runtime consumption.
+4. Invalid number, boolean, enum, and hex color values produce validation errors.
+5. Unknown preserved compatibility members still use the legacy fallback coercion path until they are modeled in schema metadata.
+
 ## Collections and Keys
 
 Current status:

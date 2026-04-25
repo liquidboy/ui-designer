@@ -1,0 +1,4 @@
+<Canvas>
+  <TextBlock Text="123" FontWeight="700" />
+  <Button Content="42" />
+</Canvas>
