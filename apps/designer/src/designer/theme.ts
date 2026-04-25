@@ -81,10 +81,25 @@ function firstChild(root: XamlNode, type: string): XamlNode | null {
   return root.children.find((child) => child.type === type) ?? null;
 }
 
+function invalidDefinition(message: string): DesignerThemeParseResult {
+  return {
+    definition: null,
+    diagnostic: {
+      severity: 'error',
+      message
+    }
+  };
+}
+
 export function parseDesignerThemeDefinition(source: string): DesignerThemeParseResult {
   try {
     const document = parseXaml(source);
     const root = document.root;
+
+    if (root.type !== 'DesignerTheme') {
+      return invalidDefinition(`Expected DesignerTheme root element, received ${root.type}.`);
+    }
+
     const tokens = cloneThemeTokens();
     const colors = firstChild(root, 'Colors')?.children ?? [];
 

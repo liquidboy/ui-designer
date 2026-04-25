@@ -123,10 +123,25 @@ function applyKnownText<TId extends string>(
   }
 }
 
+function invalidDefinition(message: string): DesignerPanelsParseResult {
+  return {
+    definition: null,
+    diagnostic: {
+      severity: 'error',
+      message
+    }
+  };
+}
+
 export function parseDesignerPanelsDefinition(source: string): DesignerPanelsParseResult {
   try {
     const document = parseXaml(source);
     const root = document.root;
+
+    if (root.type !== 'DesignerPanels') {
+      return invalidDefinition(`Expected DesignerPanels root element, received ${root.type}.`);
+    }
+
     const panels = cloneTextMap(DEFAULT_PANEL_TEXTS);
     const inspectorGroups = cloneTextMap(DEFAULT_INSPECTOR_GROUP_TEXTS);
 

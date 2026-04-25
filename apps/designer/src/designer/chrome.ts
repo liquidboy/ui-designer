@@ -77,10 +77,24 @@ function dockTabs(root: XamlNode, slot: string): DesignerChromeItem[] {
   return dock ? dock.children.map(nodeToItem) : [];
 }
 
+function invalidDefinition(message: string): DesignerChromeParseResult {
+  return {
+    definition: null,
+    diagnostic: {
+      severity: 'error',
+      message
+    }
+  };
+}
+
 export function parseDesignerChromeDefinition(source: string): DesignerChromeParseResult {
   try {
     const document = parseXaml(source);
     const root = document.root;
+
+    if (root.type !== 'DesignerChrome') {
+      return invalidDefinition(`Expected DesignerChrome root element, received ${root.type}.`);
+    }
 
     return {
       definition: {
