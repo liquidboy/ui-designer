@@ -1624,6 +1624,56 @@ async function runPhase22ClrTypeResolutionFixtures() {
   return files.length;
 }
 
+async function runPhase23PrimitiveDecimalFixtures() {
+  const expectations = {
+    'decimal-array-boundary.xaml': { errors: [], warnings: [] },
+    'decimal-array-clr-type-runtime.xaml': { errors: [], warnings: [] },
+    'decimal-array-scale-out-of-range.xaml': { errors: ['invalid-array-item-range'], warnings: [] },
+    'decimal-array-text-runtime.xaml': { errors: [], warnings: [] },
+    'decimal-invalid-exponent.xaml': { errors: ['invalid-decimal-value'], warnings: [] },
+    'decimal-object-runtime.xaml': { errors: [], warnings: [] },
+    'decimal-overflow.xaml': { errors: ['invalid-primitive-range'], warnings: [] }
+  };
+  const files = await listFixtureFiles('phase23-primitive-decimal');
+
+  for (const fileName of files) {
+    const input = await readFixture('phase23-primitive-decimal', fileName);
+    const result = parseAndValidateXaml(input);
+    const expected = expectations[fileName];
+    assert.ok(expected, `Missing primitive decimal expectation for ${fileName}`);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'error'), expected.errors, `${fileName} validation errors`);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'warning'), expected.warnings, `${fileName} validation warnings`);
+
+    if (expected.errors.length > 0) {
+      continue;
+    }
+
+    const runtime = parseRuntimeXaml(input);
+
+    if (fileName === 'decimal-array-boundary.xaml') {
+      assert.deepEqual(runtime.root.attributes.Content, [
+        '79228162514264337593543950335',
+        '-79228162514264337593543950335',
+        '0.1234567890123456789012345678'
+      ]);
+    }
+
+    if (fileName === 'decimal-array-clr-type-runtime.xaml') {
+      assert.deepEqual(runtime.root.attributes.Content, ['123.4500']);
+    }
+
+    if (fileName === 'decimal-array-text-runtime.xaml') {
+      assert.deepEqual(runtime.root.attributes.Content, ['42.5']);
+    }
+
+    if (fileName === 'decimal-object-runtime.xaml') {
+      assert.equal(runtime.root.attributes.Content, '123.4500');
+    }
+  }
+
+  return files.length;
+}
+
 async function runPhase6CollectionFixtures() {
   const expectations = {
     'theme-dictionary-xkey.xaml': { errors: [], warnings: [] },
@@ -1685,7 +1735,8 @@ const phase19Count = await runPhase19ReferenceIdentityFixtures();
 const phase20Count = await runPhase20SchemaTextSyntaxFixtures();
 const phase21Count = await runPhase21IntrinsicObjectElementFixtures();
 const phase22Count = await runPhase22ClrTypeResolutionFixtures();
+const phase23Count = await runPhase23PrimitiveDecimalFixtures();
 
 console.log(
-  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources, ${phase9Count} serializer, ${phase10Count} designer serializer, ${phase11Count} XML scope, ${phase12Count} object resources, ${phase13Count} dynamic resources, ${phase14Count} whitespace normalization, ${phase15Count} intrinsic arrays, ${phase16Count} intrinsic static references, ${phase17Count} intrinsic references, ${phase18Count} namescope boundaries, ${phase19Count} reference identity, ${phase20Count} schema text syntax, ${phase21Count} intrinsic object elements, ${phase22Count} CLR type resolution).`
+  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources, ${phase9Count} serializer, ${phase10Count} designer serializer, ${phase11Count} XML scope, ${phase12Count} object resources, ${phase13Count} dynamic resources, ${phase14Count} whitespace normalization, ${phase15Count} intrinsic arrays, ${phase16Count} intrinsic static references, ${phase17Count} intrinsic references, ${phase18Count} namescope boundaries, ${phase19Count} reference identity, ${phase20Count} schema text syntax, ${phase21Count} intrinsic object elements, ${phase22Count} CLR type resolution, ${phase23Count} primitive decimals).`
 );

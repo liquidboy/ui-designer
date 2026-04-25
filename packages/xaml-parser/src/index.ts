@@ -1334,7 +1334,7 @@ const xamlPrimitiveArrayItemSyntax = new Map<string, XamlMemberDefinition['value
   ['UInt64', 'number'],
   ['Single', 'number'],
   ['Double', 'number'],
-  ['Decimal', 'number']
+  ['Decimal', 'decimal']
 ]);
 
 function localTypeNameFromText(value: string): string {
@@ -1677,6 +1677,11 @@ function evaluateXamlArrayObject(object: XamlObjectNode, options: XamlLoweringCo
 }
 
 function evaluateIntrinsicObject(object: XamlObjectNode, options: XamlLoweringContext): XamlRuntimeResourceValue | undefined {
+  const primitive = evaluateXamlPrimitiveObject(object, options);
+  if (primitive !== undefined) {
+    return primitive;
+  }
+
   if (isIntrinsicObject(object, ['Null', 'NullExtension'])) {
     return null;
   }

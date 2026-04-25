@@ -18,7 +18,7 @@ XAML-inspired UI framework targeting WebGPU, with an infinite-canvas visual desi
 ## Current MVP
 
 - Registry-backed XAML infoset parsing, validation, and lowering through compatibility adapters
-- Intrinsic directive/type validation for root and `ResourceDictionary` namescopes, namespace-aware `x:Type`/`x:Array` type references with validation-only `clr-namespace:System` primitive aliases, schema-owned text syntax conversion, root-only `x:Class`, dictionary `x:Key`, runtime array-valued `x:Array` member/resource values with range-aware primitive item coercion, object-element and markup-extension `x:Null`/`x:Type`/`x:Static`/`x:Reference`, attribute/property-element `Binding`, and scoped primitive/object `StaticResource` plus `DynamicResource` lookup
+- Intrinsic directive/type validation for root and `ResourceDictionary` namescopes, namespace-aware `x:Type`/`x:Array` type references with validation-only `clr-namespace:System` primitive aliases, schema-owned text syntax conversion including decimal-specific validation, root-only `x:Class`, dictionary `x:Key`, runtime array-valued `x:Array` member/resource values with range-aware primitive item coercion, object-element and markup-extension `x:Null`/`x:Type`/`x:Static`/`x:Reference`, attribute/property-element `Binding`, and scoped primitive/object `StaticResource` plus `DynamicResource` lookup
 - Scoped `xml:space` whitespace preservation/default normalization and `xml:lang` inheritance through infoset parsing and compatibility lowering
 - Infoset-based semantic serialization with round-trip fixtures for namespaces, directives, markup extensions, collections, and designer edits
 - WebGPU-backed rectangle rendering in the browser runtime

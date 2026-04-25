@@ -1,0 +1,5 @@
+<Button xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Button.Content>
+    <x:Decimal>79228162514264337593543950336</x:Decimal>
+  </Button.Content>
+</Button>

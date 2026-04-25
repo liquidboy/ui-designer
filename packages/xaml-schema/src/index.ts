@@ -162,6 +162,7 @@ export type XamlTextSyntaxKind =
   | 'any'
   | 'string'
   | 'number'
+  | 'decimal'
   | 'boolean'
   | 'color'
   | 'thickness'
@@ -223,6 +224,7 @@ export interface XamlValidationResult {
 }
 
 const XAML_HEX_COLOR_PATTERN = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+const XAML_DECIMAL_PATTERN = /^[+-]?(?:(?:\d+)(?:\.\d*)?|\.\d+)$/;
 
 export function coerceXamlTextValue(value: string, syntax: XamlTextSyntaxKind): XamlPrimitive {
   const trimmed = value.trim();
@@ -230,6 +232,10 @@ export function coerceXamlTextValue(value: string, syntax: XamlTextSyntaxKind): 
   if (syntax === 'number' && trimmed) {
     const parsed = Number(trimmed);
     return Number.isFinite(parsed) ? parsed : value;
+  }
+
+  if (syntax === 'decimal') {
+    return trimmed || value;
   }
 
   if (syntax === 'boolean') {
@@ -258,6 +264,10 @@ export function isValidXamlTextValue(
 
   if (syntax === 'number') {
     return Number.isFinite(Number(trimmed));
+  }
+
+  if (syntax === 'decimal') {
+    return XAML_DECIMAL_PATTERN.test(trimmed);
   }
 
   if (syntax === 'boolean') {
@@ -474,7 +484,7 @@ const xamlPrimitiveTypeSyntax = {
   UInt64: 'number',
   Single: 'number',
   Double: 'number',
-  Decimal: 'number'
+  Decimal: 'decimal'
 } as const satisfies Record<string, XamlTextSyntaxKind>;
 
 const xamlPrimitiveIntegerRanges = {
@@ -489,6 +499,8 @@ const xamlPrimitiveIntegerRanges = {
 } as const;
 
 const XAML_SINGLE_MAX_VALUE = 3.4028234663852886e38;
+const XAML_DECIMAL_MAX_SCALE = 28;
+const XAML_DECIMAL_MAX_UNSCALED = 79228162514264337593543950335n;
 const CLR_NAMESPACE_PREFIX = 'clr-namespace:';
 const supportedClrPrimitiveNamespaces = new Set(['System']);
 const supportedClrPrimitiveAssemblies = new Set(['mscorlib', 'System', 'System.Runtime', 'System.Private.CoreLib', 'netstandard']);
@@ -1358,6 +1370,38 @@ function parseIntegerText(value: string): bigint | null {
   }
 }
 
+function parseDecimalText(value: string): { unscaled: bigint; scale: number } | null {
+  const trimmed = value.trim();
+  if (!XAML_DECIMAL_PATTERN.test(trimmed)) {
+    return null;
+  }
+
+  const unsigned = trimmed.startsWith('-') || trimmed.startsWith('+') ? trimmed.slice(1) : trimmed;
+  const [wholePart = '', fractionalPart = ''] = unsigned.split('.');
+  const digits = `${wholePart}${fractionalPart}`.replace(/^0+(?=\d)/, '') || '0';
+  let unscaled = BigInt(digits);
+  let scale = fractionalPart.length;
+
+  while (scale > 0 && unscaled % 10n === 0n) {
+    unscaled /= 10n;
+    scale -= 1;
+  }
+
+  return {
+    unscaled,
+    scale
+  };
+}
+
+function isValidDecimalRangeValue(value: string): boolean {
+  const decimal = parseDecimalText(value);
+  return (
+    decimal != null &&
+    decimal.scale <= XAML_DECIMAL_MAX_SCALE &&
+    decimal.unscaled <= XAML_DECIMAL_MAX_UNSCALED
+  );
+}
+
 function isValidPrimitiveRangeValue(typeName: string, value: string): boolean {
   const localName = localTypeNameFromTextSyntax(typeName);
   if (!localName) {
@@ -1377,6 +1421,10 @@ function isValidPrimitiveRangeValue(typeName: string, value: string): boolean {
   if (localName === 'Single') {
     const number = Number(value.trim());
     return Number.isFinite(number) && Math.abs(number) <= XAML_SINGLE_MAX_VALUE;
+  }
+
+  if (localName === 'Decimal') {
+    return isValidDecimalRangeValue(value);
   }
 
   return true;
@@ -1599,6 +1647,15 @@ function validateTextSyntax(member: XamlMemberNode, definition: XamlMemberDefini
       'error',
       'invalid-number-value',
       `Member "${definition.name}" expects a numeric value.`,
+      member
+    ));
+  }
+
+  if (definition.valueSyntax === 'decimal' && !isValidXamlTextValue(text, definition.valueSyntax)) {
+    diagnostics.push(validationDiagnostic(
+      'error',
+      'invalid-decimal-value',
+      `Member "${definition.name}" expects decimal text.`,
       member
     ));
   }

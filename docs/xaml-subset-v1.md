@@ -74,8 +74,8 @@ Current status:
 
 1. Known member values validate and lower through schema-owned `valueSyntax` metadata.
 2. `number` and `boolean` members coerce to runtime primitives only when the schema declares those syntaxes.
-3. `string`, `uri`, `color`, `enum`, and `any` members remain string-valued for runtime consumption.
-4. Invalid number, boolean, enum, and hex color values produce validation errors.
+3. `decimal`, `string`, `uri`, `color`, `enum`, and `any` members remain string-valued for runtime consumption.
+4. Invalid number, decimal, boolean, enum, and hex color values produce validation errors.
 5. Unknown preserved compatibility members still use the legacy fallback coercion path until they are modeled in schema metadata.
 
 ## Collections and Keys
@@ -147,8 +147,9 @@ Current status:
 6. Authoring compatibility lowering emits a structural `Array` node with item children so source round-tripping remains stable.
 7. Runtime lowering evaluates single `x:Array` member values and keyed `ResourceDictionary` entries to JavaScript arrays of supported runtime values.
 8. Supported primitive item elements such as `x:String`, `x:Int32`, `x:Double`, and `x:Boolean` coerce to JavaScript string, number, and boolean values.
-9. Integer primitive aliases and `x:Single` enforce scoped numeric ranges; `System.Int32`-style primitive type tokens and `xmlns:sys="clr-namespace:System;assembly=mscorlib"` aliases such as `sys:Int32` are accepted for validation-only primitive resolution.
-10. Arbitrary CLR type loading, decimal precision enforcement, and generic type execution remain outside v1.
+9. Integer primitive aliases and `x:Single` enforce scoped numeric ranges; `x:Decimal` enforces 28-scale and 96-bit decimal limits while lowering as a string to avoid JavaScript number precision loss.
+10. `System.Int32`-style primitive type tokens and `xmlns:sys="clr-namespace:System;assembly=mscorlib"` aliases such as `sys:Int32` are accepted for validation-only primitive resolution.
+11. Arbitrary CLR type loading and generic type execution remain outside v1.
 
 Supported structural form:
 
@@ -219,6 +220,19 @@ Supported CLR primitive namespace form:
     <x:Array Type="{x:Type sys:Int32}">
       <x:Int32>7</x:Int32>
       <x:Int32>8</x:Int32>
+    </x:Array>
+  </Button.Content>
+</Button>
+```
+
+Supported decimal form:
+
+```xaml
+<Button xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Button.Content>
+    <x:Array Type="x:Decimal">
+      <x:Decimal>79228162514264337593543950335</x:Decimal>
+      <x:Decimal>0.1234567890123456789012345678</x:Decimal>
     </x:Array>
   </Button.Content>
 </Button>
