@@ -2241,6 +2241,63 @@ async function runPhase32ClrIdentifierMetadataFixtures() {
   return files.length;
 }
 
+async function runPhase33ModifierDirectiveFixtures() {
+  const fieldModifierWarnings = ['unsupported-directive', 'unsupported-directive', 'unsupported-directive'];
+  const expectations = {
+    'class-modifier-invalid-private.xaml': { errors: ['invalid-modifier-value'], warnings: ['unsupported-directive'] },
+    'class-modifier-valid-notpublic.xaml': {
+      errors: [],
+      warnings: ['unsupported-directive', 'unsupported-directive']
+    },
+    'class-modifier-valid-public.xaml': {
+      errors: [],
+      warnings: ['unsupported-directive', 'unsupported-directive']
+    },
+    'field-modifier-invalid-static.xaml': {
+      errors: ['invalid-modifier-value'],
+      warnings: ['unsupported-directive', 'unsupported-directive']
+    },
+    'field-modifier-valid-friend.xaml': { errors: [], warnings: fieldModifierWarnings },
+    'field-modifier-valid-protected-internal.xaml': { errors: [], warnings: fieldModifierWarnings }
+  };
+  const files = await listFixtureFiles('phase33-modifier-directives');
+
+  for (const fileName of files) {
+    const input = await readFixture('phase33-modifier-directives', fileName);
+    const result = parseAndValidateXaml(input);
+    const expected = expectations[fileName];
+    assert.ok(expected, `Missing modifier directive expectation for ${fileName}`);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'error'), expected.errors, `${fileName} validation errors`);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'warning'), expected.warnings, `${fileName} validation warnings`);
+
+    if (expected.errors.length > 0) {
+      continue;
+    }
+
+    const serialized = serializeXamlDocumentNode(result.document);
+    const reparsed = parseAndValidateXaml(serialized);
+    assert.deepEqual(diagnosticsWithSeverity(reparsed.validation, 'error'), [], `${fileName} round-trip validation errors`);
+
+    if (fileName === 'class-modifier-valid-notpublic.xaml') {
+      assert.match(serialized, /x:ClassModifier="NotPublic"/);
+    }
+
+    if (fileName === 'class-modifier-valid-public.xaml') {
+      assert.match(serialized, /x:ClassModifier="public"/);
+    }
+
+    if (fileName === 'field-modifier-valid-friend.xaml') {
+      assert.match(serialized, /x:FieldModifier="Friend"/);
+    }
+
+    if (fileName === 'field-modifier-valid-protected-internal.xaml') {
+      assert.match(serialized, /x:FieldModifier="protected internal"/);
+    }
+  }
+
+  return files.length;
+}
+
 async function runPhase6CollectionFixtures() {
   const expectations = {
     'theme-dictionary-xkey.xaml': { errors: [], warnings: [] },
@@ -2312,7 +2369,8 @@ const phase29Count = await runPhase29DeclarationIntrinsicFixtures();
 const phase30Count = await runPhase30DeclarationTypeResolutionFixtures();
 const phase31Count = await runPhase31ClrSchemaMappingFixtures();
 const phase32Count = await runPhase32ClrIdentifierMetadataFixtures();
+const phase33Count = await runPhase33ModifierDirectiveFixtures();
 
 console.log(
-  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources, ${phase9Count} serializer, ${phase10Count} designer serializer, ${phase11Count} XML scope, ${phase12Count} object resources, ${phase13Count} dynamic resources, ${phase14Count} whitespace normalization, ${phase15Count} intrinsic arrays, ${phase16Count} intrinsic static references, ${phase17Count} intrinsic references, ${phase18Count} namescope boundaries, ${phase19Count} reference identity, ${phase20Count} schema text syntax, ${phase21Count} intrinsic object elements, ${phase22Count} CLR type resolution, ${phase23Count} primitive decimals, ${phase24Count} static resolution, ${phase25Count} type arguments, ${phase26Count} template namescopes, ${phase27Count} construction directives, ${phase28Count} metadata/code directives, ${phase29Count} declaration intrinsics, ${phase30Count} declaration type resolution, ${phase31Count} CLR schema mappings, ${phase32Count} CLR identifier metadata).`
+  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources, ${phase9Count} serializer, ${phase10Count} designer serializer, ${phase11Count} XML scope, ${phase12Count} object resources, ${phase13Count} dynamic resources, ${phase14Count} whitespace normalization, ${phase15Count} intrinsic arrays, ${phase16Count} intrinsic static references, ${phase17Count} intrinsic references, ${phase18Count} namescope boundaries, ${phase19Count} reference identity, ${phase20Count} schema text syntax, ${phase21Count} intrinsic object elements, ${phase22Count} CLR type resolution, ${phase23Count} primitive decimals, ${phase24Count} static resolution, ${phase25Count} type arguments, ${phase26Count} template namescopes, ${phase27Count} construction directives, ${phase28Count} metadata/code directives, ${phase29Count} declaration intrinsics, ${phase30Count} declaration type resolution, ${phase31Count} CLR schema mappings, ${phase32Count} CLR identifier metadata, ${phase33Count} modifier directives).`
 );

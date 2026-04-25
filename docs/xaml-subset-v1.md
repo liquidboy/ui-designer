@@ -206,8 +206,8 @@ Supported preserved form:
 Current status:
 
 1. `x:ClassModifier` and `x:FieldModifier` parse as preserved intrinsic XAML directives.
-2. `x:ClassModifier` is valid only on the document root object and requires `x:Class` on that object.
-3. `x:FieldModifier` requires root `x:Class` and same-object `x:Name`.
+2. `x:ClassModifier` is valid only on the document root object, requires `x:Class` on that object, and accepts public/not-public class access tokens such as `public`, `internal`, `Friend`, and `NotPublic`.
+3. `x:FieldModifier` requires root `x:Class`, same-object `x:Name`, and a supported field access token such as `private`, `public`, `protected`, `internal`, `Friend`, `NotPublic`, `protected internal`, or `private protected`.
 4. `x:Class` requires a non-empty CLR-style qualified type name such as `Example.RootView`.
 5. `x:Code` parses as an intrinsic XAML object and is valid only as direct document-root content when the root has `x:Class`.
 6. `x:XData` parses as an intrinsic XAML object and preserves raw XML island content without validating island elements as UI objects.

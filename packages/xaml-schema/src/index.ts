@@ -238,6 +238,17 @@ export interface XamlValidationResult {
 const XAML_HEX_COLOR_PATTERN = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 const XAML_DECIMAL_PATTERN = /^[+-]?(?:(?:\d+)(?:\.\d*)?|\.\d+)$/;
 const CLR_IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const XAML_CLASS_MODIFIER_VALUES = new Set(['public', 'internal', 'friend', 'notpublic']);
+const XAML_FIELD_MODIFIER_VALUES = new Set([
+  'public',
+  'private',
+  'protected',
+  'internal',
+  'friend',
+  'notpublic',
+  'protected internal',
+  'private protected'
+]);
 
 export function coerceXamlTextValue(value: string, syntax: XamlTextSyntaxKind): XamlPrimitive {
   const trimmed = value.trim();
@@ -2452,6 +2463,30 @@ function validateClrQualifiedNameText(
   ));
 }
 
+function normalizeModifierValue(value: string): string {
+  return value.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function validateModifierValueText(
+  value: string,
+  allowedValues: ReadonlySet<string>,
+  diagnostics: XamlDiagnostic[],
+  node: { span?: XamlSourceSpan },
+  label: string
+): void {
+  const normalized = normalizeModifierValue(value);
+  if (allowedValues.has(normalized)) {
+    return;
+  }
+
+  diagnostics.push(validationDiagnostic(
+    'error',
+    'invalid-modifier-value',
+    `${label} has unsupported modifier value "${value}".`,
+    node
+  ));
+}
+
 function validateXamlMarkupCompileDirective(
   object: XamlObjectNode,
   member: XamlMemberNode,
@@ -2460,8 +2495,19 @@ function validateXamlMarkupCompileDirective(
   context: XamlValidationContext
 ): void {
   validateRequiredDirectiveText(member, definition.name, diagnostics);
+  const modifierValue = textFromValues(member.values).trim();
 
   if (definition.name === 'ClassModifier') {
+    if (modifierValue) {
+      validateModifierValueText(
+        modifierValue,
+        XAML_CLASS_MODIFIER_VALUES,
+        diagnostics,
+        member,
+        'Directive "x:ClassModifier"'
+      );
+    }
+
     if (object !== context.rootObject) {
       diagnostics.push(validationDiagnostic(
         'error',
@@ -2481,6 +2527,16 @@ function validateXamlMarkupCompileDirective(
       ));
     }
     return;
+  }
+
+  if (modifierValue) {
+    validateModifierValueText(
+      modifierValue,
+      XAML_FIELD_MODIFIER_VALUES,
+      diagnostics,
+      member,
+      'Directive "x:FieldModifier"'
+    );
   }
 
   if (!hasXamlDirective(context.rootObject, 'Class')) {

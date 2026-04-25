@@ -69,12 +69,13 @@ The repo now has the core compliance foundation in place:
 31. Declaration `Type` values on `x:Member` and `x:Property` now validate against inherited and local property-element/object XML namespace mappings without executing CLR code or loading arbitrary assemblies.
 32. The vocabulary registry now exposes selected no-execution CLR namespace mappings for `Liquidboy.UI.Designer*`, so object elements and type tokens can validate against configured schema metadata without reflection or arbitrary assembly loading.
 33. Lexical CLR metadata validation now rejects malformed `x:Class`, `x:Subclass`, `x:FactoryMethod`, and declaration `Name` values without compiling code or generating CLR members.
+34. Markup-compilation modifier validation now rejects unsupported `x:ClassModifier` and `x:FieldModifier` values while preserving supported modifier metadata without compiling or generating CLR members.
 
-Approximate targeted core `MS-XAML-2017` support: **98%**. This is a progress estimate for the scoped language/object-mapping work, not a claim of complete XAML or WPF vocabulary parity.
+Approximate targeted core `MS-XAML-2017` support: **99%**. This is a progress estimate for the scoped language/object-mapping work, not a claim of complete XAML or WPF vocabulary parity.
 
 The main remaining gaps are now:
 
-1. Validation for markup-compilation modifier directive values such as `x:ClassModifier` and `x:FieldModifier`.
+1. Final scoped compliance closure fixtures for preserved-only/deferred execution boundaries.
 2. Arbitrary CLR type loading, generic execution, constructor execution, and CLR static value execution.
 3. Full template/style runtime behavior beyond validation-only namescope boundaries.
 
@@ -393,8 +394,8 @@ We should call this initiative complete only when all of the following are true:
 
 The next concrete work item should be:
 
-1. validate `x:ClassModifier` and `x:FieldModifier` values against the supported markup-compilation modifier set
-2. reject unsupported modifier metadata without compiling code or generating CLR members
-3. keep valid modifier metadata preserved with warnings so valid source can round-trip
+1. add final closure fixtures for the remaining preserved-only/deferred execution boundaries
+2. confirm the scoped parser/validator target is complete without adding arbitrary CLR loading or code generation
+3. document which remaining items belong to an explicit WPF/runtime compatibility track
 
 That keeps us on the safer parser/validator side of the spec before we consider deeper CLR execution.
