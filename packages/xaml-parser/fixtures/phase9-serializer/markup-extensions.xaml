@@ -1,0 +1,10 @@
+<Canvas xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <TextBlock Text="{Binding Path=Title}">
+    <TextBlock.Foreground>{StaticResource Accent}</TextBlock.Foreground>
+  </TextBlock>
+  <Button>
+    <Button.Content>{x:Null}</Button.Content>
+  </Button>
+  <TextBlock Text="{}{Binding Path=Literal}" />
+  <TextBlock>{Literal content}</TextBlock>
+</Canvas>

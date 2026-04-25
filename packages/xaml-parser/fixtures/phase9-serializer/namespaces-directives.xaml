@@ -1,0 +1,3 @@
+<ui:Canvas xmlns:ui="https://liquidboy.dev/ui-designer" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:xml="http://www.w3.org/XML/1998/namespace" x:Name="RootCanvas" xml:space="preserve" Width="320">
+  <ui:TextBlock x:Name="TitleText" Text="Hello &amp; welcome" />
+</ui:Canvas>

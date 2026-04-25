@@ -84,7 +84,14 @@ globalThis.Node = {
 };
 globalThis.DOMParser = FixtureDOMParser;
 
-const { lowerXamlDocument, parseAndValidateXaml, parseRuntimeXaml, parseStrictXaml, parseXamlToInfoset } = await import('../packages/xaml-parser/dist/index.js');
+const {
+  lowerXamlDocument,
+  parseAndValidateXaml,
+  parseRuntimeXaml,
+  parseStrictXaml,
+  parseXamlToInfoset,
+  serializeXamlDocumentNode
+} = await import('../packages/xaml-parser/dist/index.js');
 
 function splitQualifiedName(rawName) {
   const separator = rawName.indexOf(':');
@@ -811,6 +818,47 @@ async function runPhase8ResourceFixtures() {
   return files.length;
 }
 
+async function runPhase9SerializerFixtures() {
+  const files = await listFixtureFiles('phase9-serializer');
+
+  for (const fileName of files) {
+    const input = await readFixture('phase9-serializer', fileName);
+    const result = parseAndValidateXaml(input);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'error'), [], `${fileName} validation errors`);
+    assert.ok(result.document, `${fileName} should produce a document`);
+
+    const serialized = serializeXamlDocumentNode(result.document);
+    const reparsed = parseAndValidateXaml(serialized);
+    assert.deepEqual(diagnosticsWithSeverity(reparsed.validation, 'error'), [], `${fileName} round-trip validation errors`);
+    assert.ok(reparsed.document, `${fileName} should round-trip to a document`);
+    assert.deepEqual(lowerXamlDocument(reparsed.document), lowerXamlDocument(result.document), `${fileName} lowered round-trip`);
+
+    if (fileName === 'namespaces-directives.xaml') {
+      assert.match(serialized, /xmlns:ui="https:\/\/liquidboy\.dev\/ui-designer"/);
+      assert.match(serialized, /xmlns:x="http:\/\/schemas\.microsoft\.com\/winfx\/2006\/xaml"/);
+      assert.match(serialized, /x:Name="RootCanvas"/);
+      assert.match(serialized, /xml:space="preserve"/);
+    }
+
+    if (fileName === 'markup-extensions.xaml') {
+      assert.match(serialized, /Text="\{Binding Path=Title\}"/);
+      assert.match(serialized, /<TextBlock\.Foreground>\{StaticResource Accent\}<\/TextBlock\.Foreground>/);
+      assert.match(serialized, /<Button\.Content>\{x:Null\}<\/Button\.Content>/);
+      assert.match(serialized, /Text="\{\}\{Binding Path=Literal\}"/);
+      assert.match(serialized, /<TextBlock>\{Literal content\}<\/TextBlock>/);
+    }
+
+    if (fileName === 'collections-resources.xaml') {
+      assert.match(serialized, /<Canvas\.Resources>/);
+      assert.match(serialized, /<ResourceDictionary>/);
+      assert.match(serialized, /<Color x:Key="Accent">#67c7ff<\/Color>/);
+      assert.match(serialized, /Foreground="\{StaticResource Accent\}"/);
+    }
+  }
+
+  return files.length;
+}
+
 async function runPhase6CollectionFixtures() {
   const expectations = {
     'theme-dictionary-xkey.xaml': { errors: [], warnings: [] },
@@ -858,7 +906,8 @@ const phase5Count = await runPhase5MarkupExtensionFixtures();
 const phase6Count = await runPhase6CollectionFixtures();
 const phase7Count = await runPhase7RuntimeExtensionFixtures();
 const phase8Count = await runPhase8ResourceFixtures();
+const phase9Count = await runPhase9SerializerFixtures();
 
 console.log(
-  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources).`
+  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources, ${phase9Count} serializer).`
 );

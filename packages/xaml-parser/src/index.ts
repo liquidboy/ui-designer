@@ -54,6 +54,10 @@ export interface XamlLoweringOptions {
   dataContext?: unknown;
 }
 
+export interface XamlSerializationOptions {
+  indent?: string;
+}
+
 interface XamlLoweringContext extends XamlLoweringOptions {
   resources: Map<string, XamlPrimitive>;
 }
@@ -1029,6 +1033,156 @@ export function parseAndValidateXaml(
     validation
   };
 }
+
+function serializationQualifiedName(name: XamlQualifiedName): string {
+  return name.rawName || qualifiedNameToString(name);
+}
+
+function escapeXmlAttribute(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;');
+}
+
+function escapeXmlText(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function serializeLiteralText(value: string, escapeMarkupLiteral: boolean): string {
+  return escapeMarkupLiteral && value.trimStart().startsWith('{') ? `{}${value}` : value;
+}
+
+function serializeMarkupExtensionValue(value: XamlMarkupExtensionNode): string {
+  return value.raw;
+}
+
+function serializeValueNodeText(value: XamlValueNode, escapeMarkupLiteral: boolean): string {
+  if (value.kind === 'markupExtension') {
+    return serializeMarkupExtensionValue(value);
+  }
+
+  if (value.kind === 'text') {
+    return serializeLiteralText(value.text, escapeMarkupLiteral);
+  }
+
+  return '';
+}
+
+function serializeValueNodesText(values: readonly XamlValueNode[], escapeMarkupLiteral: boolean): string {
+  return values.map((value) => serializeValueNodeText(value, escapeMarkupLiteral)).join('');
+}
+
+function serializeAttributeValue(values: readonly XamlValueNode[]): string {
+  return escapeXmlAttribute(serializeValueNodesText(values, true));
+}
+
+function serializeNamespaceDeclaration(declaration: XamlNamespaceDeclaration): string {
+  const name = declaration.prefix ? `xmlns:${declaration.prefix}` : 'xmlns';
+  return `${name}="${escapeXmlAttribute(declaration.namespaceUri)}"`;
+}
+
+function serializeAttributeMember(member: XamlMemberNode): string {
+  return `${serializationQualifiedName(member.name)}="${serializeAttributeValue(member.values)}"`;
+}
+
+function valueNodesContainObjects(values: readonly XamlValueNode[]): boolean {
+  return values.some((value) => value.kind === 'object');
+}
+
+function serializeBlockValues(
+  values: readonly XamlValueNode[],
+  depth: number,
+  options: Required<XamlSerializationOptions>,
+  escapeMarkupLiteral: boolean
+): string[] {
+  const indent = options.indent.repeat(depth);
+  return values.flatMap((value) => {
+    if (value.kind === 'object') {
+      return [serializeObjectNode(value, depth, options)];
+    }
+
+    const serialized = escapeXmlText(serializeValueNodeText(value, escapeMarkupLiteral));
+    return serialized ? [`${indent}${serialized}`] : [];
+  });
+}
+
+function serializeMemberNode(
+  member: XamlMemberNode,
+  depth: number,
+  options: Required<XamlSerializationOptions>
+): string {
+  const indent = options.indent.repeat(depth);
+  const tagName = serializationQualifiedName(member.name);
+
+  if (member.values.length === 0) {
+    return `${indent}<${tagName} />`;
+  }
+
+  if (!valueNodesContainObjects(member.values)) {
+    return `${indent}<${tagName}>${escapeXmlText(serializeValueNodesText(member.values, true))}</${tagName}>`;
+  }
+
+  const children = serializeBlockValues(member.values, depth + 1, options, true).join('\n');
+  return `${indent}<${tagName}>\n${children}\n${indent}</${tagName}>`;
+}
+
+function serializeObjectNode(
+  object: XamlObjectNode,
+  depth: number,
+  options: Required<XamlSerializationOptions>
+): string {
+  const indent = options.indent.repeat(depth);
+  const tagName = serializationQualifiedName(object.type);
+  const attributes = [
+    ...object.namespaceDeclarations.map(serializeNamespaceDeclaration),
+    ...object.members
+      .filter((member) => member.syntax === 'attribute')
+      .map(serializeAttributeMember)
+  ];
+  const tagOpen = attributes.length > 0 ? `<${tagName} ${attributes.join(' ')}` : `<${tagName}`;
+  const childMembers = object.members.filter((member) => member.syntax !== 'attribute');
+
+  if (childMembers.length === 0) {
+    return `${indent}${tagOpen} />`;
+  }
+
+  if (
+    childMembers.length === 1 &&
+    childMembers[0].syntax === 'content' &&
+    !valueNodesContainObjects(childMembers[0].values)
+  ) {
+    return `${indent}${tagOpen}>${escapeXmlText(serializeValueNodesText(childMembers[0].values, false))}</${tagName}>`;
+  }
+
+  const children = childMembers.flatMap((member) => {
+    if (member.syntax === 'content') {
+      return serializeBlockValues(member.values, depth + 1, options, false);
+    }
+
+    return [serializeMemberNode(member, depth + 1, options)];
+  }).join('\n');
+
+  return `${indent}${tagOpen}>\n${children}\n${indent}</${tagName}>`;
+}
+
+export function serializeXamlDocumentNode(
+  document: XamlDocumentNode,
+  options: XamlSerializationOptions = {}
+): string {
+  if (!document.root) {
+    throw new Error('Invalid XAML: missing root element.');
+  }
+
+  return serializeObjectNode(document.root, 0, {
+    indent: options.indent ?? '  '
+  });
+}
+
+export const serializeXamlInfoset = serializeXamlDocumentNode;
 
 function formatDiagnostic(diagnostic: XamlDiagnostic): string {
   const location = diagnostic.span
