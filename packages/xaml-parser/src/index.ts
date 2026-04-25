@@ -68,6 +68,9 @@ export interface XamlSerializationOptions {
 interface XamlLoweringContext extends XamlLoweringOptions {
   resources: Map<string, XamlRuntimeResourceValue>;
   dynamicResources: Map<string, XamlRuntimeResourceValue>;
+  registry: XamlVocabularyRegistry;
+  namedObjects: Map<string, XamlObjectNode>;
+  resolvingReferences: Set<string>;
 }
 
 const CONTENT_MEMBER_NAME = 'Content';
@@ -1295,6 +1298,13 @@ function isStaticExtension(extension: XamlMarkupExtensionNode): boolean {
   );
 }
 
+function isReferenceExtension(extension: XamlMarkupExtensionNode): boolean {
+  return (
+    (extension.type.localName === 'Reference' || extension.type.localName === 'ReferenceExtension') &&
+    extension.type.namespaceUri === XAML_LANGUAGE_NAMESPACE
+  );
+}
+
 function coerceRuntimePrimitive(value: unknown): XamlPrimitive {
   if (value == null) {
     return null;
@@ -1369,6 +1379,19 @@ function staticMemberFromExtension(extension: XamlMarkupExtensionNode): string {
   return positionalMember ? markupExtensionArgumentToText(positionalMember.value).trim() : '';
 }
 
+function referenceNameFromExtension(extension: XamlMarkupExtensionNode): string {
+  const namedReference = extension.arguments.find((argument) => {
+    return argument.kind === 'named' && argument.name.toLowerCase() === 'name';
+  });
+
+  if (namedReference) {
+    return markupExtensionArgumentToText(namedReference.value).trim();
+  }
+
+  const positionalReference = extension.arguments.find((argument) => argument.kind === 'positional');
+  return positionalReference ? markupExtensionArgumentToText(positionalReference.value).trim() : '';
+}
+
 function readBindingPathSegment(value: unknown, segment: string): unknown {
   if (value == null || !segment) {
     return undefined;
@@ -1423,6 +1446,24 @@ function resolveRuntimeResource(
   return cloneRuntimeResourceValue(resources.get(key) ?? null);
 }
 
+function resolveReferenceObject(name: string, options: XamlLoweringContext): XamlNode {
+  const object = options.namedObjects.get(name);
+  if (!object) {
+    throw new Error(`Reference "${name}" could not be resolved.`);
+  }
+
+  if (options.resolvingReferences.has(name)) {
+    throw new Error(`Reference "${name}" creates a circular x:Reference chain.`);
+  }
+
+  options.resolvingReferences.add(name);
+  try {
+    return lowerObjectNode(object, options.registry, options);
+  } finally {
+    options.resolvingReferences.delete(name);
+  }
+}
+
 function evaluateMarkupExtension(extension: XamlMarkupExtensionNode, options: XamlLoweringContext): XamlRuntimeResourceValue {
   if (isNullExtension(extension)) {
     return null;
@@ -1460,6 +1501,15 @@ function evaluateMarkupExtension(extension: XamlMarkupExtensionNode, options: Xa
 
   if (isStaticExtension(extension)) {
     return staticMemberFromExtension(extension) || extension.raw;
+  }
+
+  if (isReferenceExtension(extension)) {
+    const name = referenceNameFromExtension(extension);
+    if (!name) {
+      throw new Error('Reference markup extension requires a Name value.');
+    }
+
+    return resolveReferenceObject(name, options);
   }
 
   return extension.raw;
@@ -1867,11 +1917,64 @@ function lowerObjectNode(
   return node;
 }
 
-function createLoweringContext(options: XamlLoweringOptions): XamlLoweringContext {
+function rawTextValueFromValues(values: readonly XamlValueNode[]): string {
+  return values
+    .map((value) => {
+      if (value.kind === 'text') {
+        return value.text;
+      }
+
+      if (value.kind === 'markupExtension') {
+        return value.raw;
+      }
+
+      return '';
+    })
+    .join('');
+}
+
+function objectNameValue(object: XamlObjectNode): string {
+  const nameMember = object.members.find((member) => {
+    return (
+      member.isDirective &&
+      member.name.namespaceUri === XAML_LANGUAGE_NAMESPACE &&
+      member.name.localName === 'Name'
+    );
+  });
+
+  return nameMember ? rawTextValueFromValues(nameMember.values).trim() : '';
+}
+
+function collectNamedObjects(object: XamlObjectNode, namedObjects: Map<string, XamlObjectNode>): void {
+  const name = objectNameValue(object);
+  if (name && !namedObjects.has(name)) {
+    namedObjects.set(name, object);
+  }
+
+  for (const member of object.members) {
+    for (const value of member.values) {
+      if (value.kind === 'object') {
+        collectNamedObjects(value, namedObjects);
+      }
+    }
+  }
+}
+
+function createLoweringContext(
+  options: XamlLoweringOptions,
+  registry: XamlVocabularyRegistry,
+  root: XamlObjectNode
+): XamlLoweringContext {
+  const namedObjects = new Map<string, XamlObjectNode>();
+  collectNamedObjects(root, namedObjects);
+
   return {
     ...options,
     resources: new Map(),
-    dynamicResources: normalizeRuntimeResourceMap(options.dynamicResources)
+    dynamicResources: normalizeRuntimeResourceMap(options.dynamicResources),
+    registry,
+    namedObjects,
+    resolvingReferences: new Set()
   };
 }
 
@@ -1899,7 +2002,7 @@ export function lowerXamlDocument(
   }
 
   return {
-    root: lowerObjectNode(document.root, registry, createLoweringContext(options))
+    root: lowerObjectNode(document.root, registry, createLoweringContext(options, registry, document.root))
   };
 }
 

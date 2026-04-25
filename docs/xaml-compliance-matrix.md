@@ -71,7 +71,7 @@ Default rule: parser support should be broader than runtime execution support. U
 | `x:Null` | Partial | Phase 5 | Parse as markup extension or intrinsic null expression. | Runtime lowering maps `{x:Null}` to semantic `null`; authoring lowering preserves raw text. | Serializer support for emitting `x:` namespace declarations from null values is still pending. |
 | `x:Array` | Partial | Phase 5 | Parse and validate intrinsic `x:Array` object elements, required `Type`, direct content, `x:Array.Items`, and simple `{x:Type ...}` item-type expressions. | Lowers structurally as an `Array` node with item children; runtime lowering evaluates `{x:Type ...}` item type values to type-name strings. | True array-valued runtime assignment and primitive CLR item types remain deferred. |
 | `x:Static` / `x:StaticExtension` | Partial | Phase 5 | Parse structured static markup extensions and validate required type-qualified member references. | Runtime lowering evaluates supported `{x:Static ...}` forms to stable member-token strings; authoring lowering preserves raw source. | CLR/static value resolution and object-element static forms remain deferred. |
-| `x:Reference` | Deferred | Deferred | Preserve as unsupported markup extension. | Not evaluated. | Requires namescope and object reference resolution. |
+| `x:Reference` / `x:ReferenceExtension` | Partial | Phase 5 | Parse structured reference markup extensions, validate required `Name`, and resolve against the current document-wide `x:Name` table including forward references. | Runtime lowering clones the referenced compatibility object into object-valued members; authoring lowering preserves raw source. | True object identity, nested namescope boundaries, and template/resource namescopes remain deferred. |
 | `xml:lang` | Current | Phase 4 | Parse, preserve, validate, and propagate as effective object metadata. | Compatibility lowering emits inherited `lang` metadata on descendants. | Runtime text/layout consumers can now read inherited language metadata from lowered attributes. |
 | `xml:space` | Partial | Phase 4 | Parse, preserve, validate, and apply scoped whitespace preservation/reset. | Preserved whitespace-only text lowers into text-capable content; default text lowering collapses and trims XML whitespace. | Edge-case whitespace behavior around future templates/object islands is still pending. |
 
@@ -123,7 +123,7 @@ Default rule: parser support should be broader than runtime execution support. U
 
 Current limitation:
 
-1. Namescope validation currently treats the document root as the only namescope. Nested namescopes for templates, resources, or future object islands are still deferred.
+1. Namescope validation and `x:Reference` resolution currently treat the document root as the only namescope. Nested namescopes for templates, resources, or future object islands are still deferred.
 2. Markup extension parsing currently covers attribute values and property-element text; `x:Array` object elements are now structural, while remaining object-element intrinsic forms are still deferred.
 3. Runtime resource lookup supports primitive resources, known control object resources, dynamic resource overrides, and structural object resources; true array-valued resource execution, CLR type resolution, and CLR static value resolution remain deferred.
 4. Runtime `Binding` evaluation is v1-only: one-way path lookup against a supplied data context, without converters or multi-binding.
@@ -149,8 +149,9 @@ Completed foundation work:
 14. Intrinsic `x:Array` object elements now parse, validate required `Type`, validate simple object item types, serialize, and lower as structural `Array` compatibility nodes.
 15. `{x:Type ...}` now validates known simple object type names, preserves authoring source, and runtime-lowers to type-name strings for scenarios such as `x:Array Type`.
 16. `{x:Static ...}` now validates required type-qualified member references, preserves authoring source, and runtime-lowers to stable member-token strings.
+17. `{x:Reference ...}` now validates required names, supports forward references within the document namescope, preserves authoring source, and runtime-lowers object-valued references to cloned compatibility nodes.
 
 Next slice:
 
-1. Continue deferred intrinsic coverage such as `x:Reference`.
-2. Expand namescope support beyond the current document-wide namescope.
+1. Expand namescope support beyond the current document-wide namescope.
+2. Add true object identity/reference semantics beyond cloned compatibility nodes.

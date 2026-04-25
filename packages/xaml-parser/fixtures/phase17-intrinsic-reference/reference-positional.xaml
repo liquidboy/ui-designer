@@ -1,0 +1,6 @@
+<Canvas xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <TextBlock x:Name="SharedLabel" Text="Shared label" />
+  <Border>
+    <Border.Child>{x:Reference SharedLabel}</Border.Child>
+  </Border>
+</Canvas>

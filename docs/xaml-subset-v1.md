@@ -168,6 +168,27 @@ Supported form:
 <TextBlock xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Text="{x:Static TextBlock.Text}" />
 ```
 
+## Intrinsic References
+
+Current status:
+
+1. `{x:Reference ...}` and `{x:Reference Name=...}` markup extensions parse as intrinsic XAML language expressions.
+2. Reference names must resolve to an `x:Name` in the current document-wide namescope, including forward references.
+3. Authoring lowering preserves the original `{x:Reference ...}` source.
+4. Runtime lowering emits a cloned compatibility node for object-valued reference members.
+5. True object identity and nested template/resource namescope boundaries remain outside v1.
+
+Supported form:
+
+```xaml
+<Canvas xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <TextBlock x:Name="SharedLabel" Text="Shared label" />
+  <Border>
+    <Border.Child>{x:Reference SharedLabel}</Border.Child>
+  </Border>
+</Canvas>
+```
+
 ## Binding v1
 
 Supported runtime form:

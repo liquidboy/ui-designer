@@ -1250,6 +1250,58 @@ async function runPhase16IntrinsicStaticFixtures() {
   return files.length;
 }
 
+async function runPhase17IntrinsicReferenceFixtures() {
+  const expectations = {
+    'reference-positional.xaml': { errors: [], warnings: ['unsupported-directive'] },
+    'reference-named.xaml': { errors: [], warnings: ['unsupported-directive'] },
+    'reference-forward.xaml': { errors: [], warnings: ['unsupported-directive'] },
+    'reference-missing-name.xaml': { errors: ['missing-markup-extension-argument'], warnings: [] },
+    'reference-unknown-name.xaml': { errors: ['unknown-reference-name'], warnings: [] }
+  };
+  const files = await listFixtureFiles('phase17-intrinsic-reference');
+
+  for (const fileName of files) {
+    const input = await readFixture('phase17-intrinsic-reference', fileName);
+    const parsed = parseXamlToInfoset(input);
+    assert.deepEqual(diagnosticsWithSeverity(parsed, 'error'), [], `${fileName} parse errors`);
+
+    const result = parseAndValidateXaml(input);
+    const expected = expectations[fileName];
+    assert.ok(expected, `Missing intrinsic reference expectation for ${fileName}`);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'error'), expected.errors, `${fileName} validation errors`);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'warning'), expected.warnings, `${fileName} validation warnings`);
+
+    if (expected.errors.length > 0) {
+      continue;
+    }
+
+    const preserved = lowerXamlDocument(result.document);
+    const runtime = parseRuntimeXaml(input);
+
+    if (fileName === 'reference-positional.xaml') {
+      assert.equal(preserved.root.children[1]?.attributes.Child, '{x:Reference SharedLabel}');
+      assert.equal(runtime.root.children[1]?.children[0]?.type, 'TextBlock');
+      assert.equal(runtime.root.children[1]?.children[0]?.attributes.Name, 'SharedLabel');
+      assert.equal(runtime.root.children[1]?.children[0]?.attributes.Text, 'Shared label');
+      assert.match(serializeXamlDocumentNode(result.document), /\{x:Reference SharedLabel\}/);
+    }
+
+    if (fileName === 'reference-named.xaml') {
+      assert.equal(preserved.root.children[1]?.attributes.Child, '{x:Reference Name=SharedLabel}');
+      assert.equal(runtime.root.children[1]?.children[0]?.type, 'TextBlock');
+      assert.equal(runtime.root.children[1]?.children[0]?.attributes.Text, 'Named reference label');
+    }
+
+    if (fileName === 'reference-forward.xaml') {
+      assert.equal(runtime.root.children[0]?.children[0]?.type, 'TextBlock');
+      assert.equal(runtime.root.children[0]?.children[0]?.attributes.Text, 'Forward label');
+      assert.equal(runtime.root.children[1]?.attributes.Text, 'Forward label');
+    }
+  }
+
+  return files.length;
+}
+
 async function runPhase6CollectionFixtures() {
   const expectations = {
     'theme-dictionary-xkey.xaml': { errors: [], warnings: [] },
@@ -1305,7 +1357,8 @@ const phase13Count = await runPhase13DynamicResourceFixtures();
 const phase14Count = await runPhase14WhitespaceNormalizationFixtures();
 const phase15Count = await runPhase15IntrinsicArrayFixtures();
 const phase16Count = await runPhase16IntrinsicStaticFixtures();
+const phase17Count = await runPhase17IntrinsicReferenceFixtures();
 
 console.log(
-  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources, ${phase9Count} serializer, ${phase10Count} designer serializer, ${phase11Count} XML scope, ${phase12Count} object resources, ${phase13Count} dynamic resources, ${phase14Count} whitespace normalization, ${phase15Count} intrinsic arrays, ${phase16Count} intrinsic static references).`
+  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources, ${phase9Count} serializer, ${phase10Count} designer serializer, ${phase11Count} XML scope, ${phase12Count} object resources, ${phase13Count} dynamic resources, ${phase14Count} whitespace normalization, ${phase15Count} intrinsic arrays, ${phase16Count} intrinsic static references, ${phase17Count} intrinsic references).`
 );
