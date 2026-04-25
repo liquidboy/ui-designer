@@ -4,7 +4,7 @@ import defaultDesignerPanelsXaml from './DesignerPanels.xaml';
 
 export const DEFAULT_DESIGNER_PANELS_XAML = defaultDesignerPanelsXaml.trim();
 
-export type DesignerPanelId = 'solution' | 'palette' | 'tree' | 'assets' | 'fonts' | 'overlays';
+export type DesignerPanelId = 'solution' | 'palette' | 'tree' | 'assets' | 'fonts' | 'visualStates' | 'overlays';
 export type DesignerInspectorGroupId = 'element' | 'image' | 'typography';
 
 export interface DesignerPanelText {
@@ -58,6 +58,12 @@ const DEFAULT_PANEL_TEXTS: Record<DesignerPanelId, DesignerPanelText> = {
     title: 'Font Library',
     caption: 'Import real font files or apply preset families. Imported fonts embed their FontSource into XAML when you apply them.',
     dockTabId: 'assets'
+  },
+  visualStates: {
+    id: 'visualStates',
+    title: 'Visual States',
+    caption: 'Select a state for the current component, then record targeted changes as the state authoring model grows.',
+    dockTabId: 'states'
   },
   overlays: {
     id: 'overlays',

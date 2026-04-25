@@ -47,6 +47,7 @@
   </SourceTabs>
   <StatusBar>
     <StatusSegment Id="status" ValueBinding="status" />
+    <StatusSegment Id="tool" Label="Tool" ValueBinding="tool" />
     <StatusSegment Id="zoom" Label="Zoom" ValueBinding="zoom" />
     <StatusSegment Id="snap" Label="Snap" ValueBinding="snap" />
     <StatusSegment Id="selection" Label="Selection" ValueBinding="selection" />

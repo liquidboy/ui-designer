@@ -5,6 +5,7 @@
     <Panel Id="tree" DockTab="project" Title="Component Tree" />
     <Panel Id="assets" DockTab="assets" Title="Asset Library" Caption="Import real images, select a library entry, then apply it directly to the current image or insert it as a new component." />
     <Panel Id="fonts" DockTab="assets" Title="Font Library" Caption="Import real font files or apply preset families. Imported fonts embed their FontSource into XAML when you apply them." />
+    <Panel Id="visualStates" DockTab="states" Title="Visual States" Caption="Select a state for the current component, then record targeted changes as the state authoring model grows." />
     <Panel Id="overlays" DockTab="states" Title="Debug Overlays" Caption="Keep structure visible while editing text, images, and container layouts." />
   </LeftRail>
   <InspectorGroups>

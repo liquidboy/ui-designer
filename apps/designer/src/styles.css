@@ -232,7 +232,8 @@ button {
 
 .palette-panel,
 .tree-panel,
-.library-panel {
+.library-panel,
+.visual-states-panel {
   border-top: 1px solid var(--designer-border-strong);
   border-bottom: 1px solid var(--designer-border-subtle);
   background: var(--designer-panel-section-bg);
@@ -240,7 +241,8 @@ button {
 
 .palette-panel h2,
 .tree-panel h2,
-.library-panel h2 {
+.library-panel h2,
+.visual-states-panel h2 {
   margin: 0;
   padding: 8px 10px 6px;
   border-bottom: 1px solid var(--designer-border-strong);
@@ -290,7 +292,8 @@ button {
 
 .palette-card,
 .asset-card,
-.font-card {
+.font-card,
+.state-card {
   display: grid;
   gap: 5px;
   align-content: start;
@@ -310,14 +313,16 @@ button {
 
 .palette-card:hover,
 .asset-card:hover,
-.font-card:hover {
+.font-card:hover,
+.state-card:hover {
   border-color: var(--designer-accent-line);
   background: var(--designer-card-hover-bg);
 }
 
 .palette-card.is-selected,
 .asset-card.is-selected,
-.font-card.is-selected {
+.font-card.is-selected,
+.state-card.is-selected {
   border-color: var(--designer-accent-line);
   background: #26333a;
   box-shadow: inset 3px 0 0 var(--designer-accent);
@@ -381,6 +386,44 @@ button {
   line-height: 1.3;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.state-target {
+  margin: 8px 10px 0;
+  border: 1px solid var(--designer-border-subtle);
+  border-radius: 3px;
+  padding: 8px;
+  background: var(--designer-editor-footer-bg);
+}
+
+.state-target strong {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--designer-text-bright);
+  font-size: 0.76rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.state-list {
+  display: grid;
+  gap: 6px;
+  padding: 8px 10px 4px;
+}
+
+.state-card {
+  grid-template-columns: 8px minmax(0, 1fr);
+  align-items: start;
+}
+
+.state-accent {
+  grid-row: span 2;
+  width: 5px;
+  height: 100%;
+  min-height: 34px;
+  border-radius: 2px;
 }
 
 .library-summary {
@@ -648,6 +691,29 @@ button {
   height: 100%;
   border: 0;
   background: transparent;
+  cursor: crosshair;
+}
+
+.canvas[data-tool='selection'] {
+  cursor: default;
+}
+
+.canvas[data-tool='pan'] {
+  cursor: grab;
+}
+
+.canvas[data-tool='zoom'] {
+  cursor: zoom-in;
+}
+
+.canvas[data-tool='rectangle'],
+.canvas[data-tool='text'],
+.canvas[data-tool='image'],
+.canvas[data-tool='grid'] {
+  cursor: copy;
+}
+
+.canvas[data-tool='pen'] {
   cursor: crosshair;
 }
 

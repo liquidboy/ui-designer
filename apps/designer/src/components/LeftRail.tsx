@@ -6,6 +6,13 @@ import type { TreeDropIntent } from '../designer/document';
 import type { DesignerPanelId, DesignerPanelsDefinition } from '../designer/panels';
 import type { DesignerFontAsset, DesignerImageAsset, PaletteTemplate } from '../designer/presets';
 
+interface DesignerVisualStateOption {
+  id: string;
+  label: string;
+  description: string;
+  accent: string;
+}
+
 interface LeftRailProps {
   dockTabs: readonly DesignerChromeItem[];
   activeDockTabId: string;
@@ -75,6 +82,13 @@ interface LeftRailProps {
   documentFontFamilies: readonly string[];
   selectedAssetTitle: string;
   selectedFontTitle: string;
+  visualStates: readonly DesignerVisualStateOption[];
+  selectedVisualStateId: string;
+  isVisualStateRecording: boolean;
+  canRecordVisualState: boolean;
+  visualStateTargetLabel: string;
+  onSelectVisualState: (id: string) => void;
+  onToggleVisualStateRecording: () => void;
   hoveredId: string | null;
   overlaySettings: DebugOverlaySettings;
   onOverlaySettingChange: (key: keyof DebugOverlaySettings, value: boolean) => void;
@@ -152,6 +166,13 @@ export function LeftRail(props: LeftRailProps) {
     documentFontFamilies,
     selectedAssetTitle,
     selectedFontTitle,
+    visualStates,
+    selectedVisualStateId,
+    isVisualStateRecording,
+    canRecordVisualState,
+    visualStateTargetLabel,
+    onSelectVisualState,
+    onToggleVisualStateRecording,
     hoveredId,
     overlaySettings,
     onOverlaySettingChange,
@@ -406,6 +427,41 @@ export function LeftRail(props: LeftRailProps) {
           Active library picks: image {selectedAssetTitle}, font {selectedFontTitle}.
         </p>
       </section>
+      ) : null}
+
+      {showPanel('visualStates') ? (
+        <section className="visual-states-panel">
+          <h2>{panels.visualStates.title}</h2>
+          {panels.visualStates.caption ? <p className="tree-caption">{panels.visualStates.caption}</p> : null}
+          <div className="state-target">
+            <span className="summary-label">Target</span>
+            <strong>{visualStateTargetLabel}</strong>
+          </div>
+          <div className="state-list" role="listbox" aria-label="Visual states">
+            {visualStates.map((state) => (
+              <button
+                key={state.id}
+                className={`state-card ${selectedVisualStateId === state.id ? 'is-selected' : ''}`}
+                type="button"
+                role="option"
+                aria-selected={selectedVisualStateId === state.id}
+                onClick={() => onSelectVisualState(state.id)}
+              >
+                <span className="state-accent" style={{ background: state.accent }} />
+                <span className="palette-title">{state.label}</span>
+                <span className="palette-description">{state.description}</span>
+              </button>
+            ))}
+          </div>
+          <button
+            className="toolbar-btn full-width"
+            type="button"
+            onClick={onToggleVisualStateRecording}
+            disabled={!canRecordVisualState}
+          >
+            {isVisualStateRecording ? 'Stop Recording' : 'Record State'}
+          </button>
+        </section>
       ) : null}
 
       {showPanel('overlays') ? (

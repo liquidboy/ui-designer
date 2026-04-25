@@ -132,6 +132,48 @@ const PANELS_DOCUMENT_FILE_NAME = 'DesignerPanels.xaml';
 const THEME_DOCUMENT_FILE_NAME = 'DesignerTheme.xaml';
 
 type SourceDocumentId = 'document' | 'chrome' | 'panels' | 'theme';
+type InsertionToolId = 'rectangle' | 'text' | 'image' | 'grid';
+
+interface VisualStateOption {
+  id: string;
+  label: string;
+  description: string;
+  accent: string;
+}
+
+const TOOL_TEMPLATE_IDS: Record<InsertionToolId, PaletteTemplateId> = {
+  rectangle: 'accent-rectangle',
+  text: 'text-label',
+  image: 'image-frame',
+  grid: 'swatch-grid'
+};
+
+const VISUAL_STATE_OPTIONS: readonly VisualStateOption[] = [
+  {
+    id: 'normal',
+    label: 'Normal',
+    description: 'Default appearance for the selected component.',
+    accent: '#159cdc'
+  },
+  {
+    id: 'pointer-over',
+    label: 'PointerOver',
+    description: 'Hover feedback state for pointer-driven surfaces.',
+    accent: '#3fca9d'
+  },
+  {
+    id: 'pressed',
+    label: 'Pressed',
+    description: 'Momentary action state for buttons and controls.',
+    accent: '#ffd166'
+  },
+  {
+    id: 'disabled',
+    label: 'Disabled',
+    description: 'Muted state when interaction is unavailable.',
+    accent: '#9b9ba2'
+  }
+] as const;
 
 interface InitialChromeState {
   definition: DesignerChromeDefinition;
@@ -355,6 +397,7 @@ export function App() {
   const [selectedLeftDockTabId, setSelectedLeftDockTabId] = useState(() =>
     getInitialActiveItemId(initialChromeState.definition.leftDockTabs, 'project')
   );
+  const [selectedToolId, setSelectedToolId] = useState(() => getInitialActiveItemId(initialChromeState.definition.toolStrip, 'selection'));
   const [chromeDefinition, setChromeDefinition] = useState<DesignerChromeDefinition>(initialChromeState.definition);
   const [chromeSourceDraft, setChromeSourceDraft] = useState(initialChromeState.draft);
   const [chromeSourceDirty, setChromeSourceDirty] = useState(initialChromeState.dirty);
@@ -390,9 +433,12 @@ export function App() {
   const [historyVersion, setHistoryVersion] = useState(0);
   const [cameraView, setCameraView] = useState<CameraState>(() => createCameraState());
   const [overlaySettings, setOverlaySettings] = useState<DebugOverlaySettings>(DEFAULT_DEBUG_OVERLAY_SETTINGS);
+  const [selectedVisualStateId, setSelectedVisualStateId] = useState('normal');
+  const [isVisualStateRecording, setIsVisualStateRecording] = useState(false);
 
   const cameraRef = useRef<CameraState>(cameraView);
   const commandStackRef = useRef(new CommandStack());
+  const activeToolIdRef = useRef(selectedToolId);
   const selectedElementRef = useRef<UiElement | null>(null);
   const isPanningRef = useRef(false);
   const isDraggingRef = useRef(false);
@@ -1627,6 +1673,50 @@ export function App() {
     runtime?.setCamera(cameraState);
   };
 
+  const isInsertionTool = (toolId: string): toolId is InsertionToolId => toolId in TOOL_TEMPLATE_IDS;
+
+  const zoomAtCanvasPoint = (point: Point, factor: number) => {
+    const cameraNow = cameraRef.current;
+    const worldBefore = screenToWorld(point, cameraNow);
+    const nextZoom = Math.min(4, Math.max(0.2, cameraNow.zoom * factor));
+
+    applyCamera({
+      zoom: nextZoom,
+      x: worldBefore.x - point.x / nextZoom,
+      y: worldBefore.y - point.y / nextZoom
+    });
+    setStatus(`Zoom tool set the artboard to ${(nextZoom * 100).toFixed(0)}%.`);
+  };
+
+  const insertToolTemplateAtPoint = (toolId: InsertionToolId, point: Point) => {
+    const currentDocument = documentRef.current;
+    const parentId = 'root.0';
+    const parentNode = currentDocument ? findDocumentNodeById(currentDocument, parentId) : null;
+    const template = findPaletteTemplate(TOOL_TEMPLATE_IDS[toolId]);
+    if (!currentDocument || !parentNode || !canInsertTemplateIntoParent(template, parentNode)) {
+      setStatus(`The ${template.title} tool cannot insert into the current document root.`);
+      return;
+    }
+
+    const insertIndex = parentNode.children.length;
+    const nextNode = createTemplateNode(template, parentNode, insertIndex);
+    if (parentNode.type.toLowerCase() === 'canvas') {
+      const world = screenToWorld(point, cameraRef.current);
+      nextNode.attributes.X = Math.round(snapValue(world.x));
+      nextNode.attributes.Y = Math.round(snapValue(world.y));
+    }
+
+    executeDocumentCommand(
+      `tool-insert-${toolId}`,
+      insertDocumentChild(currentDocument, parentId, nextNode, insertIndex),
+      {
+        nextSelectionId: `${parentId}.${insertIndex}`,
+        previousSelectionId: selectedIdRef.current
+      }
+    );
+    setStatus(`Inserted ${template.title} with the ${toolId} tool.`);
+  };
+
   const clearDraftStorage = () => {
     clearDraftXaml();
     setStatus('Cleared saved draft storage.');
@@ -1778,8 +1868,37 @@ export function App() {
         }
 
         const point = toCanvasPoint(event);
+        const activeToolId = activeToolIdRef.current;
+        if (activeToolId === 'pan') {
+          event.preventDefault();
+          isPanningRef.current = true;
+          panOriginRef.current = { x: event.clientX, y: event.clientY };
+          panStartCameraRef.current = cameraRef.current;
+          canvas.classList.add('is-panning');
+          canvas.setPointerCapture(event.pointerId);
+          return;
+        }
+
+        if (activeToolId === 'zoom') {
+          event.preventDefault();
+          zoomAtCanvasPoint(point, event.altKey ? 0.78 : 1.28);
+          return;
+        }
+
+        if (isInsertionTool(activeToolId)) {
+          event.preventDefault();
+          insertToolTemplateAtPoint(activeToolId, point);
+          return;
+        }
+
+        if (activeToolId === 'pen') {
+          setStatus('Pen tool selected. Path authoring is next on the designer roadmap.');
+          return;
+        }
+
         const id = runtime.pickElementAtScreenPoint(point);
         if (!id || !currentDocument) {
+          setSelection(null);
           return;
         }
 
@@ -1983,6 +2102,16 @@ export function App() {
   }, [snapEnabled]);
 
   useEffect(() => {
+    activeToolIdRef.current = selectedToolId;
+  }, [selectedToolId]);
+
+  useEffect(() => {
+    if (!chromeDefinition.toolStrip.some((tool) => tool.id === selectedToolId)) {
+      setSelectedToolId(getInitialActiveItemId(chromeDefinition.toolStrip, 'selection'));
+    }
+  }, [chromeDefinition.toolStrip, selectedToolId]);
+
+  useEffect(() => {
     lockAspectRatioRef.current = lockAspectRatio;
   }, [lockAspectRatio]);
 
@@ -2179,6 +2308,32 @@ export function App() {
   const selectedImageNaturalSizeLabel = selectedImageNaturalSize
     ? `${selectedImageNaturalSize.width}x${selectedImageNaturalSize.height}`
     : 'Loading or unavailable';
+  const selectedVisualState = VISUAL_STATE_OPTIONS.find((state) => state.id === selectedVisualStateId) ?? VISUAL_STATE_OPTIONS[0];
+  const visualStateTargetLabel = selectedId
+    ? `${selectedTreeNode?.type ?? 'Element'} (${selectedId})`
+    : 'No selection';
+  const selectVisualState = (stateId: string) => {
+    const nextState = VISUAL_STATE_OPTIONS.find((state) => state.id === stateId) ?? VISUAL_STATE_OPTIONS[0];
+    setSelectedVisualStateId(nextState.id);
+    setSelectedLeftDockTabId('states');
+    setStatus(`${nextState.label} visual state selected for ${visualStateTargetLabel}.`);
+  };
+  const toggleVisualStateRecording = () => {
+    if (!selectedIdRef.current) {
+      setStatus('Select a component before recording a visual state.');
+      return;
+    }
+
+    setIsVisualStateRecording((current) => {
+      const next = !current;
+      setStatus(
+        next
+          ? `Recording ${selectedVisualState.label} visual state for ${selectedIdRef.current}.`
+          : `Stopped recording ${selectedVisualState.label} visual state.`
+      );
+      return next;
+    });
+  };
   const origin = worldToScreen({ x: 0, y: 0 }, cameraView);
   const canUndo = commandStackRef.current.canUndo();
   const canRedo = commandStackRef.current.canRedo();
@@ -2250,6 +2405,18 @@ export function App() {
 
     return item.label;
   };
+  const activeDesignerTool =
+    chromeDefinition.toolStrip.find((tool) => tool.id === selectedToolId) ??
+    chromeDefinition.toolStrip.find((tool) => tool.isActive) ??
+    chromeDefinition.toolStrip[0] ??
+    null;
+  const activeDesignerToolId = activeDesignerTool?.id ?? selectedToolId;
+  const activeDesignerToolLabel = activeDesignerTool ? resolveChromeLabel(activeDesignerTool) : 'Selection';
+  const selectDesignerTool = (tool: DesignerChromeItem) => {
+    setSelectedToolId(tool.id);
+    activeToolIdRef.current = tool.id;
+    setStatus(`${resolveChromeLabel(tool)} tool selected.`);
+  };
   const commandHandlers: Record<string, { onClick: () => void; disabled?: boolean }> = {
     undo: { onClick: performUndo, disabled: !canUndo },
     redo: { onClick: performRedo, disabled: !canRedo },
@@ -2258,6 +2425,7 @@ export function App() {
   };
   const statusValues: Record<string, string> = {
     status,
+    tool: activeDesignerToolLabel,
     zoom: `${(cameraView.zoom * 100).toFixed(0)}%`,
     snap: snapEnabled ? '8px' : 'Off',
     selection: selectedId ?? 'none'
@@ -2540,6 +2708,13 @@ export function App() {
           documentFontFamilies={documentFontFamilies}
           selectedAssetTitle={selectedAsset.title}
           selectedFontTitle={selectedFont.title}
+          visualStates={VISUAL_STATE_OPTIONS}
+          selectedVisualStateId={selectedVisualState.id}
+          isVisualStateRecording={isVisualStateRecording}
+          canRecordVisualState={!!selectedId}
+          visualStateTargetLabel={visualStateTargetLabel}
+          onSelectVisualState={selectVisualState}
+          onToggleVisualStateRecording={toggleVisualStateRecording}
           hoveredId={hoveredId}
           overlaySettings={overlaySettings}
           onOverlaySettingChange={updateOverlaySetting}
@@ -2573,9 +2748,11 @@ export function App() {
               {chromeDefinition.toolStrip.map((tool) => (
                 <button
                   key={tool.id}
-                  className={tool.isActive ? 'is-active' : ''}
+                  className={tool.id === activeDesignerToolId ? 'is-active' : ''}
                   type="button"
                   title={tool.label}
+                  aria-pressed={tool.id === activeDesignerToolId}
+                  onClick={() => selectDesignerTool(tool)}
                 >
                   {tool.glyph}
                 </button>
@@ -2586,6 +2763,7 @@ export function App() {
               <div className="ruler ruler-vertical" aria-hidden="true" />
               <Viewport
                 canvasRef={canvasRef}
+                activeToolId={activeDesignerToolId}
                 snapEnabled={snapEnabled}
                 gridStep={gridStep}
                 gridOffsetX={gridOffsetX}

@@ -3,6 +3,7 @@ import type { DebugOverlaySettings, ViewportOverlayState } from '../designer/ove
 
 interface ViewportProps {
   canvasRef: { current: HTMLCanvasElement | null };
+  activeToolId: string;
   snapEnabled: boolean;
   gridStep: number;
   gridOffsetX: number;
@@ -15,6 +16,7 @@ interface ViewportProps {
 export function Viewport(props: ViewportProps) {
   const {
     canvasRef,
+    activeToolId,
     snapEnabled,
     gridStep,
     gridOffsetX,
@@ -34,7 +36,7 @@ export function Viewport(props: ViewportProps) {
             backgroundPosition: `${gridOffsetX}px ${gridOffsetY}px`
           }}
         />
-        <canvas className="canvas" ref={canvasRef} />
+        <canvas className="canvas" data-tool={activeToolId} ref={canvasRef} />
 
         {overlaySettings.parentBounds && overlayState.parentRect ? (
           <div
