@@ -120,6 +120,10 @@ Deliverables:
    - parse and be ignored at runtime
 4. Create a compliance matrix keyed by spec feature and repo support status.
 
+Phase 0 source of truth:
+
+1. [XAML Compliance Matrix](./xaml-compliance-matrix.md)
+
 Exit criteria:
 
 1. We have one written source of truth for in-scope vs deferred features.
@@ -349,8 +353,9 @@ We should call this initiative complete only when all of the following are true:
 
 If we want to start implementation, the first concrete work item should be:
 
-1. design the new infoset and schema types in `packages/xaml-schema`
-2. add a small vocabulary registry for the current controls plus intrinsic `x:` directives
+1. implement the Phase 1 target from the [XAML Compliance Matrix](./xaml-compliance-matrix.md)
+2. design the new infoset and schema types in `packages/xaml-schema`
 3. migrate `packages/xaml-parser` to emit the new model behind a compatibility adapter
+4. add fixture coverage for object, member, namespace, text, and invalid XML cases
 
 That gives us a controlled migration path instead of a flag-day rewrite.
