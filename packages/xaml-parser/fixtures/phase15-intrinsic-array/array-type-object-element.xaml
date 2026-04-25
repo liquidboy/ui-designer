@@ -1,0 +1,6 @@
+<x:Array xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <x:Array.Type>
+    <x:Type TypeName="TextBlock" />
+  </x:Array.Type>
+  <TextBlock Text="Typed object" />
+</x:Array>

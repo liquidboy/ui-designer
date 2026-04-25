@@ -1,0 +1,5 @@
+<TextBlock xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <TextBlock.Text>
+    <x:Type TypeName="TextBlock" />
+  </TextBlock.Text>
+</TextBlock>

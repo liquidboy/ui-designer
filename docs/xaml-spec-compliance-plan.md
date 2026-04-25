@@ -56,19 +56,20 @@ The repo now has the core compliance foundation in place:
 18. `ResourceDictionary` now creates a local namescope boundary, so resource-local `x:Name` values are isolated from the visual tree while dictionary-local `x:Reference` expressions resolve within that dictionary.
 19. Runtime lowering caches lowered object nodes for `x:Reference`, preserves shared references during resource graph cloning, and still rejects circular reference chains.
 20. Text syntax conversion now belongs to schema metadata: known members coerce number/boolean values and preserve string-like numeric text without parser-wide guessing.
-21. The validator currently covers known namespaces/types/members, duplicate scalar members, content rules, enum/primitive/color checks, scoped namescope collisions for `x:Name`, root-only placement for `x:Class`, collection item-type constraints, dictionary key validation, and warning-only preservation for unsupported markup extensions.
+21. Object-element forms for supported intrinsic `x:Null`, `x:Type`, `x:Static`, and `x:Reference` now validate, serialize, and runtime-lower when the target member can safely represent the value.
+22. The validator currently covers known namespaces/types/members, duplicate scalar members, content rules, enum/primitive/color checks, scoped namescope collisions for `x:Name`, root-only placement for `x:Class`, collection item-type constraints, dictionary key validation, and warning-only preservation for unsupported markup extensions.
 
-Approximate targeted core `MS-XAML-2017` support: **78%**. This is a progress estimate for the scoped language/object-mapping work, not a claim of complete XAML or WPF vocabulary parity.
+Approximate targeted core `MS-XAML-2017` support: **80%**. This is a progress estimate for the scoped language/object-mapping work, not a claim of complete XAML or WPF vocabulary parity.
 
 The main remaining gaps are now:
 
-1. Remaining object-element intrinsic forms for supported `x:` constructs.
+1. True array-valued runtime assignment beyond structural `Array` compatibility nodes.
 2. Richer namescope boundaries for future templates and object islands.
-3. True array-valued runtime assignment, primitive CLR item types, CLR type resolution, CLR static value resolution, and generic type execution.
+3. Primitive CLR item types, CLR type resolution, CLR static value resolution, and generic type execution.
 
 Current limitation:
 
-1. Structured markup extension parsing currently applies to attribute values and property-element text; `x:Array` is supported as a structural object element, but remaining object-element intrinsic forms are still deferred.
+1. Structured markup extension parsing currently applies to attribute values and property-element text; supported intrinsic object elements are structural, but unsupported object-element extension forms are still deferred.
 2. Runtime resource lookup supports primitive and known control object resources plus dynamic resource overrides; resource object retrieval still creates resource instances, and full WPF-style resource invalidation and dependency tracking are still outside the current target.
 3. Runtime `Binding` support is intentionally v1-only: one-way path lookup, no converters, and no multi-binding.
 4. Designer infoset edit propagation is intentionally conservative: if a lowered compatibility path cannot be mapped safely back to the infoset, the designer falls back to lowered serialization instead of risking stale or corrupt semantic output.
@@ -378,8 +379,8 @@ We should call this initiative complete only when all of the following are true:
 
 The next concrete work item should be:
 
-1. add structural object-element forms for supported intrinsic constructs where they are currently attribute/property-text only
-2. start with `x:Null`, `x:Type`, `x:Static`, and `x:Reference` preservation/validation
-3. keep runtime execution conservative unless the lowered target member can represent the value safely
+1. add true array-valued runtime representation for supported `x:Array` member/resource scenarios
+2. keep existing structural `Array` compatibility lowering for authoring round-trip paths
+3. add fixtures for array-valued scalar/object resources and invalid assignment targets
 
-That closes another object-mapping gap without pulling CLR type resolution into the current slice.
+That moves `x:Array` from structural preservation toward useful runtime semantics without pulling CLR type resolution into the current slice.

@@ -142,9 +142,10 @@ Current status:
 1. `x:Array` object elements validate as intrinsic XAML language objects.
 2. `Type` is required and simple object item types are checked against direct content or `x:Array.Items`.
 3. `{x:Type ...}` item-type expressions validate known simple object type names and runtime-lower to type-name strings.
-4. Authoring serialization preserves `x:Array` namespace prefixes, property-element form, and raw `{x:Type ...}` source.
-5. Compatibility lowering emits a structural `Array` node with item children.
-6. True array-valued runtime assignment, primitive CLR item types, CLR type resolution, and generic type execution remain outside v1.
+4. `<x:Type TypeName="..." />` object elements validate and runtime-lower to type-name strings in scalar member positions.
+5. Authoring serialization preserves `x:Array` namespace prefixes, property-element form, and raw/object `x:Type` source.
+6. Compatibility lowering emits a structural `Array` node with item children.
+7. True array-valued runtime assignment, primitive CLR item types, CLR type resolution, and generic type execution remain outside v1.
 
 Supported structural form:
 
@@ -168,10 +169,11 @@ Supported `x:Type` form:
 Current status:
 
 1. `{x:Static ...}` and `{x:Static Member=...}` markup extensions parse as intrinsic XAML language expressions.
-2. Static references must provide a type-qualified member token, such as `TextBlock.Text`.
-3. Authoring lowering preserves the original `{x:Static ...}` source.
-4. Runtime lowering emits the stable member-token string.
-5. CLR/static value resolution and object-element static forms remain outside v1.
+2. `<x:Static Member="..." />` object elements parse as intrinsic XAML language objects.
+3. Static references must provide a type-qualified member token, such as `TextBlock.Text`.
+4. Authoring serialization preserves the original extension or object-element source structure.
+5. Runtime lowering emits the stable member-token string.
+6. CLR/static value resolution remains outside v1.
 
 Supported form:
 
@@ -179,17 +181,28 @@ Supported form:
 <TextBlock xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Text="{x:Static TextBlock.Text}" />
 ```
 
+Supported object-element form:
+
+```xaml
+<TextBlock xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <TextBlock.Text>
+    <x:Static Member="TextBlock.Text" />
+  </TextBlock.Text>
+</TextBlock>
+```
+
 ## Intrinsic References
 
 Current status:
 
 1. `{x:Reference ...}` and `{x:Reference Name=...}` markup extensions parse as intrinsic XAML language expressions.
-2. Reference names must resolve to an `x:Name` in the active namescope, including forward references.
-3. Authoring lowering preserves the original `{x:Reference ...}` source.
-4. Runtime lowering emits the same lowered object instance for supported object-valued reference members.
-5. `ResourceDictionary` is a local namescope boundary: dictionary-local references can see dictionary-local names, while outer visual-tree references cannot see names hidden inside the dictionary.
-6. Circular reference chains fail during runtime lowering.
-7. Template/object-island namescope boundaries and object-element `x:Reference` forms remain outside v1.
+2. `<x:Reference Name="..." />` object elements parse as intrinsic XAML language objects.
+3. Reference names must resolve to an `x:Name` in the active namescope, including forward references.
+4. Authoring serialization preserves the original extension or object-element source structure.
+5. Runtime lowering emits the same lowered object instance for supported object-valued reference members.
+6. `ResourceDictionary` is a local namescope boundary: dictionary-local references can see dictionary-local names, while outer visual-tree references cannot see names hidden inside the dictionary.
+7. Circular reference chains fail during runtime lowering.
+8. Template/object-island namescope boundaries remain outside v1.
 
 Supported form:
 
@@ -198,6 +211,19 @@ Supported form:
   <TextBlock x:Name="SharedLabel" Text="Shared label" />
   <Border>
     <Border.Child>{x:Reference SharedLabel}</Border.Child>
+  </Border>
+</Canvas>
+```
+
+Supported object-element form:
+
+```xaml
+<Canvas xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <TextBlock x:Name="SharedLabel" Text="Shared label" />
+  <Border>
+    <Border.Child>
+      <x:Reference Name="SharedLabel" />
+    </Border.Child>
   </Border>
 </Canvas>
 ```
@@ -237,7 +263,7 @@ Current status:
 2. Runtime lowering evaluates one-way `Binding` paths against the supplied runtime data context.
 3. Authoring lowering still preserves parsed binding expressions as raw strings for source compatibility.
 4. Escaped literals such as `{}{Binding Path=Title}` stay as literal text, and nested attribute-value extensions are preserved structurally.
-5. `{x:Null}` lowers to semantic `null` in runtime mode and remains raw text in authoring mode.
+5. `{x:Null}` and `<x:Null />` lower to semantic `null` in runtime mode and preserve source structure in authoring mode.
 
 Current constraints:
 

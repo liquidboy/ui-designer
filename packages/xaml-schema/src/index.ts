@@ -454,6 +454,18 @@ export const xamlIntrinsicDirectives = [
 ] as const;
 
 export const xamlIntrinsicTypes = [
+  typeDefinition('Null', {
+    namespaceUri: XAML_LANGUAGE_NAMESPACE,
+    members: [],
+    allowsText: false,
+    allowsChildren: false
+  }),
+  typeDefinition('NullExtension', {
+    namespaceUri: XAML_LANGUAGE_NAMESPACE,
+    members: [],
+    allowsText: false,
+    allowsChildren: false
+  }),
   typeDefinition('Array', {
     namespaceUri: XAML_LANGUAGE_NAMESPACE,
     members: [
@@ -464,6 +476,46 @@ export const xamlIntrinsicTypes = [
     collectionKind: 'list',
     allowsText: false,
     allowsChildren: true
+  }),
+  typeDefinition('Type', {
+    namespaceUri: XAML_LANGUAGE_NAMESPACE,
+    members: [
+      member('TypeName', 'string', { aliases: ['Type'] })
+    ],
+    allowsText: false,
+    allowsChildren: false
+  }),
+  typeDefinition('TypeExtension', {
+    namespaceUri: XAML_LANGUAGE_NAMESPACE,
+    members: [
+      member('TypeName', 'string', { aliases: ['Type'] })
+    ],
+    allowsText: false,
+    allowsChildren: false
+  }),
+  typeDefinition('Static', {
+    namespaceUri: XAML_LANGUAGE_NAMESPACE,
+    members: [member('Member', 'string')],
+    allowsText: false,
+    allowsChildren: false
+  }),
+  typeDefinition('StaticExtension', {
+    namespaceUri: XAML_LANGUAGE_NAMESPACE,
+    members: [member('Member', 'string')],
+    allowsText: false,
+    allowsChildren: false
+  }),
+  typeDefinition('Reference', {
+    namespaceUri: XAML_LANGUAGE_NAMESPACE,
+    members: [member('Name', 'string')],
+    allowsText: false,
+    allowsChildren: false
+  }),
+  typeDefinition('ReferenceExtension', {
+    namespaceUri: XAML_LANGUAGE_NAMESPACE,
+    members: [member('Name', 'string')],
+    allowsText: false,
+    allowsChildren: false
   })
 ] as const;
 
@@ -916,10 +968,6 @@ function scalarTextFromValues(values: readonly XamlValueNode[]): string {
     .join('');
 }
 
-function hasObjectValue(values: readonly XamlValueNode[]): boolean {
-  return values.some((value) => value.kind === 'object');
-}
-
 function visitMarkupExtensionValue(
   value: XamlMarkupExtensionValue,
   visit: (node: XamlMarkupExtensionNode) => void
@@ -972,6 +1020,22 @@ function isXamlReferenceExtension(extension: XamlMarkupExtensionNode): boolean {
   );
 }
 
+function isXamlObjectElement(object: XamlObjectNode, names: readonly string[]): boolean {
+  return object.type.namespaceUri === XAML_LANGUAGE_NAMESPACE && names.includes(object.type.localName);
+}
+
+function isXamlScalarIntrinsicObject(object: XamlObjectNode): boolean {
+  return isXamlObjectElement(object, ['Null', 'NullExtension', 'Type', 'TypeExtension', 'Static', 'StaticExtension']);
+}
+
+function isAllowedObjectValueForMember(value: XamlObjectNode, definition: XamlMemberDefinition): boolean {
+  if (definition.valueSyntax === 'object' || definition.valueSyntax === 'any') {
+    return true;
+  }
+
+  return isXamlScalarIntrinsicObject(value);
+}
+
 function xamlTypeNameFromExtension(extension: XamlMarkupExtensionNode): string {
   const namedType = extension.arguments.find((argument) => {
     return (
@@ -992,9 +1056,31 @@ function xamlTypeNameFromExtension(extension: XamlMarkupExtensionNode): string {
     : '';
 }
 
+function xamlTypeNameFromObjectElement(object: XamlObjectNode): string {
+  if (!isXamlObjectElement(object, ['Type', 'TypeExtension'])) {
+    return '';
+  }
+
+  const typeMember = object.members.find((member) => {
+    if (member.isDirective || member.syntax === 'content') {
+      return false;
+    }
+
+    return member.name.localName === 'TypeName' || member.name.localName === 'Type' || member.dotted?.member === 'TypeName';
+  });
+  return typeMember ? scalarTextFromValues(typeMember.values).trim() : '';
+}
+
 function xamlTypeNameFromValues(values: readonly XamlValueNode[]): string {
   if (values.length === 1 && values[0].kind === 'markupExtension' && isXamlTypeExtension(values[0])) {
     return xamlTypeNameFromExtension(values[0]);
+  }
+
+  if (values.length === 1 && values[0].kind === 'object') {
+    const typeName = xamlTypeNameFromObjectElement(values[0]);
+    if (typeName) {
+      return typeName;
+    }
   }
 
   return scalarTextFromValues(values).trim();
@@ -1196,14 +1282,16 @@ function validateTextSyntax(member: XamlMemberNode, definition: XamlMemberDefini
   }
 
   const text = textFromValues(member.values).trim();
-  const hasObjects = hasObjectValue(member.values);
+  const invalidObjectValue = member.values.find((value): value is XamlObjectNode => {
+    return value.kind === 'object' && !isAllowedObjectValueForMember(value, definition);
+  });
 
-  if (hasObjects && definition.valueSyntax !== 'object') {
+  if (invalidObjectValue) {
     diagnostics.push(validationDiagnostic(
       'error',
       'invalid-member-object-value',
       `Member "${definition.name}" does not accept object values.`,
-      member
+      invalidObjectValue
     ));
   }
 
@@ -1449,6 +1537,13 @@ function findResolvedPropertyMember(
       return false;
     }
 
+    if (memberNode.dotted) {
+      return (
+        memberNode.dotted.owner.localName === type.name &&
+        resolveXamlMember(type, memberNode.dotted.member, registry)?.name === memberName
+      );
+    }
+
     return resolveXamlMember(type, memberNode.name, registry)?.name === memberName;
   });
 }
@@ -1522,6 +1617,78 @@ function validateXamlArraySemantics(
       `x:Array Type="${typeText}" does not allow "${formatQualifiedName(item.type)}" items.`,
       item
     ));
+  }
+}
+
+function textFromRequiredMember(
+  object: XamlObjectNode,
+  type: XamlTypeDefinition,
+  memberName: string,
+  diagnostics: XamlDiagnostic[],
+  registry: XamlVocabularyRegistry
+): string {
+  const memberNode = findResolvedPropertyMember(object, type, memberName, registry);
+  const text = memberNode ? scalarTextFromValues(memberNode.values).trim() : '';
+  if (text) {
+    return text;
+  }
+
+  diagnostics.push(validationDiagnostic(
+    'error',
+    'missing-required-member',
+    `Intrinsic "x:${type.name}" requires a ${memberName} member.`,
+    memberNode ?? object
+  ));
+  return '';
+}
+
+function validateXamlIntrinsicObjectSemantics(
+  object: XamlObjectNode,
+  type: XamlTypeDefinition,
+  diagnostics: XamlDiagnostic[],
+  registry: XamlVocabularyRegistry,
+  context: XamlValidationContext
+): void {
+  if (type.namespaceUri !== XAML_LANGUAGE_NAMESPACE) {
+    return;
+  }
+
+  if (type.name === 'Type' || type.name === 'TypeExtension') {
+    const typeName = textFromRequiredMember(object, type, 'TypeName', diagnostics, registry);
+    if (typeName && !registryHasTypeName(typeName, registry)) {
+      diagnostics.push(validationDiagnostic(
+        'error',
+        'unknown-xaml-type',
+        `Intrinsic "x:${type.name}" references unknown type "${typeName}".`,
+        object
+      ));
+    }
+    return;
+  }
+
+  if (type.name === 'Static' || type.name === 'StaticExtension') {
+    const memberName = textFromRequiredMember(object, type, 'Member', diagnostics, registry);
+    if (memberName && !isWellFormedStaticMemberReference(memberName)) {
+      diagnostics.push(validationDiagnostic(
+        'error',
+        'invalid-static-member-reference',
+        `Intrinsic "x:${type.name}" requires a type-qualified member reference, such as "Type.Member".`,
+        object
+      ));
+    }
+    return;
+  }
+
+  if (type.name === 'Reference' || type.name === 'ReferenceExtension') {
+    const referenceName = textFromRequiredMember(object, type, 'Name', diagnostics, registry);
+    if (referenceName && !context.knownNames.has(referenceName)) {
+      diagnostics.push(validationDiagnostic(
+        'error',
+        'unknown-reference-name',
+        `Intrinsic "x:${type.name}" references unknown x:Name "${referenceName}".`,
+        object
+      ));
+    }
   }
 }
 
@@ -1776,6 +1943,7 @@ function validateObjectNode(
   }
 
   validateXamlArraySemantics(object, type, diagnostics, registry);
+  validateXamlIntrinsicObjectSemantics(object, type, diagnostics, registry, localContext);
 }
 
 export function validateXamlDocument(

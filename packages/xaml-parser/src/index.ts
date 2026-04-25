@@ -1310,6 +1310,10 @@ function isReferenceExtension(extension: XamlMarkupExtensionNode): boolean {
   );
 }
 
+function isIntrinsicObject(object: XamlObjectNode, names: readonly string[]): boolean {
+  return object.type.namespaceUri === XAML_LANGUAGE_NAMESPACE && names.includes(object.type.localName);
+}
+
 function coerceRuntimePrimitive(value: unknown): XamlPrimitive {
   if (value == null) {
     return null;
@@ -1397,6 +1401,35 @@ function referenceNameFromExtension(extension: XamlMarkupExtensionNode): string 
   return positionalReference ? markupExtensionArgumentToText(positionalReference.value).trim() : '';
 }
 
+function intrinsicObjectMemberText(
+  object: XamlObjectNode,
+  memberName: string,
+  registry: XamlVocabularyRegistry,
+  options: XamlLoweringContext
+): string {
+  const type = resolveXamlType(object.type, registry);
+  if (!type) {
+    return '';
+  }
+
+  const member = object.members.find((memberNode) => {
+    if (memberNode.syntax === 'content' || memberNode.isDirective) {
+      return false;
+    }
+
+    if (memberNode.dotted) {
+      return (
+        memberNode.dotted.owner.localName === type.name &&
+        resolveXamlMember(type, memberNode.dotted.member, registry)?.name === memberName
+      );
+    }
+
+    return resolveXamlMember(type, memberNode.name, registry)?.name === memberName;
+  });
+
+  return member ? textValueFromValues(member.values, options).trim() : '';
+}
+
 function readBindingPathSegment(value: unknown, segment: string): unknown {
   if (value == null || !segment) {
     return undefined;
@@ -1439,7 +1472,7 @@ function cloneLoweredXamlNode(node: XamlNode, clones = new WeakMap<XamlNode, Xam
   return clone;
 }
 
-function isLoweredXamlNode(value: XamlRuntimeResourceValue): value is XamlNode {
+function isLoweredXamlNode(value: unknown): value is XamlNode {
   return typeof value === 'object' && value != null && 'type' in value && 'attributes' in value && 'children' in value;
 }
 
@@ -1533,6 +1566,27 @@ function evaluateMarkupExtension(extension: XamlMarkupExtensionNode, options: Xa
   return extension.raw;
 }
 
+function evaluateIntrinsicObject(object: XamlObjectNode, options: XamlLoweringContext): XamlRuntimeResourceValue | undefined {
+  if (isIntrinsicObject(object, ['Null', 'NullExtension'])) {
+    return null;
+  }
+
+  if (isIntrinsicObject(object, ['Type', 'TypeExtension'])) {
+    return intrinsicObjectMemberText(object, 'TypeName', options.registry, options) || undefined;
+  }
+
+  if (isIntrinsicObject(object, ['Static', 'StaticExtension'])) {
+    return intrinsicObjectMemberText(object, 'Member', options.registry, options) || undefined;
+  }
+
+  if (isIntrinsicObject(object, ['Reference', 'ReferenceExtension'])) {
+    const name = intrinsicObjectMemberText(object, 'Name', options.registry, options);
+    return name ? resolveReferenceObject(name, options) : undefined;
+  }
+
+  return undefined;
+}
+
 function resolveMemberDefinitionForLowering(
   member: XamlMemberNode,
   ownerType: XamlTypeDefinition | null,
@@ -1568,6 +1622,11 @@ function primitiveValueFromNode(value: XamlValueNode, options: XamlLoweringConte
 
   if (value.kind === 'markupExtension') {
     const evaluated = options.evaluateMarkupExtensions ? evaluateMarkupExtension(value, options) : value.raw;
+    return isLoweredXamlNode(evaluated) ? undefined : evaluated;
+  }
+
+  if (value.kind === 'object' && options.evaluateMarkupExtensions) {
+    const evaluated = evaluateIntrinsicObject(value, options);
     return isLoweredXamlNode(evaluated) ? undefined : evaluated;
   }
 
@@ -1822,6 +1881,17 @@ function lowerValueObjects(
 ): XamlNode[] {
   return values.flatMap((value) => {
     if (value.kind === 'object') {
+      if (options.evaluateMarkupExtensions) {
+        const evaluated = evaluateIntrinsicObject(value, options);
+        if (isLoweredXamlNode(evaluated)) {
+          return [evaluated];
+        }
+
+        if (evaluated !== undefined) {
+          return [];
+        }
+      }
+
       return [lowerObjectNode(value, registry, options)];
     }
 

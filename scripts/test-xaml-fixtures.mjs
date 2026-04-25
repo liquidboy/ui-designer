@@ -1150,6 +1150,7 @@ async function runPhase15IntrinsicArrayFixtures() {
     'array-invalid-item.xaml': { errors: ['invalid-array-item-type'], warnings: [] },
     'array-missing-type.xaml': { errors: ['missing-required-member'], warnings: [] },
     'array-type-extension.xaml': { errors: [], warnings: [] },
+    'array-type-object-element.xaml': { errors: [], warnings: [] },
     'array-type-extension-missing.xaml': { errors: ['missing-markup-extension-argument'], warnings: [] }
   };
   const files = await listFixtureFiles('phase15-intrinsic-array');
@@ -1195,6 +1196,13 @@ async function runPhase15IntrinsicArrayFixtures() {
       assert.equal(runtime.root.attributes.Type, 'TextBlock');
       assert.equal(runtime.root.children[0]?.type, 'TextBlock');
       assert.match(serializeXamlDocumentNode(result.document), /Type="\{x:Type TextBlock\}"/);
+    }
+
+    if (fileName === 'array-type-object-element.xaml') {
+      const runtime = parseRuntimeXaml(input);
+      assert.equal(runtime.root.attributes.Type, 'TextBlock');
+      assert.equal(runtime.root.children[0]?.type, 'TextBlock');
+      assert.match(serializeXamlDocumentNode(result.document), /<x:Type TypeName="TextBlock" \/>/);
     }
   }
 
@@ -1424,6 +1432,61 @@ async function runPhase20SchemaTextSyntaxFixtures() {
   return files.length;
 }
 
+async function runPhase21IntrinsicObjectElementFixtures() {
+  const expectations = {
+    'null-object-property.xaml': { errors: [], warnings: [] },
+    'reference-object-property.xaml': { errors: [], warnings: ['unsupported-directive'] },
+    'reference-object-unknown.xaml': { errors: ['unknown-reference-name'], warnings: [] },
+    'static-object-invalid.xaml': { errors: ['invalid-static-member-reference'], warnings: [] },
+    'static-object-property.xaml': { errors: [], warnings: [] },
+    'type-object-missing.xaml': { errors: ['missing-required-member'], warnings: [] },
+    'type-object-property.xaml': { errors: [], warnings: [] }
+  };
+  const files = await listFixtureFiles('phase21-intrinsic-object-elements');
+
+  for (const fileName of files) {
+    const input = await readFixture('phase21-intrinsic-object-elements', fileName);
+    const result = parseAndValidateXaml(input);
+    const expected = expectations[fileName];
+    assert.ok(expected, `Missing intrinsic object element expectation for ${fileName}`);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'error'), expected.errors, `${fileName} validation errors`);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'warning'), expected.warnings, `${fileName} validation warnings`);
+
+    if (expected.errors.length > 0) {
+      continue;
+    }
+
+    const serialized = serializeXamlDocumentNode(result.document);
+    const runtime = parseRuntimeXaml(input);
+
+    if (fileName === 'null-object-property.xaml') {
+      assert.equal(runtime.root.attributes.Content, null);
+      assert.equal(runtime.root.text, '');
+      assert.match(serialized, /<x:Null \/>/);
+    }
+
+    if (fileName === 'type-object-property.xaml') {
+      assert.equal(runtime.root.attributes.Text, 'TextBlock');
+      assert.equal(runtime.root.text, 'TextBlock');
+      assert.match(serialized, /<x:Type TypeName="TextBlock" \/>/);
+    }
+
+    if (fileName === 'static-object-property.xaml') {
+      assert.equal(runtime.root.attributes.Text, 'TextBlock.Text');
+      assert.equal(runtime.root.text, 'TextBlock.Text');
+      assert.match(serialized, /<x:Static Member="TextBlock.Text" \/>/);
+    }
+
+    if (fileName === 'reference-object-property.xaml') {
+      assert.equal(runtime.root.children[1]?.children[0]?.type, 'TextBlock');
+      assert.strictEqual(runtime.root.children[1]?.children[0], runtime.root.children[0]);
+      assert.match(serialized, /<x:Reference Name="SharedLabel" \/>/);
+    }
+  }
+
+  return files.length;
+}
+
 async function runPhase6CollectionFixtures() {
   const expectations = {
     'theme-dictionary-xkey.xaml': { errors: [], warnings: [] },
@@ -1483,7 +1546,8 @@ const phase17Count = await runPhase17IntrinsicReferenceFixtures();
 const phase18Count = await runPhase18NamescopeBoundaryFixtures();
 const phase19Count = await runPhase19ReferenceIdentityFixtures();
 const phase20Count = await runPhase20SchemaTextSyntaxFixtures();
+const phase21Count = await runPhase21IntrinsicObjectElementFixtures();
 
 console.log(
-  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources, ${phase9Count} serializer, ${phase10Count} designer serializer, ${phase11Count} XML scope, ${phase12Count} object resources, ${phase13Count} dynamic resources, ${phase14Count} whitespace normalization, ${phase15Count} intrinsic arrays, ${phase16Count} intrinsic static references, ${phase17Count} intrinsic references, ${phase18Count} namescope boundaries, ${phase19Count} reference identity, ${phase20Count} schema text syntax).`
+  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources, ${phase9Count} serializer, ${phase10Count} designer serializer, ${phase11Count} XML scope, ${phase12Count} object resources, ${phase13Count} dynamic resources, ${phase14Count} whitespace normalization, ${phase15Count} intrinsic arrays, ${phase16Count} intrinsic static references, ${phase17Count} intrinsic references, ${phase18Count} namescope boundaries, ${phase19Count} reference identity, ${phase20Count} schema text syntax, ${phase21Count} intrinsic object elements).`
 );
