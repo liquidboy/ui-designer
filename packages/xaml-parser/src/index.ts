@@ -1049,15 +1049,6 @@ function propertyElementToMember(element: Element, context: ParseContext, parent
   const span = tagStart >= 0 && tagEnd >= 0 ? context.locator.span(tagStart, tagEnd) : undefined;
   const values = readValueNodes(element, context, parentScope);
 
-  if (namespaceDeclarations.length > 0) {
-    context.diagnostics.push({
-      severity: 'warning',
-      code: 'namespace-on-property-element',
-      message: `Namespace declarations on property element "${rawName}" are preserved globally but not attached to the member node yet.`,
-      span
-    });
-  }
-
   return {
     kind: 'member',
     name,
@@ -1066,6 +1057,7 @@ function propertyElementToMember(element: Element, context: ParseContext, parent
     isDirective: isDirectiveMemberName(name, dotted),
     isAttached: Boolean(dotted),
     dotted,
+    namespaceDeclarations,
     span
   };
 }
@@ -1326,17 +1318,19 @@ function serializeMemberNode(
 ): string {
   const indent = options.indent.repeat(depth);
   const tagName = serializationQualifiedName(member.name);
+  const attributes = member.namespaceDeclarations?.map(serializeNamespaceDeclaration) ?? [];
+  const tagOpen = attributes.length > 0 ? `<${tagName} ${attributes.join(' ')}` : `<${tagName}`;
 
   if (member.values.length === 0) {
-    return `${indent}<${tagName} />`;
+    return `${indent}${tagOpen} />`;
   }
 
   if (!valueNodesContainObjects(member.values)) {
-    return `${indent}<${tagName}>${serializeValueNodesElementContent(member.values, true)}</${tagName}>`;
+    return `${indent}${tagOpen}>${serializeValueNodesElementContent(member.values, true)}</${tagName}>`;
   }
 
   const children = serializeBlockValues(member.values, depth + 1, options, true).join('\n');
-  return `${indent}<${tagName}>\n${children}\n${indent}</${tagName}>`;
+  return `${indent}${tagOpen}>\n${children}\n${indent}</${tagName}>`;
 }
 
 function serializeObjectNode(

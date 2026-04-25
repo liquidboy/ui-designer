@@ -1,0 +1,5 @@
+<Canvas xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="Example.RootView">
+  <x:Members>
+    <x:Member Name="Count" Type="System.Int32" />
+  </x:Members>
+</Canvas>

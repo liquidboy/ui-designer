@@ -243,15 +243,22 @@ Current status:
 3. `x:Members` parses as a preserved directive property element on the document root object and requires root `x:Class`.
 4. `x:Members` accepts only `x:Member` and `x:Property` object declarations.
 5. `x:Member` and `x:Property` declarations require `Name` and `Type` metadata.
-6. Declaration metadata is preserved and serialized with warnings; no CLR members or types are generated in v1.
+6. Declaration `Type` values validate against in-scope XML namespace mappings, including namespace-qualified `ui-designer` types, XAML primitive types, and validation-only `clr-namespace:System` primitive aliases.
+7. Declaration metadata is preserved and serialized with warnings; no CLR members or types are generated in v1.
 
 Supported preserved form:
 
 ```xaml
-<Canvas xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="Example.RootView" x:Subclass="Example.RootViewBase">
+<Canvas
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:ui="https://liquidboy.dev/ui-designer"
+  xmlns:sys="clr-namespace:System;assembly=mscorlib"
+  x:Class="Example.RootView"
+  x:Subclass="Example.RootViewBase">
   <x:Members>
     <x:Property Name="Title" Type="x:String" />
-    <x:Member Name="Count" Type="x:Int32" />
+    <x:Property Name="Child" Type="ui:TextBlock" />
+    <x:Member Name="Count" Type="sys:Int32" />
   </x:Members>
 </Canvas>
 ```

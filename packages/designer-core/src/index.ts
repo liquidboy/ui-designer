@@ -257,6 +257,7 @@ function cloneXamlMemberNode(member: XamlMemberNode): XamlMemberNode {
     isDirective: member.isDirective,
     isAttached: member.isAttached,
     dotted: cloneXamlDottedMember(member.dotted),
+    namespaceDeclarations: member.namespaceDeclarations?.map(cloneXamlNamespaceDeclaration),
     span: cloneXamlSourceSpan(member.span)
   };
 }

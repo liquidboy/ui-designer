@@ -1,0 +1,5 @@
+<Canvas xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="Example.RootView">
+  <x:Members xmlns:ui="https://liquidboy.dev/ui-designer">
+    <x:Property Name="Child" Type="ui:TextBlock" />
+  </x:Members>
+</Canvas>

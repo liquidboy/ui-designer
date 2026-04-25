@@ -106,6 +106,7 @@ export interface XamlMemberNode {
   isDirective: boolean;
   isAttached: boolean;
   dotted?: XamlDottedMember;
+  namespaceDeclarations?: XamlNamespaceDeclaration[];
   span?: XamlSourceSpan;
 }
 
@@ -2545,8 +2546,34 @@ function namespaceScopeWithObjectDeclarations(
   return namespaceScope;
 }
 
+function namespaceScopeWithMemberDeclarations(
+  parentScope: XamlNamespaceScope,
+  member: XamlMemberNode
+): XamlNamespaceScope {
+  if (!member.namespaceDeclarations || member.namespaceDeclarations.length === 0) {
+    return parentScope;
+  }
+
+  const namespaceScope = new Map(parentScope);
+  for (const declaration of member.namespaceDeclarations) {
+    namespaceScope.set(declaration.prefix, declaration.namespaceUri);
+  }
+
+  return namespaceScope;
+}
+
 function withObjectNamespaceScope(context: XamlValidationContext, object: XamlObjectNode): XamlValidationContext {
   const namespaceScope = namespaceScopeWithObjectDeclarations(context.namespaceScope, object);
+  return namespaceScope === context.namespaceScope
+    ? context
+    : {
+        ...context,
+        namespaceScope
+      };
+}
+
+function withMemberNamespaceScope(context: XamlValidationContext, member: XamlMemberNode): XamlValidationContext {
+  const namespaceScope = namespaceScopeWithMemberDeclarations(context.namespaceScope, member);
   return namespaceScope === context.namespaceScope
     ? context
     : {
@@ -2913,7 +2940,8 @@ function validateDeclarationMemberObject(
   parentMember: XamlMemberNode,
   object: XamlObjectNode,
   diagnostics: XamlDiagnostic[],
-  registry: XamlVocabularyRegistry
+  registry: XamlVocabularyRegistry,
+  context: XamlValidationContext
 ): void {
   if (!isXamlDeclarationMemberObject(object)) {
     return;
@@ -2943,11 +2971,23 @@ function validateDeclarationMemberObject(
     ));
   }
 
-  if (!objectMemberText(object, type, 'Type', registry)) {
+  const declarationType = objectMemberText(object, type, 'Type', registry);
+  if (!declarationType) {
     diagnostics.push(validationDiagnostic(
       'error',
       'missing-required-member',
       `Intrinsic "x:${type.name}" requires a Type member.`,
+      object
+    ));
+    return;
+  }
+
+  const declarationContext = withObjectNamespaceScope(context, object);
+  if (!registryHasTypeName(declarationType, registry, declarationContext)) {
+    diagnostics.push(validationDiagnostic(
+      'error',
+      'unknown-xaml-type',
+      `Intrinsic "x:${type.name}" references unknown declaration type "${declarationType}".`,
       object
     ));
   }
@@ -3075,6 +3115,7 @@ function validateContentMember(
   registry: XamlVocabularyRegistry,
   context: XamlValidationContext
 ): void {
+  const memberContext = withMemberNamespaceScope(context, member);
   let hasInvalidContent = false;
   const objectValues = member.values.filter((value): value is XamlObjectNode => value.kind === 'object');
 
@@ -3085,7 +3126,7 @@ function validateContentMember(
   }
 
   if (type.collectionKind === 'dictionary') {
-    validateDictionaryItemKeys(type, objectValues, diagnostics, registry, context);
+    validateDictionaryItemKeys(type, objectValues, diagnostics, registry, memberContext);
   }
 
   for (const value of member.values) {
@@ -3100,9 +3141,9 @@ function validateContentMember(
         ));
       }
 
-      validateDeclarationMemberObject(member, value, diagnostics, registry);
-      validateCodeAdjacentIntrinsicObjectPlacement(object, member, value, diagnostics, registry, context);
-      validateObjectNode(value, diagnostics, registry, context);
+      validateDeclarationMemberObject(member, value, diagnostics, registry, memberContext);
+      validateCodeAdjacentIntrinsicObjectPlacement(object, member, value, diagnostics, registry, memberContext);
+      validateObjectNode(value, diagnostics, registry, memberContext);
       continue;
     }
 
@@ -3133,7 +3174,7 @@ function validateContentMember(
     validateTextSyntax(member, contentDefinition, diagnostics);
   }
 
-  validateMarkupExtensions(member, diagnostics, registry, context);
+  validateMarkupExtensions(member, diagnostics, registry, memberContext);
 }
 
 function validateObjectNode(
@@ -3234,17 +3275,18 @@ function validateObjectNode(
       assignedMembers.add(duplicateKey);
     }
 
+    const memberContext = withMemberNamespaceScope(localContext, memberNode);
     if (definition.kind === 'directive') {
-      validateResolvedDirective(object, memberNode, definition, diagnostics, localContext, registry);
+      validateResolvedDirective(object, memberNode, definition, diagnostics, memberContext, registry);
     } else {
-      validateResolvedMember(memberNode, definition, diagnostics, registry, localContext);
+      validateResolvedMember(memberNode, definition, diagnostics, registry, memberContext);
     }
 
     for (const value of memberNode.values) {
       if (value.kind === 'object') {
-        validateDeclarationMemberObject(memberNode, value, diagnostics, registry);
-        validateCodeAdjacentIntrinsicObjectPlacement(object, memberNode, value, diagnostics, registry, localContext);
-        validateObjectNode(value, diagnostics, registry, localContext);
+        validateDeclarationMemberObject(memberNode, value, diagnostics, registry, memberContext);
+        validateCodeAdjacentIntrinsicObjectPlacement(object, memberNode, value, diagnostics, registry, memberContext);
+        validateObjectNode(value, diagnostics, registry, memberContext);
       }
     }
   }
