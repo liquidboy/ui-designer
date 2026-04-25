@@ -37,6 +37,12 @@ import {
   type DesignerChromeItem
 } from './designer/chrome';
 import {
+  DEFAULT_DESIGNER_PANELS_XAML,
+  designerPanelsDefinition as defaultDesignerPanelsDefinition,
+  parseDesignerPanelsDefinition,
+  type DesignerPanelsDefinition
+} from './designer/panels';
+import {
   asFiniteNumber,
   applyContainerPlacement,
   canHostAdditionalChildren,
@@ -88,27 +94,41 @@ import {
 } from './designer/resources';
 import {
   clearAppliedChromeXaml,
+  clearAppliedPanelsXaml,
   clearChromeDraftXaml,
   clearDraftXaml,
+  clearPanelsDraftXaml,
   readAppliedChromeXaml,
+  readAppliedPanelsXaml,
   readChromeDraftXaml,
   readCustomFontAssets,
   readCustomImageAssets,
   readDraftXaml,
+  readPanelsDraftXaml,
   writeChromeDraftXaml,
   writeAppliedChromeXaml,
+  writeAppliedPanelsXaml,
   writeCustomFontAssets,
   writeCustomImageAssets,
-  writeDraftXaml
+  writeDraftXaml,
+  writePanelsDraftXaml
 } from './designer/storage';
 
 const MAX_VISIBLE_SOURCE_DIAGNOSTICS = 4;
 const CHROME_DOCUMENT_FILE_NAME = 'DesignerChrome.xaml';
+const PANELS_DOCUMENT_FILE_NAME = 'DesignerPanels.xaml';
 
-type SourceDocumentId = 'document' | 'chrome';
+type SourceDocumentId = 'document' | 'chrome' | 'panels';
 
 interface InitialChromeState {
   definition: DesignerChromeDefinition;
+  draft: string;
+  dirty: boolean;
+  diagnostic: SourceDiagnostic | null;
+}
+
+interface InitialPanelsState {
+  definition: DesignerPanelsDefinition;
   draft: string;
   dirty: boolean;
   diagnostic: SourceDiagnostic | null;
@@ -198,6 +218,45 @@ function createInitialChromeState(): InitialChromeState {
   };
 }
 
+function createInitialPanelsState(): InitialPanelsState {
+  const storedDraft = readPanelsDraftXaml();
+  const storedApplied = readAppliedPanelsXaml();
+  const appliedSource = storedApplied ?? storedDraft;
+
+  if (!appliedSource) {
+    return {
+      definition: defaultDesignerPanelsDefinition,
+      draft: DEFAULT_DESIGNER_PANELS_XAML,
+      dirty: false,
+      diagnostic: null
+    };
+  }
+
+  const parsedApplied = parseDesignerPanelsDefinition(appliedSource);
+  const fallbackDefinition = parsedApplied.definition ?? defaultDesignerPanelsDefinition;
+  const draftSource = storedDraft ?? fallbackDefinition.source;
+  const parsedDraft = parseDesignerPanelsDefinition(draftSource);
+
+  if (parsedDraft.definition) {
+    return {
+      definition: parsedApplied.definition ?? parsedDraft.definition,
+      draft: parsedDraft.definition.source,
+      dirty: storedApplied != null && parsedDraft.definition.source !== fallbackDefinition.source,
+      diagnostic: parsedDraft.diagnostic
+    };
+  }
+
+  return {
+    definition: fallbackDefinition,
+    draft: draftSource,
+    dirty: true,
+    diagnostic: parsedDraft.diagnostic ?? {
+      severity: 'error',
+      message: 'Stored designer panels XAML is invalid.'
+    }
+  };
+}
+
 export function App() {
   const [customImageAssets, setCustomImageAssets] = useState<DesignerImageAsset[]>(() => readCustomImageAssets());
   const [customFontAssets, setCustomFontAssets] = useState<DesignerFontAsset[]>(() => readCustomFontAssets());
@@ -227,11 +286,16 @@ export function App() {
   const [sourceDirty, setSourceDirty] = useState(false);
   const [sourceDiagnostic, setSourceDiagnostic] = useState<SourceDiagnostic | null>(null);
   const [initialChromeState] = useState<InitialChromeState>(() => createInitialChromeState());
+  const [initialPanelsState] = useState<InitialPanelsState>(() => createInitialPanelsState());
   const [activeSourceDocument, setActiveSourceDocument] = useState<SourceDocumentId>('document');
   const [chromeDefinition, setChromeDefinition] = useState<DesignerChromeDefinition>(initialChromeState.definition);
   const [chromeSourceDraft, setChromeSourceDraft] = useState(initialChromeState.draft);
   const [chromeSourceDirty, setChromeSourceDirty] = useState(initialChromeState.dirty);
   const [chromeSourceDiagnostic, setChromeSourceDiagnostic] = useState<SourceDiagnostic | null>(initialChromeState.diagnostic);
+  const [panelsDefinition, setPanelsDefinition] = useState<DesignerPanelsDefinition>(initialPanelsState.definition);
+  const [panelsSourceDraft, setPanelsSourceDraft] = useState(initialPanelsState.draft);
+  const [panelsSourceDirty, setPanelsSourceDirty] = useState(initialPanelsState.dirty);
+  const [panelsSourceDiagnostic, setPanelsSourceDiagnostic] = useState<SourceDiagnostic | null>(initialPanelsState.diagnostic);
   const [treeDragSourceId, setTreeDragSourceId] = useState<string | null>(null);
   const [treeDropTargetId, setTreeDropTargetId] = useState<string | null>(null);
   const [treeDropIntent, setTreeDropIntent] = useState<TreeDropIntent | null>(null);
@@ -843,6 +907,36 @@ export function App() {
     setStatus(`Applied ${CHROME_DOCUMENT_FILE_NAME} to the designer shell.`);
   };
 
+  const applyPanelsSourceDraft = () => {
+    const nextSource = panelsSourceDraft.trim();
+    if (!nextSource) {
+      const message = 'Designer panels XAML cannot be empty.';
+      setPanelsSourceDiagnostic({ severity: 'error', message });
+      setStatus(message);
+      return;
+    }
+
+    const result = parseDesignerPanelsDefinition(nextSource);
+    if (!result.definition) {
+      const diagnostic = result.diagnostic ?? {
+        severity: 'error' as const,
+        message: 'Invalid designer panels XAML.'
+      };
+      setPanelsSourceDiagnostic(diagnostic);
+      setPanelsSourceDirty(true);
+      setStatus(`Panels apply failed: ${inlineDiagnosticMessage(diagnostic.message)}`);
+      return;
+    }
+
+    setPanelsDefinition(result.definition);
+    setPanelsSourceDraft(result.definition.source);
+    setPanelsSourceDirty(false);
+    setPanelsSourceDiagnostic(result.diagnostic);
+    writeAppliedPanelsXaml(result.definition.source);
+    writePanelsDraftXaml(result.definition.source);
+    setStatus(`Applied ${PANELS_DOCUMENT_FILE_NAME} to the designer panels.`);
+  };
+
   const loadDocumentFromText = (
     xaml: string,
     options: {
@@ -916,6 +1010,12 @@ export function App() {
     setChromeSourceDiagnostic(null);
   };
 
+  const revertPanelsSourceDraft = () => {
+    setPanelsSourceDraft(panelsDefinition.source);
+    setPanelsSourceDirty(false);
+    setPanelsSourceDiagnostic(null);
+  };
+
   const resetChromeSourceDraft = () => {
     clearChromeDraftXaml();
     clearAppliedChromeXaml();
@@ -924,6 +1024,16 @@ export function App() {
     setChromeSourceDirty(false);
     setChromeSourceDiagnostic(null);
     setStatus(`Reset ${CHROME_DOCUMENT_FILE_NAME} to the bundled default.`);
+  };
+
+  const resetPanelsSourceDraft = () => {
+    clearPanelsDraftXaml();
+    clearAppliedPanelsXaml();
+    setPanelsDefinition(defaultDesignerPanelsDefinition);
+    setPanelsSourceDraft(DEFAULT_DESIGNER_PANELS_XAML);
+    setPanelsSourceDirty(false);
+    setPanelsSourceDiagnostic(null);
+    setStatus(`Reset ${PANELS_DOCUMENT_FILE_NAME} to the bundled default.`);
   };
 
   const saveDocumentToFile = async () => {
@@ -1484,6 +1594,10 @@ export function App() {
   useEffect(() => {
     writeChromeDraftXaml(chromeSourceDraft);
   }, [chromeSourceDraft]);
+
+  useEffect(() => {
+    writePanelsDraftXaml(panelsSourceDraft);
+  }, [panelsSourceDraft]);
 
   useEffect(() => {
     if (!sourceDirty) {
@@ -2047,19 +2161,47 @@ export function App() {
       isActive: false
     });
   }
+  if (!documentTabs.some((tab) => tab.id === 'panels')) {
+    documentTabs.push({
+      id: 'panels',
+      label: PANELS_DOCUMENT_FILE_NAME,
+      isActive: false
+    });
+  }
 
   const isChromeSourceActive = activeSourceDocument === 'chrome';
-  const activeSourceFileName = isChromeSourceActive ? CHROME_DOCUMENT_FILE_NAME : documentFileName;
-  const activeSourceDraft = isChromeSourceActive ? chromeSourceDraft : sourceDraft;
-  const activeSourceDirty = isChromeSourceActive ? chromeSourceDirty : sourceDirty;
-  const activeSourceDiagnostic = isChromeSourceActive ? chromeSourceDiagnostic : sourceDiagnostic;
+  const isPanelsSourceActive = activeSourceDocument === 'panels';
+  const activeSourceFileName = isChromeSourceActive
+    ? CHROME_DOCUMENT_FILE_NAME
+    : isPanelsSourceActive
+      ? PANELS_DOCUMENT_FILE_NAME
+      : documentFileName;
+  const activeSourceDraft = isChromeSourceActive
+    ? chromeSourceDraft
+    : isPanelsSourceActive
+      ? panelsSourceDraft
+      : sourceDraft;
+  const activeSourceDirty = isChromeSourceActive
+    ? chromeSourceDirty
+    : isPanelsSourceActive
+      ? panelsSourceDirty
+      : sourceDirty;
+  const activeSourceDiagnostic = isChromeSourceActive
+    ? chromeSourceDiagnostic
+    : isPanelsSourceActive
+      ? panelsSourceDiagnostic
+      : sourceDiagnostic;
   const canApplyActiveSource = isChromeSourceActive
     ? chromeSourceDirty && chromeSourceDraft.trim().length > 0
-    : canApplySource;
-  const activeApplyLabel = isChromeSourceActive ? 'Apply Chrome' : 'Apply XAML';
+    : isPanelsSourceActive
+      ? panelsSourceDirty && panelsSourceDraft.trim().length > 0
+      : canApplySource;
+  const activeApplyLabel = isChromeSourceActive ? 'Apply Chrome' : isPanelsSourceActive ? 'Apply Panels' : 'Apply XAML';
   const activeSourceCaption = isChromeSourceActive
     ? 'Edit DesignerChrome.xaml, then apply it to update the designer shell without touching the current document.'
-    : 'Edit XAML source and apply it back into the live designer surface.';
+    : isPanelsSourceActive
+      ? 'Edit DesignerPanels.xaml, then apply it to update panel titles, captions, and inspector groups.'
+      : 'Edit XAML source and apply it back into the live designer surface.';
   const changeActiveSourceDraft = (value: string) => {
     if (isChromeSourceActive) {
       setChromeSourceDraft(value);
@@ -2068,14 +2210,33 @@ export function App() {
       return;
     }
 
+    if (isPanelsSourceActive) {
+      setPanelsSourceDraft(value);
+      setPanelsSourceDirty(true);
+      setPanelsSourceDiagnostic(null);
+      return;
+    }
+
     setSourceDraft(value);
     setSourceDirty(true);
     setSourceDiagnostic(null);
   };
-  const applyActiveSource = isChromeSourceActive ? applyChromeSourceDraft : applySourceDraft;
-  const revertActiveSource = isChromeSourceActive ? revertChromeSourceDraft : revertSourceDraft;
-  const resetActiveSource = isChromeSourceActive ? resetChromeSourceDraft : undefined;
-  const activeResetLabel = isChromeSourceActive ? 'Reset Chrome' : undefined;
+  const applyActiveSource = isChromeSourceActive
+    ? applyChromeSourceDraft
+    : isPanelsSourceActive
+      ? applyPanelsSourceDraft
+      : applySourceDraft;
+  const revertActiveSource = isChromeSourceActive
+    ? revertChromeSourceDraft
+    : isPanelsSourceActive
+      ? revertPanelsSourceDraft
+      : revertSourceDraft;
+  const resetActiveSource = isChromeSourceActive
+    ? resetChromeSourceDraft
+    : isPanelsSourceActive
+      ? resetPanelsSourceDraft
+      : undefined;
+  const activeResetLabel = isChromeSourceActive ? 'Reset Chrome' : isPanelsSourceActive ? 'Reset Panels' : undefined;
 
   return (
     <main className="designer-shell">
@@ -2136,6 +2297,7 @@ export function App() {
       <section className="blend-workspace">
         <LeftRail
           dockTabs={chromeDefinition.leftDockTabs}
+          panels={panelsDefinition.panels}
           status={status}
           origin={origin}
           cameraView={cameraView}
@@ -2214,7 +2376,7 @@ export function App() {
         <section className="document-area">
           <div className="document-tabs">
             {documentTabs.map((tab) => {
-              const isManagedDocument = tab.id === 'document' || tab.id === 'chrome';
+              const isManagedDocument = tab.id === 'document' || tab.id === 'chrome' || tab.id === 'panels';
               return (
                 <button
                   key={tab.id}
@@ -2279,6 +2441,7 @@ export function App() {
 
         <Inspector
           dockTabs={chromeDefinition.inspectorTabs}
+          groups={panelsDefinition.inspectorGroups}
           selectedId={selectedId}
           selectedElement={selectedElement}
           isSelectedImageNode={isSelectedImageNode}

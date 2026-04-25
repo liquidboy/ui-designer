@@ -3,10 +3,12 @@ import type { CameraState, DesignerTreeItem } from '@ui-designer/designer-core';
 import type { DesignerChromeItem } from '../designer/chrome';
 import type { DebugOverlaySettings } from '../designer/overlays';
 import type { TreeDropIntent } from '../designer/document';
+import type { DesignerPanelsDefinition } from '../designer/panels';
 import type { DesignerFontAsset, DesignerImageAsset, PaletteTemplate } from '../designer/presets';
 
 interface LeftRailProps {
   dockTabs: readonly DesignerChromeItem[];
+  panels: DesignerPanelsDefinition['panels'];
   status: string;
   origin: { x: number; y: number };
   cameraView: CameraState;
@@ -81,6 +83,7 @@ interface LeftRailProps {
 export function LeftRail(props: LeftRailProps) {
   const {
     dockTabs,
+    panels,
     status,
     origin,
     cameraView,
@@ -161,7 +164,7 @@ export function LeftRail(props: LeftRailProps) {
           </button>
         ))}
       </div>
-      <h1>Solution Explorer</h1>
+      <h1>{panels.solution.title}</h1>
       <p>{status}</p>
       <div className="origin">Screen origin: {origin.x.toFixed(0)}, {origin.y.toFixed(0)}</div>
       <div className="origin">Camera: {cameraView.x.toFixed(0)}, {cameraView.y.toFixed(0)}</div>
@@ -197,10 +200,8 @@ export function LeftRail(props: LeftRailProps) {
       </button>
 
       <section className="palette-panel">
-        <h2>Palette</h2>
-        <p className="tree-caption">
-          Pick a template, then insert it as a child or sibling. Placement adapts automatically for `Canvas` and `Grid` containers.
-        </p>
+        <h2>{panels.palette.title}</h2>
+        {panels.palette.caption ? <p className="tree-caption">{panels.palette.caption}</p> : null}
         <div className="palette-grid">
           {paletteTemplates.map((template) => {
             const childEnabled = canUseTemplateAsChild(template);
@@ -226,7 +227,7 @@ export function LeftRail(props: LeftRailProps) {
       </section>
 
       <section className="tree-panel">
-        <h2>Component Tree</h2>
+        <h2>{panels.tree.title}</h2>
         <p className="tree-caption">
           Target: {selectedTreeNodeLabel}{selectedTreeItemId ? ` (${selectedTreeItemId})` : ''}
         </p>
@@ -280,10 +281,8 @@ export function LeftRail(props: LeftRailProps) {
       </section>
 
       <section className="library-panel">
-        <h2>Asset Library</h2>
-        <p className="tree-caption">
-          Import real images, select a library entry, then apply it directly to the current image or insert it as a new component.
-        </p>
+        <h2>{panels.assets.title}</h2>
+        {panels.assets.caption ? <p className="tree-caption">{panels.assets.caption}</p> : null}
         <div className="toolbar-row">
           <button className="toolbar-btn" type="button" onClick={onImportImageAsset}>
             Import Image
@@ -336,10 +335,8 @@ export function LeftRail(props: LeftRailProps) {
           </div>
         </div>
 
-        <h2>Font Library</h2>
-        <p className="tree-caption">
-          Import real font files or apply preset families. Imported fonts embed their `FontSource` into XAML when you apply them.
-        </p>
+        <h2>{panels.fonts.title}</h2>
+        {panels.fonts.caption ? <p className="tree-caption">{panels.fonts.caption}</p> : null}
         <div className="toolbar-row">
           <button className="toolbar-btn" type="button" onClick={onImportFontAsset}>
             Import Font
@@ -388,8 +385,8 @@ export function LeftRail(props: LeftRailProps) {
       </section>
 
       <section className="library-panel">
-        <h2>Debug Overlays</h2>
-        <p className="tree-caption">Keep structure visible while editing text, images, and container layouts.</p>
+        <h2>{panels.overlays.title}</h2>
+        {panels.overlays.caption ? <p className="tree-caption">{panels.overlays.caption}</p> : null}
         <label className="toggle-row">
           <input
             type="checkbox"

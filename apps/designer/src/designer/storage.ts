@@ -3,6 +3,8 @@ import type { DesignerFontAsset, DesignerImageAsset } from './presets';
 const DRAFT_STORAGE_KEY = 'ui-designer:document-draft:v1';
 const CHROME_DRAFT_STORAGE_KEY = 'ui-designer:chrome-draft:v1';
 const CHROME_APPLIED_STORAGE_KEY = 'ui-designer:chrome-applied:v1';
+const PANELS_DRAFT_STORAGE_KEY = 'ui-designer:panels-draft:v1';
+const PANELS_APPLIED_STORAGE_KEY = 'ui-designer:panels-applied:v1';
 const CUSTOM_IMAGE_ASSET_STORAGE_KEY = 'ui-designer:custom-image-assets:v1';
 const CUSTOM_FONT_ASSET_STORAGE_KEY = 'ui-designer:custom-font-assets:v1';
 
@@ -148,6 +150,30 @@ export function writeAppliedChromeXaml(xaml: string): void {
 
 export function clearAppliedChromeXaml(): void {
   removeStorageValue(CHROME_APPLIED_STORAGE_KEY);
+}
+
+export function readPanelsDraftXaml(): string | null {
+  return readStorageValue(PANELS_DRAFT_STORAGE_KEY);
+}
+
+export function writePanelsDraftXaml(xaml: string): void {
+  writeStorageValue(PANELS_DRAFT_STORAGE_KEY, xaml);
+}
+
+export function clearPanelsDraftXaml(): void {
+  removeStorageValue(PANELS_DRAFT_STORAGE_KEY);
+}
+
+export function readAppliedPanelsXaml(): string | null {
+  return readStorageValue(PANELS_APPLIED_STORAGE_KEY);
+}
+
+export function writeAppliedPanelsXaml(xaml: string): void {
+  writeStorageValue(PANELS_APPLIED_STORAGE_KEY, xaml);
+}
+
+export function clearAppliedPanelsXaml(): void {
+  removeStorageValue(PANELS_APPLIED_STORAGE_KEY);
 }
 
 export function readCustomImageAssets(): DesignerImageAsset[] {

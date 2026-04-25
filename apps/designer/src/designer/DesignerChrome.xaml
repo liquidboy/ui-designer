@@ -28,6 +28,7 @@
   <DocumentTabs>
     <DocumentTab Id="document" LabelBinding="documentFileName" Active="true" />
     <DocumentTab Id="chrome" Label="DesignerChrome.xaml" />
+    <DocumentTab Id="panels" Label="DesignerPanels.xaml" />
   </DocumentTabs>
   <ToolStrip>
     <Tool Id="selection" Label="Selection" Glyph="V" Active="true" />

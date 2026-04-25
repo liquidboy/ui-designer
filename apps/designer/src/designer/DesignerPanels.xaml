@@ -1,0 +1,15 @@
+<DesignerPanels xmlns="https://liquidboy.dev/ui-designer/designer-panels">
+  <LeftRail>
+    <Panel Id="solution" Title="Solution Explorer" />
+    <Panel Id="palette" Title="Palette" Caption="Pick a template, then insert it as a child or sibling. Placement adapts automatically for Canvas and Grid containers." />
+    <Panel Id="tree" Title="Component Tree" />
+    <Panel Id="assets" Title="Asset Library" Caption="Import real images, select a library entry, then apply it directly to the current image or insert it as a new component." />
+    <Panel Id="fonts" Title="Font Library" Caption="Import real font files or apply preset families. Imported fonts embed their FontSource into XAML when you apply them." />
+    <Panel Id="overlays" Title="Debug Overlays" Caption="Keep structure visible while editing text, images, and container layouts." />
+  </LeftRail>
+  <InspectorGroups>
+    <Group Id="element" Title="Element" />
+    <Group Id="image" Title="Image" />
+    <Group Id="typography" Title="Typography" />
+  </InspectorGroups>
+</DesignerPanels>

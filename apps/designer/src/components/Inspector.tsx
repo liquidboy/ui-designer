@@ -1,9 +1,11 @@
 import type { JSX } from 'preact';
 import type { UiElement } from '@ui-designer/ui-core';
 import type { DesignerChromeItem } from '../designer/chrome';
+import type { DesignerPanelsDefinition } from '../designer/panels';
 
 interface InspectorProps {
   dockTabs: readonly DesignerChromeItem[];
+  groups: DesignerPanelsDefinition['inspectorGroups'];
   selectedId: string | null;
   selectedElement: UiElement | null;
   isSelectedImageNode: boolean;
@@ -57,6 +59,7 @@ function onEnter(event: JSX.TargetedKeyboardEvent<HTMLInputElement | HTMLTextAre
 export function Inspector(props: InspectorProps) {
   const {
     dockTabs,
+    groups,
     selectedId,
     selectedElement,
     isSelectedImageNode,
@@ -123,7 +126,7 @@ export function Inspector(props: InspectorProps) {
       </div>
       {selectedElement ? (
         <section className="inspector-group">
-          <h3>Element</h3>
+          <h3>{groups.element.title}</h3>
           <label className="field">
             <span>Type</span>
             <input readOnly value={selectedElement.type} />
@@ -181,7 +184,7 @@ export function Inspector(props: InspectorProps) {
 
       {selectedElement && isSelectedImageNode ? (
         <section className="inspector-group">
-          <h3>Image</h3>
+          <h3>{groups.image.title}</h3>
           <p className="source-caption">Natural size: {selectedImageNaturalSizeLabel}</p>
           <label className="field">
             <span>Source</span>
@@ -235,7 +238,7 @@ export function Inspector(props: InspectorProps) {
 
       {selectedElement && isSelectedTextNode ? (
         <section className="inspector-group">
-          <h3>Typography</h3>
+          <h3>{groups.typography.title}</h3>
           <label className="field">
             <span>Font Family</span>
             <input
