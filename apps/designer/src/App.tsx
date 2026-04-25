@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { useEffect, useRef } from 'preact/hooks';
 import type { JSX } from 'preact';
 import {
   CommandStack,
@@ -23,7 +23,7 @@ import {
   type DesignerCommand,
   type DesignerTreeItem
 } from '@ui-designer/designer-core';
-import { RuntimeHost } from '@ui-designer/ui-runtime-web';
+import { RuntimeHost, useComputed, useSignalState } from '@ui-designer/ui-runtime-web';
 import { ensureImageNaturalSize, getImageNaturalSize, type Point, type UiElement } from '@ui-designer/ui-core';
 import { Inspector } from './components/Inspector';
 import { LeftRail } from './components/LeftRail';
@@ -363,11 +363,18 @@ function createInitialThemeState(): InitialThemeState {
 }
 
 export function App() {
-  const [customImageAssets, setCustomImageAssets] = useState<DesignerImageAsset[]>(() => readCustomImageAssets());
-  const [customFontAssets, setCustomFontAssets] = useState<DesignerFontAsset[]>(() => readCustomFontAssets());
-  const imageAssets = useMemo(() => buildImageLibrary(customImageAssets), [customImageAssets]);
-  const fontAssets = useMemo(() => buildFontLibrary(customFontAssets), [customFontAssets]);
-  const fontFaceDefinitions = useMemo(() => fontAssetsToFaceDefinitions(fontAssets), [fontAssets]);
+  const [customImageAssets, setCustomImageAssets, customImageAssetsSignal] = useSignalState<DesignerImageAsset[]>(() =>
+    readCustomImageAssets()
+  );
+  const [customFontAssets, setCustomFontAssets, customFontAssetsSignal] = useSignalState<DesignerFontAsset[]>(() =>
+    readCustomFontAssets()
+  );
+  const imageAssetsSignal = useComputed(() => buildImageLibrary(customImageAssetsSignal.value));
+  const fontAssetsSignal = useComputed(() => buildFontLibrary(customFontAssetsSignal.value));
+  const fontFaceDefinitionsSignal = useComputed(() => fontAssetsToFaceDefinitions(fontAssetsSignal.value));
+  const imageAssets = imageAssetsSignal.value;
+  const fontAssets = fontAssetsSignal.value;
+  const fontFaceDefinitions = fontFaceDefinitionsSignal.value;
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const documentFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -375,66 +382,68 @@ export function App() {
   const fontAssetInputRef = useRef<HTMLInputElement | null>(null);
   const runtimeRef = useRef<RuntimeHost | null>(null);
 
-  const [status, setStatus] = useState('Initializing designer viewport...');
-  const [hoveredId, setHoveredId] = useState<string | null>(null);
-  const [hoveredElement, setHoveredElement] = useState<UiElement | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [status, setStatus] = useSignalState('Initializing designer viewport...');
+  const [hoveredId, setHoveredId] = useSignalState<string | null>(null);
+  const [hoveredElement, setHoveredElement] = useSignalState<UiElement | null>(null);
+  const [selectedId, setSelectedId] = useSignalState<string | null>(null);
   const selectedIdRef = useRef<string | null>(null);
-  const [selectedElement, setSelectedElement] = useState<UiElement | null>(null);
-  const [documentXaml, setDocumentXaml] = useState(sampleXaml);
-  const [documentFileName, setDocumentFileName] = useState(DEFAULT_FILE_NAME);
-  const [treeItems, setTreeItems] = useState<DesignerTreeItem[]>([]);
-  const [selectedTemplateId, setSelectedTemplateId] = useState<PaletteTemplateId>('metric-card');
-  const [selectedAssetId, setSelectedAssetId] = useState(BUILTIN_IMAGE_ASSETS[0].id);
-  const [selectedFontId, setSelectedFontId] = useState(BUILTIN_FONT_ASSETS[0].id);
-  const [sourceDraft, setSourceDraft] = useState(sampleXaml);
-  const [sourceDirty, setSourceDirty] = useState(false);
-  const [sourceDiagnostic, setSourceDiagnostic] = useState<SourceDiagnostic | null>(null);
-  const [initialChromeState] = useState<InitialChromeState>(() => createInitialChromeState());
-  const [initialPanelsState] = useState<InitialPanelsState>(() => createInitialPanelsState());
-  const [initialThemeState] = useState<InitialThemeState>(() => createInitialThemeState());
-  const [activeSourceDocument, setActiveSourceDocument] = useState<SourceDocumentId>('document');
-  const [selectedLeftDockTabId, setSelectedLeftDockTabId] = useState(() =>
+  const [selectedElement, setSelectedElement] = useSignalState<UiElement | null>(null);
+  const [documentXaml, setDocumentXaml] = useSignalState(sampleXaml);
+  const [documentFileName, setDocumentFileName] = useSignalState(DEFAULT_FILE_NAME);
+  const [treeItems, setTreeItems] = useSignalState<DesignerTreeItem[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useSignalState<PaletteTemplateId>('metric-card');
+  const [selectedAssetId, setSelectedAssetId] = useSignalState(BUILTIN_IMAGE_ASSETS[0].id);
+  const [selectedFontId, setSelectedFontId] = useSignalState(BUILTIN_FONT_ASSETS[0].id);
+  const [sourceDraft, setSourceDraft] = useSignalState(sampleXaml);
+  const [sourceDirty, setSourceDirty] = useSignalState(false);
+  const [sourceDiagnostic, setSourceDiagnostic] = useSignalState<SourceDiagnostic | null>(null);
+  const [initialChromeState] = useSignalState<InitialChromeState>(() => createInitialChromeState());
+  const [initialPanelsState] = useSignalState<InitialPanelsState>(() => createInitialPanelsState());
+  const [initialThemeState] = useSignalState<InitialThemeState>(() => createInitialThemeState());
+  const [activeSourceDocument, setActiveSourceDocument] = useSignalState<SourceDocumentId>('document');
+  const [selectedLeftDockTabId, setSelectedLeftDockTabId] = useSignalState(() =>
     getInitialActiveItemId(initialChromeState.definition.leftDockTabs, 'project')
   );
-  const [selectedToolId, setSelectedToolId] = useState(() => getInitialActiveItemId(initialChromeState.definition.toolStrip, 'selection'));
-  const [chromeDefinition, setChromeDefinition] = useState<DesignerChromeDefinition>(initialChromeState.definition);
-  const [chromeSourceDraft, setChromeSourceDraft] = useState(initialChromeState.draft);
-  const [chromeSourceDirty, setChromeSourceDirty] = useState(initialChromeState.dirty);
-  const [chromeSourceDiagnostic, setChromeSourceDiagnostic] = useState<SourceDiagnostic | null>(initialChromeState.diagnostic);
-  const [panelsDefinition, setPanelsDefinition] = useState<DesignerPanelsDefinition>(initialPanelsState.definition);
-  const [panelsSourceDraft, setPanelsSourceDraft] = useState(initialPanelsState.draft);
-  const [panelsSourceDirty, setPanelsSourceDirty] = useState(initialPanelsState.dirty);
-  const [panelsSourceDiagnostic, setPanelsSourceDiagnostic] = useState<SourceDiagnostic | null>(initialPanelsState.diagnostic);
-  const [themeDefinition, setThemeDefinition] = useState<DesignerThemeDefinition>(initialThemeState.definition);
-  const [themeSourceDraft, setThemeSourceDraft] = useState(initialThemeState.draft);
-  const [themeSourceDirty, setThemeSourceDirty] = useState(initialThemeState.dirty);
-  const [themeSourceDiagnostic, setThemeSourceDiagnostic] = useState<SourceDiagnostic | null>(initialThemeState.diagnostic);
-  const [treeDragSourceId, setTreeDragSourceId] = useState<string | null>(null);
-  const [treeDropTargetId, setTreeDropTargetId] = useState<string | null>(null);
-  const [treeDropIntent, setTreeDropIntent] = useState<TreeDropIntent | null>(null);
-  const [xInput, setXInput] = useState('');
-  const [yInput, setYInput] = useState('');
-  const [widthInput, setWidthInput] = useState('');
-  const [heightInput, setHeightInput] = useState('');
-  const [colorInput, setColorInput] = useState('#67c7ff');
-  const [imageSourceInput, setImageSourceInput] = useState('');
-  const [imageStretchInput, setImageStretchInput] = useState('UniformToFill');
-  const [imageOpacityInput, setImageOpacityInput] = useState('1');
-  const [fontFamilyInput, setFontFamilyInput] = useState('');
-  const [fontSizeAttrInput, setFontSizeAttrInput] = useState('');
-  const [fontWeightInput, setFontWeightInput] = useState('');
-  const [fontStyleInput, setFontStyleInput] = useState('Normal');
-  const [textAlignmentInput, setTextAlignmentInput] = useState('Left');
-  const [flowDirectionInput, setFlowDirectionInput] = useState('Auto');
-  const [lockAspectRatio, setLockAspectRatio] = useState(true);
-  const [, setResourceVersion] = useState(0);
-  const [snapEnabled, setSnapEnabled] = useState(true);
-  const [historyVersion, setHistoryVersion] = useState(0);
-  const [cameraView, setCameraView] = useState<CameraState>(() => createCameraState());
-  const [overlaySettings, setOverlaySettings] = useState<DebugOverlaySettings>(DEFAULT_DEBUG_OVERLAY_SETTINGS);
-  const [selectedVisualStateId, setSelectedVisualStateId] = useState('normal');
-  const [isVisualStateRecording, setIsVisualStateRecording] = useState(false);
+  const [selectedToolId, setSelectedToolId] = useSignalState(() =>
+    getInitialActiveItemId(initialChromeState.definition.toolStrip, 'selection')
+  );
+  const [chromeDefinition, setChromeDefinition] = useSignalState<DesignerChromeDefinition>(initialChromeState.definition);
+  const [chromeSourceDraft, setChromeSourceDraft] = useSignalState(initialChromeState.draft);
+  const [chromeSourceDirty, setChromeSourceDirty] = useSignalState(initialChromeState.dirty);
+  const [chromeSourceDiagnostic, setChromeSourceDiagnostic] = useSignalState<SourceDiagnostic | null>(initialChromeState.diagnostic);
+  const [panelsDefinition, setPanelsDefinition] = useSignalState<DesignerPanelsDefinition>(initialPanelsState.definition);
+  const [panelsSourceDraft, setPanelsSourceDraft] = useSignalState(initialPanelsState.draft);
+  const [panelsSourceDirty, setPanelsSourceDirty] = useSignalState(initialPanelsState.dirty);
+  const [panelsSourceDiagnostic, setPanelsSourceDiagnostic] = useSignalState<SourceDiagnostic | null>(initialPanelsState.diagnostic);
+  const [themeDefinition, setThemeDefinition] = useSignalState<DesignerThemeDefinition>(initialThemeState.definition);
+  const [themeSourceDraft, setThemeSourceDraft] = useSignalState(initialThemeState.draft);
+  const [themeSourceDirty, setThemeSourceDirty] = useSignalState(initialThemeState.dirty);
+  const [themeSourceDiagnostic, setThemeSourceDiagnostic] = useSignalState<SourceDiagnostic | null>(initialThemeState.diagnostic);
+  const [treeDragSourceId, setTreeDragSourceId] = useSignalState<string | null>(null);
+  const [treeDropTargetId, setTreeDropTargetId] = useSignalState<string | null>(null);
+  const [treeDropIntent, setTreeDropIntent] = useSignalState<TreeDropIntent | null>(null);
+  const [xInput, setXInput] = useSignalState('');
+  const [yInput, setYInput] = useSignalState('');
+  const [widthInput, setWidthInput] = useSignalState('');
+  const [heightInput, setHeightInput] = useSignalState('');
+  const [colorInput, setColorInput] = useSignalState('#67c7ff');
+  const [imageSourceInput, setImageSourceInput] = useSignalState('');
+  const [imageStretchInput, setImageStretchInput] = useSignalState('UniformToFill');
+  const [imageOpacityInput, setImageOpacityInput] = useSignalState('1');
+  const [fontFamilyInput, setFontFamilyInput] = useSignalState('');
+  const [fontSizeAttrInput, setFontSizeAttrInput] = useSignalState('');
+  const [fontWeightInput, setFontWeightInput] = useSignalState('');
+  const [fontStyleInput, setFontStyleInput] = useSignalState('Normal');
+  const [textAlignmentInput, setTextAlignmentInput] = useSignalState('Left');
+  const [flowDirectionInput, setFlowDirectionInput] = useSignalState('Auto');
+  const [lockAspectRatio, setLockAspectRatio] = useSignalState(true);
+  const [, setResourceVersion] = useSignalState(0);
+  const [snapEnabled, setSnapEnabled] = useSignalState(true);
+  const [historyVersion, setHistoryVersion] = useSignalState(0);
+  const [cameraView, setCameraView] = useSignalState<CameraState>(() => createCameraState());
+  const [overlaySettings, setOverlaySettings] = useSignalState<DebugOverlaySettings>(DEFAULT_DEBUG_OVERLAY_SETTINGS);
+  const [selectedVisualStateId, setSelectedVisualStateId] = useSignalState('normal');
+  const [isVisualStateRecording, setIsVisualStateRecording] = useSignalState(false);
 
   const cameraRef = useRef<CameraState>(cameraView);
   const commandStackRef = useRef(new CommandStack());

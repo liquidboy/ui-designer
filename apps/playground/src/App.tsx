@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'preact/hooks';
-import { RuntimeHost } from '@ui-designer/ui-runtime-web';
+import { useEffect, useRef } from 'preact/hooks';
+import { RuntimeHost, useSignalState } from '@ui-designer/ui-runtime-web';
 
 function svgDataUri(svg: string): string {
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
@@ -52,9 +52,9 @@ const sampleXaml = `
 export function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const runtimeRef = useRef<RuntimeHost | null>(null);
-  const [status, setStatus] = useState('Booting runtime...');
-  const [hoveredId, setHoveredId] = useState<string | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [status, setStatus] = useSignalState('Booting runtime...');
+  const [hoveredId, setHoveredId] = useSignalState<string | null>(null);
+  const [selectedId, setSelectedId] = useSignalState<string | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;

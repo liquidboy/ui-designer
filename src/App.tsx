@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useRef } from 'preact/hooks';
+import { useSignalState } from '@ui-designer/ui-runtime-web';
 import { WebGPURenderer } from './services/WebGPURenderer';
 
 export function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [status, setStatus] = useState('Initializing WebGPU...');
+  const [status, setStatus] = useSignalState('Initializing WebGPU...');
 
   useEffect(() => {
     const canvas = canvasRef.current;

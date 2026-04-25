@@ -79,6 +79,7 @@ Responsibilities:
 - rebuilding the rendered tree from updated XAML without owning editor state
 - font-face registration and resource warmup before first paint
 - image natural-size warmup so layout can respond to asset metadata
+- Preact Signals primitives and signal-backed state helpers for browser-facing app state
 
 ### `packages/designer-core`
 Editor-domain logic for the visual design surface.

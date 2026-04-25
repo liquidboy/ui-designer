@@ -15,6 +15,7 @@
     "test:xaml": "npm run build && node scripts/test-xaml-fixtures.mjs"
   },
   "dependencies": {
+    "@preact/signals": "^2.9.0",
     "preact": "^10.26.9"
   },
   "devDependencies": {
