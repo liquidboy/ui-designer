@@ -1150,10 +1150,15 @@ async function runPhase15IntrinsicArrayFixtures() {
     'array-invalid-item.xaml': { errors: ['invalid-array-item-type'], warnings: [] },
     'array-missing-type.xaml': { errors: ['missing-required-member'], warnings: [] },
     'array-primitive-boolean-resource-runtime.xaml': { errors: [], warnings: [] },
+    'array-primitive-int32-boundary.xaml': { errors: [], warnings: [] },
+    'array-primitive-int32-out-of-range.xaml': { errors: ['invalid-primitive-range'], warnings: [] },
     'array-primitive-invalid-item.xaml': { errors: ['invalid-array-item-type'], warnings: [] },
     'array-primitive-invalid-value.xaml': { errors: ['invalid-number-value'], warnings: [] },
     'array-primitive-number-runtime.xaml': { errors: [], warnings: [] },
     'array-primitive-string-runtime.xaml': { errors: [], warnings: [] },
+    'array-primitive-system-type-runtime.xaml': { errors: [], warnings: [] },
+    'array-primitive-text-out-of-range.xaml': { errors: ['invalid-array-item-range'], warnings: [] },
+    'array-primitive-text-runtime.xaml': { errors: [], warnings: [] },
     'array-property-runtime.xaml': { errors: [], warnings: [] },
     'array-resource-static-runtime.xaml': { errors: [], warnings: [] },
     'array-type-extension.xaml': { errors: [], warnings: [] },
@@ -1179,8 +1184,11 @@ async function runPhase15IntrinsicArrayFixtures() {
 
     if (![
       'array-primitive-boolean-resource-runtime.xaml',
+      'array-primitive-int32-boundary.xaml',
       'array-primitive-number-runtime.xaml',
       'array-primitive-string-runtime.xaml',
+      'array-primitive-system-type-runtime.xaml',
+      'array-primitive-text-runtime.xaml',
       'array-property-runtime.xaml',
       'array-resource-static-runtime.xaml'
     ].includes(fileName)) {
@@ -1229,6 +1237,22 @@ async function runPhase15IntrinsicArrayFixtures() {
       const runtime = parseRuntimeXaml(input);
       assert.deepEqual(runtime.root.attributes.Content, [1, 2]);
       assert.equal(lowered.root.children[0]?.attributes.Type, '{x:Type x:Int32}');
+    }
+
+    if (fileName === 'array-primitive-int32-boundary.xaml') {
+      const runtime = parseRuntimeXaml(input);
+      assert.deepEqual(runtime.root.attributes.Content, [-2147483648, 2147483647]);
+    }
+
+    if (fileName === 'array-primitive-system-type-runtime.xaml') {
+      const runtime = parseRuntimeXaml(input);
+      assert.deepEqual(runtime.root.attributes.Content, [3]);
+      assert.equal(lowered.root.children[0]?.attributes.Type, '{x:Type System.Int32}');
+    }
+
+    if (fileName === 'array-primitive-text-runtime.xaml') {
+      const runtime = parseRuntimeXaml(input);
+      assert.deepEqual(runtime.root.attributes.Content, [42]);
     }
 
     if (fileName === 'array-primitive-boolean-resource-runtime.xaml') {

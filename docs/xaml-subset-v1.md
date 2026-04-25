@@ -147,7 +147,8 @@ Current status:
 6. Authoring compatibility lowering emits a structural `Array` node with item children so source round-tripping remains stable.
 7. Runtime lowering evaluates single `x:Array` member values and keyed `ResourceDictionary` entries to JavaScript arrays of supported runtime values.
 8. Supported primitive item elements such as `x:String`, `x:Int32`, `x:Double`, and `x:Boolean` coerce to JavaScript string, number, and boolean values.
-9. Full CLR namespace/type resolution, numeric range enforcement, and generic type execution remain outside v1.
+9. Integer primitive aliases and `x:Single` enforce scoped numeric ranges; `System.Int32`-style primitive type tokens are accepted by local type name.
+10. Full CLR namespace/type resolution, decimal precision enforcement, and generic type execution remain outside v1.
 
 Supported structural form:
 
@@ -190,6 +191,19 @@ Supported primitive item form:
     <x:Array Type="{x:Type x:Int32}">
       <x:Int32>1</x:Int32>
       <x:Int32>2</x:Int32>
+    </x:Array>
+  </Button.Content>
+</Button>
+```
+
+Supported primitive boundary form:
+
+```xaml
+<Button xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Button.Content>
+    <x:Array Type="x:Int32">
+      <x:Int32>-2147483648</x:Int32>
+      <x:Int32>2147483647</x:Int32>
     </x:Array>
   </Button.Content>
 </Button>

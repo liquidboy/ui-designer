@@ -475,6 +475,19 @@ const xamlPrimitiveTypeSyntax = {
   Decimal: 'number'
 } as const satisfies Record<string, XamlTextSyntaxKind>;
 
+const xamlPrimitiveIntegerRanges = {
+  Byte: { min: 0n, max: 255n },
+  SByte: { min: -128n, max: 127n },
+  Int16: { min: -32768n, max: 32767n },
+  Int32: { min: -2147483648n, max: 2147483647n },
+  Int64: { min: -9223372036854775808n, max: 9223372036854775807n },
+  UInt16: { min: 0n, max: 65535n },
+  UInt32: { min: 0n, max: 4294967295n },
+  UInt64: { min: 0n, max: 18446744073709551615n }
+} as const;
+
+const XAML_SINGLE_MAX_VALUE = 3.4028234663852886e38;
+
 function xamlPrimitiveTypeDefinition(name: keyof typeof xamlPrimitiveTypeSyntax): XamlTypeDefinition {
   return typeDefinition(name, {
     namespaceUri: XAML_LANGUAGE_NAMESPACE,
@@ -1168,6 +1181,53 @@ function isPrimitiveXamlObject(object: XamlObjectNode): boolean {
   return object.type.namespaceUri === XAML_LANGUAGE_NAMESPACE && object.type.localName in xamlPrimitiveTypeSyntax;
 }
 
+function primitiveObjectTextValue(object: XamlObjectNode, registry: XamlVocabularyRegistry): string {
+  const type = resolveXamlType(object.type, registry);
+  const contentProperty = type?.contentProperty;
+  if (!type || !contentProperty) {
+    return textFromValues(object.members.find((member) => member.syntax === 'content')?.values ?? []).trim();
+  }
+
+  return scalarTextFromValues(valuesForResolvedMember(object, type, contentProperty, registry)).trim();
+}
+
+function parseIntegerText(value: string): bigint | null {
+  const trimmed = value.trim();
+  if (!/^[+-]?\d+$/.test(trimmed)) {
+    return null;
+  }
+
+  try {
+    return BigInt(trimmed);
+  } catch {
+    return null;
+  }
+}
+
+function isValidPrimitiveRangeValue(typeName: string, value: string): boolean {
+  const localName = localTypeNameFromTextSyntax(typeName);
+  if (!localName) {
+    return true;
+  }
+
+  if (localName in xamlPrimitiveIntegerRanges) {
+    const integer = parseIntegerText(value);
+    if (integer == null) {
+      return false;
+    }
+
+    const range = xamlPrimitiveIntegerRanges[localName as keyof typeof xamlPrimitiveIntegerRanges];
+    return integer >= range.min && integer <= range.max;
+  }
+
+  if (localName === 'Single') {
+    const number = Number(value.trim());
+    return Number.isFinite(number) && Math.abs(number) <= XAML_SINGLE_MAX_VALUE;
+  }
+
+  return true;
+}
+
 function registryHasTypeName(typeName: string, registry: XamlVocabularyRegistry): boolean {
   if (isPrimitiveXamlTypeName(typeName)) {
     return true;
@@ -1708,13 +1768,22 @@ function validateXamlArraySemantics(
     for (const value of itemValues) {
       if (value.kind === 'text') {
         const text = value.text.trim();
-        if (text && !isValidXamlTextValue(text, primitiveSyntax)) {
-          diagnostics.push(validationDiagnostic(
-            'error',
-            'invalid-array-item-value',
-            `x:Array Type="${typeText}" contains a primitive item that is not valid ${primitiveSyntax} text.`,
-            value
-          ));
+        if (text) {
+          if (!isValidXamlTextValue(text, primitiveSyntax)) {
+            diagnostics.push(validationDiagnostic(
+              'error',
+              'invalid-array-item-value',
+              `x:Array Type="${typeText}" contains a primitive item that is not valid ${primitiveSyntax} text.`,
+              value
+            ));
+          } else if (!isValidPrimitiveRangeValue(typeText, text)) {
+            diagnostics.push(validationDiagnostic(
+              'error',
+              'invalid-array-item-range',
+              `x:Array Type="${typeText}" contains a primitive item outside the supported range.`,
+              value
+            ));
+          }
         }
         continue;
       }
@@ -1793,6 +1862,32 @@ function textFromRequiredMember(
   return '';
 }
 
+function validateXamlPrimitiveObjectSemantics(
+  object: XamlObjectNode,
+  type: XamlTypeDefinition,
+  diagnostics: XamlDiagnostic[],
+  registry: XamlVocabularyRegistry
+): void {
+  if (!isPrimitiveXamlObject(object)) {
+    return;
+  }
+
+  const syntax = xamlPrimitiveTypeSyntax[type.name as keyof typeof xamlPrimitiveTypeSyntax];
+  const text = primitiveObjectTextValue(object, registry);
+  if (!text || !isValidXamlTextValue(text, syntax)) {
+    return;
+  }
+
+  if (!isValidPrimitiveRangeValue(type.name, text)) {
+    diagnostics.push(validationDiagnostic(
+      'error',
+      'invalid-primitive-range',
+      `Intrinsic "x:${type.name}" value is outside the supported range.`,
+      object
+    ));
+  }
+}
+
 function validateXamlIntrinsicObjectSemantics(
   object: XamlObjectNode,
   type: XamlTypeDefinition,
@@ -1803,6 +1898,8 @@ function validateXamlIntrinsicObjectSemantics(
   if (type.namespaceUri !== XAML_LANGUAGE_NAMESPACE) {
     return;
   }
+
+  validateXamlPrimitiveObjectSemantics(object, type, diagnostics, registry);
 
   if (type.name === 'Type' || type.name === 'TypeExtension') {
     const typeName = textFromRequiredMember(object, type, 'TypeName', diagnostics, registry);
