@@ -7,9 +7,11 @@ import {
   cloneXamlNode,
   createCameraState,
   findDocumentNodeById,
+  formatDesignerDocumentDiagnostic,
   insertDocumentChild,
   moveDocumentNode,
   parseDesignerDocument,
+  parseDesignerDocumentWithDiagnostics,
   removeDocumentNode,
   screenToWorld,
   serializeDesignerDocument,
@@ -17,6 +19,7 @@ import {
   worldToScreen,
   type CameraState,
   type DesignerDocument,
+  type DesignerDocumentDiagnostic,
   type DesignerCommand,
   type DesignerTreeItem
 } from '@ui-designer/designer-core';
@@ -85,6 +88,53 @@ import {
   writeDraftXaml
 } from './designer/storage';
 
+const MAX_VISIBLE_SOURCE_DIAGNOSTICS = 4;
+
+interface SourceDiagnostic {
+  severity: DesignerDocumentDiagnostic['severity'];
+  message: string;
+}
+
+function formatSourceDiagnostics(diagnostics: DesignerDocumentDiagnostic[]): string {
+  if (diagnostics.length === 0) {
+    return 'Invalid XAML document.';
+  }
+
+  const visibleDiagnostics = diagnostics.slice(0, MAX_VISIBLE_SOURCE_DIAGNOSTICS);
+  const lines = visibleDiagnostics.map(formatDesignerDocumentDiagnostic);
+  const hiddenCount = diagnostics.length - visibleDiagnostics.length;
+
+  if (hiddenCount > 0) {
+    lines.push(`${hiddenCount} more diagnostic${hiddenCount === 1 ? '' : 's'}.`);
+  }
+
+  return lines.join('\n');
+}
+
+function sourceDiagnosticFromDiagnostics(diagnostics: DesignerDocumentDiagnostic[]): SourceDiagnostic | null {
+  const errors = diagnostics.filter((diagnostic) => diagnostic.severity === 'error');
+  if (errors.length > 0) {
+    return {
+      severity: 'error',
+      message: formatSourceDiagnostics(errors)
+    };
+  }
+
+  const warnings = diagnostics.filter((diagnostic) => diagnostic.severity === 'warning');
+  if (warnings.length > 0) {
+    return {
+      severity: 'warning',
+      message: formatSourceDiagnostics(warnings)
+    };
+  }
+
+  return null;
+}
+
+function inlineDiagnosticMessage(message: string): string {
+  return message.replace(/\s+/g, ' ').trim();
+}
+
 export function App() {
   const [customImageAssets, setCustomImageAssets] = useState<DesignerImageAsset[]>(() => readCustomImageAssets());
   const [customFontAssets, setCustomFontAssets] = useState<DesignerFontAsset[]>(() => readCustomFontAssets());
@@ -112,7 +162,7 @@ export function App() {
   const [selectedFontId, setSelectedFontId] = useState(BUILTIN_FONT_ASSETS[0].id);
   const [sourceDraft, setSourceDraft] = useState(sampleXaml);
   const [sourceDirty, setSourceDirty] = useState(false);
-  const [sourceError, setSourceError] = useState<string | null>(null);
+  const [sourceDiagnostic, setSourceDiagnostic] = useState<SourceDiagnostic | null>(null);
   const [treeDragSourceId, setTreeDragSourceId] = useState<string | null>(null);
   const [treeDropTargetId, setTreeDropTargetId] = useState<string | null>(null);
   const [treeDropIntent, setTreeDropIntent] = useState<TreeDropIntent | null>(null);
@@ -373,6 +423,7 @@ export function App() {
     };
 
     commandStackRef.current.execute(command);
+    setSourceDiagnostic(null);
     setHistoryVersion((value) => value + 1);
   };
 
@@ -677,7 +728,7 @@ export function App() {
     const nextSource = sourceDraft.trim();
     if (!nextSource) {
       const message = 'XAML source cannot be empty.';
-      setSourceError(message);
+      setSourceDiagnostic({ severity: 'error', message });
       setStatus(message);
       return;
     }
@@ -689,7 +740,7 @@ export function App() {
       setAsBase: true,
       clearHistory: true,
       resetSelection: true,
-      reflectErrorInSourcePane: true
+      reflectDiagnosticsInSourcePane: true
     });
   };
 
@@ -702,11 +753,28 @@ export function App() {
       setAsBase?: boolean;
       clearHistory?: boolean;
       resetSelection?: boolean;
-      reflectErrorInSourcePane?: boolean;
+      reflectDiagnosticsInSourcePane?: boolean;
     }
   ): boolean => {
     try {
-      const nextDocument = parseDesignerDocument(xaml);
+      const result = parseDesignerDocumentWithDiagnostics(xaml);
+
+      if (!result.document || result.hasErrors) {
+        const diagnostic: SourceDiagnostic = sourceDiagnosticFromDiagnostics(result.diagnostics) ?? {
+          severity: 'error',
+          message: 'Invalid XAML document.'
+        };
+        if (options.reflectDiagnosticsInSourcePane) {
+          setSourceDraft(xaml);
+          setSourceDirty(true);
+          setSourceDiagnostic(diagnostic);
+        }
+        setStatus(`${options.failurePrefix}: ${inlineDiagnosticMessage(diagnostic.message)}`);
+        return false;
+      }
+
+      const nextDocument = result.document;
+      const diagnostic = sourceDiagnosticFromDiagnostics(result.diagnostics);
       const normalizedXaml = serializeDesignerDocument(nextDocument);
 
       if (options.fileName) {
@@ -716,21 +784,23 @@ export function App() {
         commandStackRef.current.clear();
         setHistoryVersion((value) => value + 1);
       }
-      setSourceError(null);
+      setSourceDiagnostic(diagnostic);
       setSourceDirty(false);
       setSourceDraft(normalizedXaml);
       applyCommittedDocument(nextDocument, {
         setAsBase: options.setAsBase ?? true,
         selectionId: options.resetSelection === false ? selectedIdRef.current : null
       });
-      setStatus(options.successStatus);
+      setStatus(diagnostic ? `${options.successStatus} ${inlineDiagnosticMessage(diagnostic.message)}` : options.successStatus);
       return true;
     } catch (error: unknown) {
       const reason = error instanceof Error ? error.message : String(error);
-      if (options.reflectErrorInSourcePane) {
-        setSourceError(reason);
+      if (options.reflectDiagnosticsInSourcePane) {
+        setSourceDraft(xaml);
+        setSourceDirty(true);
+        setSourceDiagnostic({ severity: 'error', message: reason });
       }
-      setStatus(`${options.failurePrefix}: ${reason}`);
+      setStatus(`${options.failurePrefix}: ${inlineDiagnosticMessage(reason)}`);
       return false;
     }
   };
@@ -738,7 +808,7 @@ export function App() {
   const revertSourceDraft = () => {
     setSourceDraft(documentXaml);
     setSourceDirty(false);
-    setSourceError(null);
+    setSourceDiagnostic(null);
   };
 
   const saveDocumentToFile = async () => {
@@ -811,7 +881,8 @@ export function App() {
       failurePrefix: `Failed to load ${file.name}`,
       setAsBase: true,
       clearHistory: true,
-      resetSelection: true
+      resetSelection: true,
+      reflectDiagnosticsInSourcePane: true
     });
   };
 
@@ -1164,6 +1235,7 @@ export function App() {
     }
 
     commandStackRef.current.undo();
+    setSourceDiagnostic(null);
     setHistoryVersion((value) => value + 1);
   };
 
@@ -1173,6 +1245,7 @@ export function App() {
     }
 
     commandStackRef.current.redo();
+    setSourceDiagnostic(null);
     setHistoryVersion((value) => value + 1);
   };
 
@@ -1296,7 +1369,6 @@ export function App() {
   useEffect(() => {
     if (!sourceDirty) {
       setSourceDraft(documentXaml);
-      setSourceError(null);
     }
   }, [documentXaml, sourceDirty]);
 
@@ -1981,12 +2053,12 @@ export function App() {
         onCommitTypography={commitTypographySettings}
         sourceDraft={sourceDraft}
         sourceDirty={sourceDirty}
-        sourceError={sourceError}
+        sourceDiagnostic={sourceDiagnostic}
         canApplySource={canApplySource}
         onChangeSourceDraft={(value) => {
           setSourceDraft(value);
           setSourceDirty(true);
-          setSourceError(null);
+          setSourceDiagnostic(null);
         }}
         onApplySource={applySourceDraft}
         onRevertSourceDraft={revertSourceDraft}

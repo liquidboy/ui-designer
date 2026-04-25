@@ -1,6 +1,11 @@
 import type { JSX } from 'preact';
 import type { UiElement } from '@ui-designer/ui-core';
 
+interface SourceDiagnostic {
+  severity: 'error' | 'warning';
+  message: string;
+}
+
 interface InspectorProps {
   selectedId: string | null;
   selectedElement: UiElement | null;
@@ -46,7 +51,7 @@ interface InspectorProps {
   onCommitTypography: () => void;
   sourceDraft: string;
   sourceDirty: boolean;
-  sourceError: string | null;
+  sourceDiagnostic: SourceDiagnostic | null;
   canApplySource: boolean;
   onChangeSourceDraft: (value: string) => void;
   onApplySource: () => void;
@@ -105,12 +110,18 @@ export function Inspector(props: InspectorProps) {
     onCommitTypography,
     sourceDraft,
     sourceDirty,
-    sourceError,
+    sourceDiagnostic,
     canApplySource,
     onChangeSourceDraft,
     onApplySource,
     onRevertSourceDraft
   } = props;
+  const sourcePreviewClassName = [
+    'source-preview',
+    sourceDiagnostic?.severity === 'error' ? 'has-error' : '',
+    sourceDiagnostic?.severity === 'warning' ? 'has-warning' : ''
+  ].filter(Boolean).join(' ');
+  const sourceDiagnosticLabel = sourceDiagnostic?.severity === 'warning' ? 'XAML warning' : 'XAML error';
 
   return (
     <aside className="inspector">
@@ -306,7 +317,7 @@ export function Inspector(props: InspectorProps) {
           Edit raw XAML, then apply it back into the designer. Applying source resets undo history and refreshes the reset baseline.
         </p>
         <textarea
-          className={`source-preview ${sourceError ? 'has-error' : ''}`}
+          className={sourcePreviewClassName}
           value={sourceDraft}
           onInput={(event) => onChangeSourceDraft((event.target as HTMLTextAreaElement).value)}
           onKeyDown={(event) => {
@@ -317,7 +328,11 @@ export function Inspector(props: InspectorProps) {
           }}
           spellcheck={false}
         />
-        {sourceError ? <p className="source-error">Parse error: {sourceError}</p> : null}
+        {sourceDiagnostic ? (
+          <p className={`source-diagnostic is-${sourceDiagnostic.severity}`}>
+            {sourceDiagnosticLabel}: {sourceDiagnostic.message}
+          </p>
+        ) : null}
         <div className="toolbar-row">
           <button className="toolbar-btn" type="button" onClick={onApplySource} disabled={!canApplySource}>
             Apply XAML

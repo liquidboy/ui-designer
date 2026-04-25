@@ -1,6 +1,6 @@
-import { parseXaml } from '@ui-designer/xaml-parser';
+import { lowerXamlDocument, parseAndValidateXaml } from '@ui-designer/xaml-parser';
 import type { ColorRgba, Point as CorePoint } from '@ui-designer/ui-core';
-import type { XamlDocument, XamlNode, XamlPrimitive } from '@ui-designer/xaml-schema';
+import type { XamlDiagnostic, XamlDocument, XamlNode, XamlPrimitive } from '@ui-designer/xaml-schema';
 
 export interface CameraState {
   x: number;
@@ -28,6 +28,13 @@ export interface DesignerTreeItem {
 }
 
 export type DesignerDocument = XamlDocument;
+export type DesignerDocumentDiagnostic = XamlDiagnostic;
+
+export interface DesignerDocumentParseResult {
+  document: XamlDocument | null;
+  diagnostics: DesignerDocumentDiagnostic[];
+  hasErrors: boolean;
+}
 
 export function createCameraState(): CameraState {
   return { x: 0, y: 0, zoom: 1 };
@@ -91,8 +98,44 @@ export class CommandStack {
   }
 }
 
+export function formatDesignerDocumentDiagnostic(diagnostic: DesignerDocumentDiagnostic): string {
+  const location = diagnostic.span
+    ? ` at ${diagnostic.span.start.line}:${diagnostic.span.start.column}`
+    : '';
+  const label = diagnostic.severity === 'error' ? 'Error' : 'Warning';
+  return `${label} ${diagnostic.code}${location}: ${diagnostic.message}`;
+}
+
+export function parseDesignerDocumentWithDiagnostics(xaml: string): DesignerDocumentParseResult {
+  const result = parseAndValidateXaml(xaml);
+  const diagnostics = result.validation.diagnostics;
+  const hasErrors = result.validation.hasErrors;
+
+  if (!result.document || hasErrors) {
+    return {
+      document: null,
+      diagnostics,
+      hasErrors: true
+    };
+  }
+
+  return {
+    document: lowerXamlDocument(result.document),
+    diagnostics,
+    hasErrors: false
+  };
+}
+
 export function parseDesignerDocument(xaml: string): XamlDocument {
-  return parseXaml(xaml);
+  const result = parseDesignerDocumentWithDiagnostics(xaml);
+  if (!result.document) {
+    const reason = result.diagnostics.length > 0
+      ? result.diagnostics.map(formatDesignerDocumentDiagnostic).join('\n')
+      : 'Invalid XAML document.';
+    throw new Error(reason);
+  }
+
+  return result.document;
 }
 
 export function cloneXamlNode(node: XamlNode): XamlNode {
