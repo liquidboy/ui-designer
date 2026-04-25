@@ -313,8 +313,7 @@ export const PALETTE_TEMPLATES: readonly PaletteTemplate[] = [
           Width: 280,
           Height: 180,
           Rows: 2,
-          Columns: 2,
-          Background: '#18222e'
+          Columns: 2
         },
         [
           xamlNode('Rectangle', {

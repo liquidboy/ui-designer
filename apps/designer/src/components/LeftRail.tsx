@@ -202,7 +202,7 @@ export function LeftRail(props: LeftRailProps) {
           <div className="origin">Screen origin: {origin.x.toFixed(0)}, {origin.y.toFixed(0)}</div>
           <div className="origin">Camera: {cameraView.x.toFixed(0)}, {cameraView.y.toFixed(0)}</div>
           <div className="origin">Zoom: {(cameraView.zoom * 100).toFixed(0)}%</div>
-          <div className="origin">Snap: {snapEnabled ? 'On (8px)' : 'Off'} (toggle: G)</div>
+          <div className="origin">Snap: {snapEnabled ? 'On (8px)' : 'Off'} (toggle: Shift+G)</div>
           <div className="origin">File: {documentFileName}</div>
           <div className="toolbar-row">
             <button className="toolbar-btn" type="button" onClick={onUndo} disabled={!canUndo}>

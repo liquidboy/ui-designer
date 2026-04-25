@@ -729,6 +729,10 @@ button {
   cursor: nwse-resize;
 }
 
+.canvas.is-drawing-insert {
+  cursor: crosshair;
+}
+
 .selection-rect {
   position: absolute;
   border: 1px solid #49c3ff;
@@ -742,9 +746,34 @@ button {
 .hover-rect,
 .parent-rect,
 .text-guide,
-.image-guide {
+.image-guide,
+.insertion-preview {
   position: absolute;
   pointer-events: none;
+}
+
+.insertion-preview {
+  min-width: 1px;
+  min-height: 1px;
+  border: 1px solid var(--designer-accent-line);
+  background:
+    repeating-linear-gradient(
+      135deg,
+      rgba(21, 156, 220, 0.16) 0,
+      rgba(21, 156, 220, 0.16) 8px,
+      rgba(21, 156, 220, 0.04) 8px,
+      rgba(21, 156, 220, 0.04) 16px
+    );
+  box-shadow:
+    0 0 0 1px rgba(21, 156, 220, 0.2),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.insertion-chip {
+  left: 0;
+  top: -24px;
+  border-color: var(--designer-accent-line);
+  color: #d8f1ff;
 }
 
 .hover-rect {

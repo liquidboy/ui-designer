@@ -4,6 +4,13 @@ import type { DebugOverlaySettings, ViewportOverlayState } from '../designer/ove
 interface ViewportProps {
   canvasRef: { current: HTMLCanvasElement | null };
   activeToolId: string;
+  insertionPreview: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    label: string;
+  } | null;
   snapEnabled: boolean;
   gridStep: number;
   gridOffsetX: number;
@@ -17,6 +24,7 @@ export function Viewport(props: ViewportProps) {
   const {
     canvasRef,
     activeToolId,
+    insertionPreview,
     snapEnabled,
     gridStep,
     gridOffsetX,
@@ -37,6 +45,20 @@ export function Viewport(props: ViewportProps) {
           }}
         />
         <canvas className="canvas" data-tool={activeToolId} ref={canvasRef} />
+
+        {insertionPreview ? (
+          <div
+            className="insertion-preview"
+            style={{
+              left: `${insertionPreview.x}px`,
+              top: `${insertionPreview.y}px`,
+              width: `${insertionPreview.width}px`,
+              height: `${insertionPreview.height}px`
+            }}
+          >
+            <span className="overlay-chip insertion-chip">{insertionPreview.label}</span>
+          </div>
+        ) : null}
 
         {overlaySettings.parentBounds && overlayState.parentRect ? (
           <div

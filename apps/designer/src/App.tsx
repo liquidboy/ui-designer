@@ -135,6 +135,21 @@ type SourceDocumentId = 'document' | 'chrome' | 'panels' | 'theme';
 type InsertionToolId = 'rectangle' | 'text' | 'image' | 'grid';
 type EditableAttributeValue = string | number | boolean | null;
 
+interface InsertionPreview {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  label: string;
+}
+
+interface InsertionDraft {
+  toolId: InsertionToolId;
+  pointerId: number;
+  startPoint: Point;
+  currentPoint: Point;
+}
+
 function editableAttributeValue(value: unknown): EditableAttributeValue {
   return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' ? value : null;
 }
@@ -152,6 +167,26 @@ const TOOL_TEMPLATE_IDS: Record<InsertionToolId, PaletteTemplateId> = {
   image: 'image-frame',
   grid: 'swatch-grid'
 };
+
+const TOOL_SHORTCUTS: Record<string, string> = {
+  v: 'selection',
+  h: 'pan',
+  z: 'zoom',
+  p: 'pen',
+  t: 'text',
+  r: 'rectangle',
+  i: 'image',
+  g: 'grid'
+};
+
+const DEFAULT_INSERTION_SIZE: Record<InsertionToolId, { width: number; height: number }> = {
+  rectangle: { width: 160, height: 96 },
+  text: { width: 180, height: 40 },
+  image: { width: 220, height: 140 },
+  grid: { width: 280, height: 180 }
+};
+
+const MIN_DRAW_SIZE = 24;
 
 const VISUAL_STATE_OPTIONS: readonly VisualStateOption[] = [
   {
@@ -449,10 +484,12 @@ export function App() {
   const [overlaySettings, setOverlaySettings] = useSignalState<DebugOverlaySettings>(DEFAULT_DEBUG_OVERLAY_SETTINGS);
   const [selectedVisualStateId, setSelectedVisualStateId] = useSignalState('normal');
   const [isVisualStateRecording, setIsVisualStateRecording] = useSignalState(false);
+  const [insertionPreview, setInsertionPreview] = useSignalState<InsertionPreview | null>(null);
 
   const cameraRef = useRef<CameraState>(cameraView);
   const commandStackRef = useRef(new CommandStack());
   const activeToolIdRef = useRef(selectedToolId);
+  const insertionDraftRef = useRef<InsertionDraft | null>(null);
   const selectedElementRef = useRef<UiElement | null>(null);
   const isPanningRef = useRef(false);
   const isDraggingRef = useRef(false);
@@ -1689,6 +1726,23 @@ export function App() {
 
   const isInsertionTool = (toolId: string): toolId is InsertionToolId => toolId in TOOL_TEMPLATE_IDS;
 
+  const toolLabelForId = (toolId: string): string =>
+    chromeDefinition.toolStrip.find((tool) => tool.id === toolId)?.label ?? toolId;
+
+  const selectDesignerToolById = (toolId: string, announce = true): boolean => {
+    const tool = chromeDefinition.toolStrip.find((item) => item.id === toolId) ?? null;
+    if (!tool) {
+      return false;
+    }
+
+    setSelectedToolId(tool.id);
+    activeToolIdRef.current = tool.id;
+    if (announce) {
+      setStatus(`${tool.label} tool selected.`);
+    }
+    return true;
+  };
+
   const zoomAtCanvasPoint = (point: Point, factor: number) => {
     const cameraNow = cameraRef.current;
     const worldBefore = screenToWorld(point, cameraNow);
@@ -1702,11 +1756,79 @@ export function App() {
     setStatus(`Zoom tool set the artboard to ${(nextZoom * 100).toFixed(0)}%.`);
   };
 
-  const insertToolTemplateAtPoint = (toolId: InsertionToolId, point: Point) => {
+  const previewFromDraft = (draft: InsertionDraft): InsertionPreview => {
+    const x = Math.min(draft.startPoint.x, draft.currentPoint.x);
+    const y = Math.min(draft.startPoint.y, draft.currentPoint.y);
+    const width = Math.max(1, Math.abs(draft.currentPoint.x - draft.startPoint.x));
+    const height = Math.max(1, Math.abs(draft.currentPoint.y - draft.startPoint.y));
+
+    return {
+      x,
+      y,
+      width,
+      height,
+      label: toolLabelForId(draft.toolId)
+    };
+  };
+
+  const startInsertionDraft = (toolId: InsertionToolId, pointerId: number, point: Point, canvas: HTMLCanvasElement) => {
+    const draft: InsertionDraft = {
+      toolId,
+      pointerId,
+      startPoint: point,
+      currentPoint: point
+    };
+
+    insertionDraftRef.current = draft;
+    setInsertionPreview(previewFromDraft(draft));
+    canvas.classList.add('is-drawing-insert');
+    canvas.setPointerCapture(pointerId);
+    setStatus(`Drag to draw a ${toolLabelForId(toolId)}. Click for the default size.`);
+  };
+
+  const updateInsertionDraft = (point: Point) => {
+    const draft = insertionDraftRef.current;
+    if (!draft) {
+      return;
+    }
+
+    draft.currentPoint = point;
+    setInsertionPreview(previewFromDraft(draft));
+  };
+
+  const normalizeInsertionRect = (draft: InsertionDraft): { x: number; y: number; width: number; height: number } => {
+    const startWorld = screenToWorld(draft.startPoint, cameraRef.current);
+    const currentWorld = screenToWorld(draft.currentPoint, cameraRef.current);
+    const distance = Math.hypot(draft.currentPoint.x - draft.startPoint.x, draft.currentPoint.y - draft.startPoint.y);
+    const defaultSize = DEFAULT_INSERTION_SIZE[draft.toolId];
+
+    if (distance < 4) {
+      return {
+        x: Math.round(snapValue(startWorld.x)),
+        y: Math.round(snapValue(startWorld.y)),
+        width: defaultSize.width,
+        height: defaultSize.height
+      };
+    }
+
+    const left = Math.min(startWorld.x, currentWorld.x);
+    const top = Math.min(startWorld.y, currentWorld.y);
+    const width = Math.max(MIN_DRAW_SIZE, Math.abs(currentWorld.x - startWorld.x));
+    const height = Math.max(MIN_DRAW_SIZE, Math.abs(currentWorld.y - startWorld.y));
+
+    return {
+      x: Math.round(snapValue(left)),
+      y: Math.round(snapValue(top)),
+      width: Math.round(Math.max(MIN_DRAW_SIZE, snapValue(width))),
+      height: Math.round(Math.max(MIN_DRAW_SIZE, snapValue(height)))
+    };
+  };
+
+  const insertToolTemplateFromDraft = (draft: InsertionDraft) => {
     const currentDocument = documentRef.current;
     const parentId = 'root.0';
     const parentNode = currentDocument ? findDocumentNodeById(currentDocument, parentId) : null;
-    const template = findPaletteTemplate(TOOL_TEMPLATE_IDS[toolId]);
+    const template = findPaletteTemplate(TOOL_TEMPLATE_IDS[draft.toolId]);
     if (!currentDocument || !parentNode || !canInsertTemplateIntoParent(template, parentNode)) {
       setStatus(`The ${template.title} tool cannot insert into the current document root.`);
       return;
@@ -1715,20 +1837,39 @@ export function App() {
     const insertIndex = parentNode.children.length;
     const nextNode = createTemplateNode(template, parentNode, insertIndex);
     if (parentNode.type.toLowerCase() === 'canvas') {
-      const world = screenToWorld(point, cameraRef.current);
-      nextNode.attributes.X = Math.round(snapValue(world.x));
-      nextNode.attributes.Y = Math.round(snapValue(world.y));
+      const rect = normalizeInsertionRect(draft);
+      nextNode.attributes.X = rect.x;
+      nextNode.attributes.Y = rect.y;
+      nextNode.attributes.Width = rect.width;
+      nextNode.attributes.Height = rect.height;
     }
 
     executeDocumentCommand(
-      `tool-insert-${toolId}`,
+      `tool-insert-${draft.toolId}`,
       insertDocumentChild(currentDocument, parentId, nextNode, insertIndex),
       {
         nextSelectionId: `${parentId}.${insertIndex}`,
         previousSelectionId: selectedIdRef.current
       }
     );
-    setStatus(`Inserted ${template.title} with the ${toolId} tool.`);
+    setStatus(`Drew ${template.title} with the ${toolLabelForId(draft.toolId)} tool.`);
+  };
+
+  const finishInsertionDraft = (canvas: HTMLCanvasElement) => {
+    const draft = insertionDraftRef.current;
+    if (!draft) {
+      return;
+    }
+
+    insertionDraftRef.current = null;
+    setInsertionPreview(null);
+    canvas.classList.remove('is-drawing-insert');
+    try {
+      canvas.releasePointerCapture(draft.pointerId);
+    } catch {
+      // Pointer capture may already be gone if the pointer ended outside the canvas.
+    }
+    insertToolTemplateFromDraft(draft);
   };
 
   const clearDraftStorage = () => {
@@ -1901,7 +2042,7 @@ export function App() {
 
         if (isInsertionTool(activeToolId)) {
           event.preventDefault();
-          insertToolTemplateAtPoint(activeToolId, point);
+          startInsertionDraft(activeToolId, event.pointerId, point, canvas);
           return;
         }
 
@@ -1942,6 +2083,11 @@ export function App() {
     };
 
     const onPointerMove = (event: PointerEvent) => {
+      if (insertionDraftRef.current) {
+        updateInsertionDraft(toCanvasPoint(event));
+        return;
+      }
+
       if (isResizingRef.current && resizeElementIdRef.current) {
         const startDocument = resizeStartDocumentRef.current;
         if (!startDocument) {
@@ -2022,6 +2168,10 @@ export function App() {
     };
 
     const endPan = () => {
+      if (insertionDraftRef.current) {
+        finishInsertionDraft(canvas);
+      }
+
       if (isResizingRef.current) {
         const runtime = runtimeRef.current;
         const id = resizeElementIdRef.current;
@@ -2108,6 +2258,9 @@ export function App() {
       canvas.classList.remove('is-panning');
       canvas.classList.remove('is-dragging');
       canvas.classList.remove('is-resizing');
+      canvas.classList.remove('is-drawing-insert');
+      insertionDraftRef.current = null;
+      setInsertionPreview(null);
     };
   }, []);
 
@@ -2139,7 +2292,10 @@ export function App() {
       const isUndo = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z' && !event.shiftKey;
       const isRedoMac = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z' && event.shiftKey;
       const isRedoWin = event.ctrlKey && event.key.toLowerCase() === 'y';
-      const isToggleSnap = !event.metaKey && !event.ctrlKey && !event.altKey && event.key.toLowerCase() === 'g';
+      const key = event.key.toLowerCase();
+      const isPlainKey = !event.metaKey && !event.ctrlKey && !event.altKey;
+      const isToggleSnap = isPlainKey && event.shiftKey && key === 'g';
+      const shortcutToolId = isPlainKey && !event.shiftKey ? TOOL_SHORTCUTS[key] : undefined;
       const arrowKey = event.key;
       const isArrow =
         arrowKey === 'ArrowUp' ||
@@ -2150,6 +2306,11 @@ export function App() {
       if (isToggleSnap) {
         event.preventDefault();
         setSnapEnabled((value) => !value);
+        return;
+      }
+
+      if (shortcutToolId && selectDesignerToolById(shortcutToolId)) {
+        event.preventDefault();
         return;
       }
 
@@ -2196,7 +2357,7 @@ export function App() {
     return () => {
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [snapEnabled, historyVersion]);
+  }, [snapEnabled, historyVersion, chromeDefinition.toolStrip]);
 
   const commitInspectorPosition = () => {
     const currentDocument = documentRef.current;
@@ -2427,9 +2588,7 @@ export function App() {
   const activeDesignerToolId = activeDesignerTool?.id ?? selectedToolId;
   const activeDesignerToolLabel = activeDesignerTool ? resolveChromeLabel(activeDesignerTool) : 'Selection';
   const selectDesignerTool = (tool: DesignerChromeItem) => {
-    setSelectedToolId(tool.id);
-    activeToolIdRef.current = tool.id;
-    setStatus(`${resolveChromeLabel(tool)} tool selected.`);
+    selectDesignerToolById(tool.id);
   };
   const commandHandlers: Record<string, { onClick: () => void; disabled?: boolean }> = {
     undo: { onClick: performUndo, disabled: !canUndo },
@@ -2778,6 +2937,7 @@ export function App() {
               <Viewport
                 canvasRef={canvasRef}
                 activeToolId={activeDesignerToolId}
+                insertionPreview={insertionPreview}
                 snapEnabled={snapEnabled}
                 gridStep={gridStep}
                 gridOffsetX={gridOffsetX}
