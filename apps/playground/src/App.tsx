@@ -31,7 +31,7 @@ const sampleXaml = `
           TextWrapping="Wrap"
           FontStyle="Italic"
           FontFamily="Georgia"
-          Text="Hello WebGPU XAML now supports wrapped text, fallback-aware font loading, and styled glyph rendering."
+          Text="{Binding Path=HeroTitle}"
         />
         <TextBlock
           Width="220"
@@ -39,7 +39,7 @@ const sampleXaml = `
           FlowDirection="RightToLeft"
           Text="مرحبا بالنص عبر WebGPU مع اتجاه من اليمين إلى اليسار."
         />
-        <Button Width="176" TextTrimming="CharacterEllipsis" Content="Launch a much longer action label" />
+        <Button Width="176" TextTrimming="CharacterEllipsis" Content="{Binding Action.Label}" />
       </StackPanel>
     </Border>
     <Image Grid.Row="0" Grid.Column="1" Source="${SAMPLE_IMAGE_SOURCE}" Stretch="UniformToFill" Background="#111923" />
@@ -70,6 +70,10 @@ export function App() {
       .boot({
         xaml: sampleXaml,
         canvas,
+        dataContext: {
+          HeroTitle: 'Hello WebGPU XAML now supports runtime binding, wrapped text, and styled glyph rendering.',
+          Action: { Label: 'Launch a much longer action label' }
+        },
         onHoveredElementChange: setHoveredId,
         onSelectedElementChange: setSelectedId
       })

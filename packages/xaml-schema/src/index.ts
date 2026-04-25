@@ -1,4 +1,4 @@
-export type XamlPrimitive = string | number | boolean;
+export type XamlPrimitive = string | number | boolean | null;
 
 export interface XamlAttributeMap {
   [key: string]: XamlPrimitive;
@@ -847,8 +847,19 @@ function markupExtensionsFromValues(values: readonly XamlValueNode[]): XamlMarku
   return extensions;
 }
 
+function isRuntimeSupportedMarkupExtension(extension: XamlMarkupExtensionNode): boolean {
+  return (
+    (extension.type.localName === 'Binding' && extension.type.namespaceUri == null) ||
+    (extension.type.localName === 'Null' && extension.type.namespaceUri === XAML_LANGUAGE_NAMESPACE)
+  );
+}
+
 function warnUnsupportedMarkupExtensions(member: XamlMemberNode, diagnostics: XamlDiagnostic[]): void {
   for (const extension of markupExtensionsFromValues(member.values)) {
+    if (isRuntimeSupportedMarkupExtension(extension)) {
+      continue;
+    }
+
     diagnostics.push(validationDiagnostic(
       'warning',
       'unsupported-markup-extension',

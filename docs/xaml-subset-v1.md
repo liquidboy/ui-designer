@@ -79,7 +79,7 @@ Current status:
 
 ## Binding v1
 
-Design target, not yet implemented:
+Supported runtime form:
 
 ```xaml
 <TextBlock Text="{Binding path=Title}" />
@@ -88,11 +88,13 @@ Design target, not yet implemented:
 Current status:
 
 1. Attribute-based binding expressions now parse into a structured markup extension AST instead of plain text.
-2. Escaped literals such as `{}{Binding Path=Title}` stay as literal text, and nested attribute-value extensions are preserved structurally.
-3. Runtime binding evaluation is not available yet, so parsed expressions currently lower back to raw strings for compatibility.
-4. Property-element text markup extensions are still pending.
+2. Runtime lowering evaluates one-way `Binding` paths against the supplied runtime data context.
+3. Authoring lowering still preserves parsed binding expressions as raw strings for source compatibility.
+4. Escaped literals such as `{}{Binding Path=Title}` stay as literal text, and nested attribute-value extensions are preserved structurally.
+5. `{x:Null}` lowers to semantic `null` in runtime mode and remains raw text in authoring mode.
+6. Property-element text markup extensions are still pending.
 
-Planned constraints once binding lands:
+Current constraints:
 
 1. One-way binding only.
 2. Path lookup on a supplied data context object.

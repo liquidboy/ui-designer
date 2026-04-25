@@ -1,0 +1,3 @@
+<Button>
+  <TextBlock Text="{Binding Path=Title}" />
+</Button>

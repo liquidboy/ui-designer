@@ -27,7 +27,7 @@ The target is core `MS-XAML-2017` language/object-mapping behavior plus a custom
 | Well-formed unknown type | Preserve as object node. | Error unless the active vocabulary resolves it. | Not lowered. | Preserve if source is reserialized from infoset. |
 | Well-formed unknown member | Preserve as member node. | Error unless the active vocabulary resolves it. | Not lowered. | Preserve if source is reserialized from infoset. |
 | Unsupported intrinsic directive | Preserve structurally. | Warning or error based on row-level policy. | Ignored only when row says preserved-only. | Preserve. |
-| Unsupported markup extension | Preserve as structured extension AST. | Warning until runtime support exists. | Not evaluated. | Preserve. |
+| Unsupported markup extension | Preserve as structured extension AST. | Warning until runtime support exists. | Supported extensions evaluate only in runtime lowering. | Preserve. |
 | Valid but unrenderable vocabulary member | Preserve and validate if schema allows it. | Warning when runtime lowering skips it. | Skip with diagnostic, never silently. | Preserve. |
 
 Default rule: parser support should be broader than runtime execution support. Unsupported but well-formed constructs should be represented structurally before validation decides whether they are allowed.
@@ -53,8 +53,8 @@ Default rule: parser support should be broader than runtime execution support. U
 | Dictionary members | Partial | Phase 3+ | Add dictionary semantics, key validation, and lowering. | Designer theme `Colors` now validates dictionary items with explicit `x:Key` or implicit `Color.Id`; broader resource dictionaries are still pending. |
 | Text syntax conversion | Partial | Phase 2 | Move primitive conversion into schema-defined text syntax. | Validation is schema-aware today, but legacy lowering still uses shared primitive coercion. |
 | Whitespace handling | Missing | Phase 3+ | Add schema-aware whitespace preservation/collapse rules. | Include `xml:space` once directive propagation exists. |
-| Markup extension AST | Partial | Phase 5 | Parse brace syntax into structured expressions. | Attribute values now parse into a structured AST and lower back to raw text for compatibility; property-element text and evaluation are still pending. |
-| Nested markup extensions | Partial | Phase 5 | Support nested extension arguments. | Nested attribute-value extensions now parse recursively, but runtime evaluation is still pending. |
+| Markup extension AST | Partial | Phase 5 | Parse brace syntax into structured expressions. | Attribute values now parse into a structured AST; runtime lowering evaluates supported extensions while authoring lowering preserves raw text. Property-element text is still pending. |
+| Nested markup extensions | Partial | Phase 5 | Support nested extension arguments. | Nested attribute-value extensions now parse recursively; unsupported nested extensions still warn and preserve. |
 | Semantic serializer | Partial | Phase 7 | Serialize from infoset/semantic model, not string concatenation. | Byte-for-byte formatting preservation is not required. |
 | Semantic round-trip tests | Missing | Phase 8 | Add fixtures for parse, validate, lower, serialize, parse. | Matrix rows should eventually map to tests. |
 
@@ -67,7 +67,7 @@ Default rule: parser support should be broader than runtime execution support. U
 | `x:Class` | Current | Phase 4 | Parse, preserve, and enforce root-only placement. | Preserved-only; no markup compilation. | Non-root usage now raises `invalid-directive-placement`. |
 | `x:Uid` | Current | Phase 4 | Parse and preserve with warning. | Preserved-only. | Useful for localization metadata, not rendering. |
 | `x:TypeArguments` | Current | Phase 4 | Parse and preserve with warning. | Preserved-only. | Generic type execution can remain unsupported. |
-| `x:Null` | Partial | Phase 5 | Parse as markup extension or intrinsic null expression. | Parsed as a generic markup extension and preserved with warnings; it is not lowered to runtime `null` yet. | Optional early once markup extensions land. |
+| `x:Null` | Partial | Phase 5 | Parse as markup extension or intrinsic null expression. | Runtime lowering maps `{x:Null}` to semantic `null`; authoring lowering preserves raw text. | Serializer support for emitting `x:` namespace declarations from null values is still pending. |
 | `x:Array` | Deferred | Deferred | Preserve as unsupported intrinsic object/extension. | Not lowered. | Needs array/list semantics first. |
 | `x:Static` | Deferred | Deferred | Preserve as unsupported markup extension. | Not evaluated. | Requires a static member resolution model. |
 | `x:Reference` | Deferred | Deferred | Preserve as unsupported markup extension. | Not evaluated. | Requires namescope and object reference resolution. |
@@ -113,6 +113,7 @@ Default rule: parser support should be broader than runtime execution support. U
 | Multiple values for single-child content property | Error | Prevents ambiguous lowering. |
 | Unsupported but preserved directive | Warning unless placement is invalid. | Keeps parser round-trip broader than runtime support. |
 | Unsupported markup extension | Warning until a member requires concrete value evaluation. | Keeps source round-trippable without pretending runtime support exists. |
+| Supported runtime markup extension | No warning. | `Binding` and `{x:Null}` are evaluated by runtime lowering and preserved by authoring lowering. |
 | Invalid directive placement | Error | Placement rules are part of the language target. |
 | Namescope collision | Error | Required once `x:Name` validation exists. |
 | Invalid collection item type | Error | Collection metadata controls which known item types can appear in a list or dictionary. |
@@ -123,19 +124,21 @@ Current limitation:
 
 1. Namescope validation currently treats the document root as the only namescope. Nested namescopes for templates, resources, or future object islands are still deferred.
 2. Structured markup extension parsing currently applies to attribute values; property-element text markup extensions still fall through as plain text.
+3. Runtime `Binding` evaluation is v1-only: one-way path lookup against a supplied data context, without converters or multi-binding.
 
 ## Current Implementation Checkpoint
 
 Completed foundation work:
 
 1. Infoset/schema primitives, vocabulary registries, and compatibility lowering are in place.
-2. Strict parse/validate/lower paths now back the runtime, `designer-core`, and the designer config vocabularies.
+2. Runtime parse/validate/lower paths now back rendered app documents, while strict authoring parse/validate/lower paths back `designer-core` and the designer config vocabularies.
 3. Validation fixtures cover parser structure, registry-backed validation, lowering behavior, and designer config namespaces.
 4. Intrinsic directive validation now includes `x:Name` document-namescope checks and root-only `x:Class` placement.
 5. Attribute-value markup extensions now parse into structured AST nodes, including nested extensions, escaped `{}{...}` literals, and prefixed forms such as `{x:Null}`, while lowering preserves the original raw text for runtime compatibility.
 6. Collection metadata now validates allowed item types for list containers, and dictionary metadata validates explicit `x:Key`, implicit key properties, missing keys, and duplicate keys.
+7. Runtime lowering now evaluates v1 `Binding` paths against a supplied data context and maps `{x:Null}` to semantic `null`.
 
 Next slice:
 
-1. Add runtime markup extension evaluation, starting with `Binding` and `x:Null`, once lowered values can carry non-text semantics downstream.
+1. Add property-element text markup extension parsing so markup extension coverage is not limited to attributes.
 2. Follow that with broader resource dictionary lowering and semantic serializer coverage.

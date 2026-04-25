@@ -84,7 +84,7 @@ globalThis.Node = {
 };
 globalThis.DOMParser = FixtureDOMParser;
 
-const { lowerXamlDocument, parseAndValidateXaml, parseXamlToInfoset } = await import('../packages/xaml-parser/dist/index.js');
+const { lowerXamlDocument, parseAndValidateXaml, parseRuntimeXaml, parseStrictXaml, parseXamlToInfoset } = await import('../packages/xaml-parser/dist/index.js');
 
 function splitQualifiedName(rawName) {
   const separator = rawName.indexOf(':');
@@ -547,13 +547,13 @@ async function runPhase4DesignerConfigFixtures() {
 
 async function runPhase5MarkupExtensionFixtures() {
   const expectations = {
-    'binding-attribute.xaml': { errors: [], warnings: ['unsupported-markup-extension'] },
+    'binding-attribute.xaml': { errors: [], warnings: [] },
     'nested-extension.xaml': {
       errors: [],
-      warnings: ['unsupported-markup-extension', 'unsupported-markup-extension']
+      warnings: ['unsupported-markup-extension']
     },
     'escaped-literal.xaml': { errors: [], warnings: [] },
-    'x-null-attribute.xaml': { errors: [], warnings: ['unsupported-markup-extension'] },
+    'x-null-attribute.xaml': { errors: [], warnings: [] },
     'invalid-markup-extension.xaml': { errors: ['invalid-markup-extension-syntax'], warnings: [] }
   };
 
@@ -637,6 +637,64 @@ async function runPhase5MarkupExtensionFixtures() {
   return files.length;
 }
 
+async function runPhase7RuntimeExtensionFixtures() {
+  const files = await listFixtureFiles('phase7-runtime-extensions');
+  const dataContext = {
+    Title: 'Runtime title',
+    Action: { Label: 'Save now' },
+    User: { Profile: { DisplayName: 'Ada Lovelace' } }
+  };
+
+  for (const fileName of files) {
+    const input = await readFixture('phase7-runtime-extensions', fileName);
+    const result = parseAndValidateXaml(input);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'error'), [], `${fileName} validation errors`);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'warning'), [], `${fileName} validation warnings`);
+
+    const preserved = lowerXamlDocument(result.document);
+    const runtime = parseRuntimeXaml(input, {}, undefined, { dataContext });
+    const strict = parseStrictXaml(input);
+
+    if (fileName === 'binding-text.xaml') {
+      assert.equal(preserved.root.attributes.Text, '{Binding Path=Title}');
+      assert.equal(strict.root.attributes.Text, '{Binding Path=Title}');
+      assert.equal(runtime.root.attributes.Text, 'Runtime title');
+      assert.equal(runtime.root.text, 'Runtime title');
+    }
+
+    if (fileName === 'binding-positional.xaml') {
+      assert.equal(preserved.root.attributes.Content, '{Binding Action.Label}');
+      assert.equal(runtime.root.attributes.Content, 'Save now');
+      assert.equal(runtime.root.text, 'Save now');
+    }
+
+    if (fileName === 'binding-nested-path.xaml') {
+      assert.equal(runtime.root.attributes.Text, 'Ada Lovelace');
+      assert.equal(runtime.root.text, 'Ada Lovelace');
+    }
+
+    if (fileName === 'x-null-content.xaml') {
+      assert.equal(preserved.root.attributes.Content, '{x:Null}');
+      assert.equal(runtime.root.attributes.Content, null);
+      assert.equal(runtime.root.text, '');
+    }
+
+    if (fileName === 'escaped-literal.xaml') {
+      assert.equal(runtime.root.attributes.Text, '{Binding Path=Title}');
+      assert.equal(runtime.root.text, '{Binding Path=Title}');
+    }
+
+    if (fileName === 'object-content.xaml') {
+      assert.equal(runtime.root.attributes.Content, undefined);
+      assert.equal(runtime.root.children.length, 1);
+      assert.equal(runtime.root.children[0].attributes.Text, 'Runtime title');
+      assert.equal(runtime.root.children[0].text, 'Runtime title');
+    }
+  }
+
+  return files.length;
+}
+
 async function runPhase6CollectionFixtures() {
   const expectations = {
     'theme-dictionary-xkey.xaml': { errors: [], warnings: [] },
@@ -682,7 +740,8 @@ const phase3Count = await runPhase3LoweringFixtures();
 const phase4Count = await runPhase4DesignerConfigFixtures();
 const phase5Count = await runPhase5MarkupExtensionFixtures();
 const phase6Count = await runPhase6CollectionFixtures();
+const phase7Count = await runPhase7RuntimeExtensionFixtures();
 
 console.log(
-  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections).`
+  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions).`
 );

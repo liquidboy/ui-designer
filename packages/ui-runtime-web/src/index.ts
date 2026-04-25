@@ -19,6 +19,7 @@ import {
 export interface RuntimeBootOptions {
   xaml: string;
   canvas: HTMLCanvasElement;
+  dataContext?: unknown;
   fontFaces?: readonly RendererFontFaceDefinition[];
   onHoveredElementChange?: (elementId: string | null) => void;
   onSelectedElementChange?: (elementId: string | null) => void;
@@ -131,6 +132,8 @@ export class RuntimeHost {
   private onHoveredElementChange?: (elementId: string | null) => void;
   private onSelectedElementChange?: (elementId: string | null) => void;
   private onRenderDiagnostics?: (diagnostics: RuntimeRenderDiagnostics) => void;
+  private currentXaml = '';
+  private dataContext: unknown;
   private readonly pointerMoveHandler = (event: PointerEvent) => this.handlePointerMove(event);
   private readonly pointerDownHandler = (event: PointerEvent) => this.handlePointerDown(event);
 
@@ -141,6 +144,7 @@ export class RuntimeHost {
 
   async boot(options: RuntimeBootOptions): Promise<void> {
     this.explicitFontFaces = dedupeFontFaces(options.fontFaces ?? []);
+    this.dataContext = options.dataContext;
     this.setXaml(options.xaml);
     this.onHoveredElementChange = options.onHoveredElementChange;
     this.onSelectedElementChange = options.onSelectedElementChange;
@@ -289,12 +293,24 @@ export class RuntimeHost {
     this.elementColorOverrides.clear();
   }
 
-  setXaml(xaml: string): void {
-    const xamlDocument = parseRuntimeXaml(xaml);
+  setXaml(xaml: string, dataContext = this.dataContext): void {
+    this.currentXaml = xaml;
+    this.dataContext = dataContext;
+    const xamlDocument = parseRuntimeXaml(xaml, {}, undefined, { dataContext });
     this.root = buildUiTree(xamlDocument.root);
     if (this.rendererReady) {
       this.scheduleSceneWarmup();
     }
+  }
+
+  setDataContext(dataContext: unknown): void {
+    if (!this.currentXaml) {
+      this.dataContext = dataContext;
+      return;
+    }
+
+    this.setXaml(this.currentXaml, dataContext);
+    this.layoutAndRender();
   }
 
   setSelectedElement(id: string | null): void {

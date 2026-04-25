@@ -49,6 +49,11 @@ export interface XamlLoweredParseResult extends XamlParseAndValidateResult {
   hasErrors: boolean;
 }
 
+export interface XamlLoweringOptions {
+  evaluateMarkupExtensions?: boolean;
+  dataContext?: unknown;
+}
+
 const CONTENT_MEMBER_NAME = 'Content';
 
 interface SourceLocator {
@@ -957,20 +962,120 @@ function qualifiedNameToString(name: XamlQualifiedName): string {
   return name.prefix ? `${name.prefix}:${name.localName}` : name.localName;
 }
 
-function scalarTextFromValue(value: XamlValueNode): string {
+function isNullExtension(extension: XamlMarkupExtensionNode): boolean {
+  return extension.type.localName === 'Null' && extension.type.namespaceUri === XAML_LANGUAGE_NAMESPACE;
+}
+
+function isBindingExtension(extension: XamlMarkupExtensionNode): boolean {
+  return extension.type.localName === 'Binding' && extension.type.namespaceUri == null;
+}
+
+function coerceRuntimePrimitive(value: unknown): XamlPrimitive {
+  if (value == null) {
+    return null;
+  }
+
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return value;
+  }
+
+  return String(value);
+}
+
+function markupExtensionArgumentToText(value: XamlMarkupExtensionValue): string {
+  return typeof value === 'string' ? value : value.raw;
+}
+
+function bindingPathFromExtension(extension: XamlMarkupExtensionNode): string {
+  const namedPath = extension.arguments.find((argument) => {
+    return argument.kind === 'named' && argument.name.toLowerCase() === 'path';
+  });
+
+  if (namedPath) {
+    return markupExtensionArgumentToText(namedPath.value).trim();
+  }
+
+  const positionalPath = extension.arguments.find((argument) => argument.kind === 'positional');
+  return positionalPath ? markupExtensionArgumentToText(positionalPath.value).trim() : '';
+}
+
+function readBindingPathSegment(value: unknown, segment: string): unknown {
+  if (value == null || !segment) {
+    return undefined;
+  }
+
+  if (/^\d+$/.test(segment) && Array.isArray(value)) {
+    return value[Number(segment)];
+  }
+
+  if (typeof value === 'object' || typeof value === 'function') {
+    return (value as Record<string, unknown>)[segment];
+  }
+
+  return undefined;
+}
+
+function resolveBindingPath(dataContext: unknown, path: string): unknown {
+  const trimmed = path.trim();
+  if (!trimmed || trimmed === '.') {
+    return dataContext;
+  }
+
+  return trimmed.split('.').reduce(readBindingPathSegment, dataContext);
+}
+
+function evaluateMarkupExtension(extension: XamlMarkupExtensionNode, options: XamlLoweringOptions): XamlPrimitive {
+  if (isNullExtension(extension)) {
+    return null;
+  }
+
+  if (isBindingExtension(extension)) {
+    return coerceRuntimePrimitive(resolveBindingPath(options.dataContext, bindingPathFromExtension(extension)));
+  }
+
+  return extension.raw;
+}
+
+function primitiveValueFromNode(value: XamlValueNode, options: XamlLoweringOptions): XamlPrimitive | undefined {
   if (value.kind === 'text') {
     return value.text;
   }
 
   if (value.kind === 'markupExtension') {
-    return value.raw;
+    return options.evaluateMarkupExtensions ? evaluateMarkupExtension(value, options) : value.raw;
   }
 
-  return '';
+  return undefined;
 }
 
-function textValueFromMember(member: XamlMemberNode): string {
-  return member.values.map(scalarTextFromValue).join('');
+function textFromPrimitive(value: XamlPrimitive | undefined): string {
+  return value == null ? '' : String(value);
+}
+
+function scalarTextFromValue(value: XamlValueNode, options: XamlLoweringOptions): string {
+  return textFromPrimitive(primitiveValueFromNode(value, options));
+}
+
+function primitiveValueFromValues(values: readonly XamlValueNode[], options: XamlLoweringOptions): XamlPrimitive | undefined {
+  if (values.length === 1) {
+    const value = primitiveValueFromNode(values[0], options);
+    if (value !== undefined) {
+      return typeof value === 'string' ? parseAttributeValue(value) : value;
+    }
+
+    return undefined;
+  }
+
+  const text = values.map((value) => scalarTextFromValue(value, options)).join('');
+  if (!text) {
+    return undefined;
+  }
+
+  return parseAttributeValue(text);
+}
+
+function textValueFromMember(member: XamlMemberNode, options: XamlLoweringOptions): string {
+  return member.values.map((value) => scalarTextFromValue(value, options)).join('');
 }
 
 function namespaceAttributeName(declaration: XamlNamespaceDeclaration): string {
@@ -981,8 +1086,8 @@ function lowerTypeName(object: XamlObjectNode, registry: XamlVocabularyRegistry)
   return resolveXamlType(object.type, registry)?.name ?? qualifiedNameToString(object.type);
 }
 
-function textValueFromValues(values: readonly XamlValueNode[]): string {
-  return values.map(scalarTextFromValue).join('').trim();
+function textValueFromValues(values: readonly XamlValueNode[], options: XamlLoweringOptions): string {
+  return values.map((value) => scalarTextFromValue(value, options)).join('').trim();
 }
 
 function lowerDirectiveName(member: XamlMemberNode, registry: XamlVocabularyRegistry): string {
@@ -1012,21 +1117,26 @@ function lowerMemberName(
     : qualifiedNameToString(member.name);
 }
 
-function lowerValueObjects(values: readonly XamlValueNode[], registry: XamlVocabularyRegistry): XamlNode[] {
+function lowerValueObjects(
+  values: readonly XamlValueNode[],
+  registry: XamlVocabularyRegistry,
+  options: XamlLoweringOptions
+): XamlNode[] {
   return values
     .filter((value): value is XamlObjectNode => value.kind === 'object')
-    .map((value) => lowerObjectNode(value, registry));
+    .map((value) => lowerObjectNode(value, registry, options));
 }
 
 function lowerPropertyMember(
   node: XamlNode,
   ownerType: XamlTypeDefinition | null,
   member: XamlMemberNode,
-  registry: XamlVocabularyRegistry
+  registry: XamlVocabularyRegistry,
+  options: XamlLoweringOptions
 ): void {
   const memberName = lowerMemberName(member, ownerType, registry);
-  const valueObjects = lowerValueObjects(member.values, registry);
-  const textValue = textValueFromValues(member.values);
+  const valueObjects = lowerValueObjects(member.values, registry, options);
+  const textValue = textValueFromValues(member.values, options);
 
   if (valueObjects.length > 0) {
     if (ownerType?.contentProperty === memberName) {
@@ -1046,46 +1156,63 @@ function lowerPropertyMember(
     return;
   }
 
-  if (!textValue) {
+  const primitiveValue = primitiveValueFromValues(member.values, options);
+  if (primitiveValue === undefined) {
+    return;
+  }
+
+  if (primitiveValue === null) {
+    node.attributes[memberName] = null;
     return;
   }
 
   if (ownerType?.contentProperty === memberName && ownerType.allowsText) {
     if (memberName === 'Text') {
-      node.attributes.Text = parseAttributeValue(textValue);
+      node.attributes.Text = primitiveValue;
       node.text = textValue;
       return;
     }
 
-    node.attributes[memberName] = parseAttributeValue(textValue);
+    node.attributes[memberName] = primitiveValue;
     return;
   }
 
-  node.attributes[memberName] = parseAttributeValue(textValue);
+  node.attributes[memberName] = primitiveValue;
 }
 
 function lowerContentMember(
   node: XamlNode,
   ownerType: XamlTypeDefinition | null,
   member: XamlMemberNode,
-  registry: XamlVocabularyRegistry
+  registry: XamlVocabularyRegistry,
+  options: XamlLoweringOptions
 ): void {
-  const valueObjects = lowerValueObjects(member.values, registry);
-  const textValue = textValueFromValues(member.values);
+  const valueObjects = lowerValueObjects(member.values, registry, options);
+  const textValue = textValueFromValues(member.values, options);
   node.children.push(...valueObjects);
 
-  if (!textValue) {
+  const primitiveValue = primitiveValueFromValues(member.values, options);
+  if (primitiveValue === undefined) {
+    return;
+  }
+
+  if (primitiveValue === null) {
+    if (ownerType?.contentProperty === 'Text') {
+      node.attributes.Text = null;
+    } else if (ownerType?.contentProperty === 'Content') {
+      node.attributes.Content = null;
+    }
     return;
   }
 
   if (ownerType?.contentProperty === 'Text') {
-    node.attributes.Text = parseAttributeValue(textValue);
+    node.attributes.Text = primitiveValue;
     node.text = textValue;
     return;
   }
 
   if (ownerType?.contentProperty === 'Content') {
-    node.attributes.Content = parseAttributeValue(textValue);
+    node.attributes.Content = primitiveValue;
     node.text = textValue;
     return;
   }
@@ -1095,7 +1222,11 @@ function lowerContentMember(
   }
 }
 
-function lowerObjectNode(object: XamlObjectNode, registry: XamlVocabularyRegistry): XamlNode {
+function lowerObjectNode(
+  object: XamlObjectNode,
+  registry: XamlVocabularyRegistry,
+  options: XamlLoweringOptions
+): XamlNode {
   const ownerType = resolveXamlType(object.type, registry);
   const attributes: XamlAttributeMap = {};
   const node: XamlNode = {
@@ -1113,8 +1244,11 @@ function lowerObjectNode(object: XamlObjectNode, registry: XamlVocabularyRegistr
   for (const member of object.members) {
     if (member.syntax === 'attribute') {
       const memberName = lowerMemberName(member, ownerType, registry);
-      const textValue = textValueFromMember(member);
-      attributes[memberName] = parseAttributeValue(textValue);
+      const textValue = textValueFromMember(member, options);
+      const primitiveValue = primitiveValueFromValues(member.values, options);
+      if (primitiveValue !== undefined) {
+        attributes[memberName] = primitiveValue;
+      }
 
       if ((memberName === 'Text' || memberName === 'Content') && ownerType?.contentProperty === memberName) {
         node.text = textValue;
@@ -1124,11 +1258,11 @@ function lowerObjectNode(object: XamlObjectNode, registry: XamlVocabularyRegistr
     }
 
     if (member.syntax === 'propertyElement') {
-      lowerPropertyMember(node, ownerType, member, registry);
+      lowerPropertyMember(node, ownerType, member, registry, options);
       continue;
     }
 
-    lowerContentMember(node, ownerType, member, registry);
+    lowerContentMember(node, ownerType, member, registry, options);
   }
 
   return node;
@@ -1136,14 +1270,15 @@ function lowerObjectNode(object: XamlObjectNode, registry: XamlVocabularyRegistr
 
 export function lowerXamlDocument(
   document: XamlDocumentNode,
-  registry: XamlVocabularyRegistry = uiDesignerVocabularyRegistry
+  registry: XamlVocabularyRegistry = uiDesignerVocabularyRegistry,
+  options: XamlLoweringOptions = {}
 ): XamlDocument {
   if (!document.root) {
     throw new Error('Invalid XAML: missing root element.');
   }
 
   return {
-    root: lowerObjectNode(document.root, registry)
+    root: lowerObjectNode(document.root, registry, options)
   };
 }
 
@@ -1152,7 +1287,8 @@ export const toLegacyXamlDocument = lowerXamlDocument;
 export function parseAndLowerXaml(
   input: string,
   options: XamlParseOptions = {},
-  registry: XamlVocabularyRegistry = uiDesignerVocabularyRegistry
+  registry: XamlVocabularyRegistry = uiDesignerVocabularyRegistry,
+  loweringOptions: XamlLoweringOptions = {}
 ): XamlLoweredParseResult {
   const result = parseAndValidateXaml(input, options, registry);
 
@@ -1166,7 +1302,7 @@ export function parseAndLowerXaml(
 
   return {
     ...result,
-    legacyDocument: lowerXamlDocument(result.document, registry),
+    legacyDocument: lowerXamlDocument(result.document, registry, loweringOptions),
     hasErrors: false
   };
 }
@@ -1174,9 +1310,13 @@ export function parseAndLowerXaml(
 export function parseRuntimeXaml(
   input: string,
   options: XamlParseOptions = {},
-  registry: XamlVocabularyRegistry = uiDesignerVocabularyRegistry
+  registry: XamlVocabularyRegistry = uiDesignerVocabularyRegistry,
+  loweringOptions: XamlLoweringOptions = {}
 ): XamlDocument {
-  const result = parseAndLowerXaml(input, options, registry);
+  const result = parseAndLowerXaml(input, options, registry, {
+    ...loweringOptions,
+    evaluateMarkupExtensions: true
+  });
   if (!result.legacyDocument) {
     const reason = result.diagnostics.length > 0
       ? result.diagnostics.map(formatDiagnostic).join('\n')
@@ -1190,9 +1330,18 @@ export function parseRuntimeXaml(
 export function parseStrictXaml(
   input: string,
   options: XamlParseOptions = {},
-  registry: XamlVocabularyRegistry = uiDesignerVocabularyRegistry
+  registry: XamlVocabularyRegistry = uiDesignerVocabularyRegistry,
+  loweringOptions: XamlLoweringOptions = {}
 ): XamlDocument {
-  return parseRuntimeXaml(input, options, registry);
+  const result = parseAndLowerXaml(input, options, registry, loweringOptions);
+  if (!result.legacyDocument) {
+    const reason = result.diagnostics.length > 0
+      ? result.diagnostics.map(formatDiagnostic).join('\n')
+      : 'Invalid XAML document.';
+    throw new Error(reason);
+  }
+
+  return result.legacyDocument;
 }
 
 export function parseLegacyXaml(input: string, options: XamlParseOptions = {}): XamlDocument {
