@@ -1,0 +1,4 @@
+<Rectangle Width="80" Height="48">
+  <TextBlock Text="Not allowed" />
+</Rectangle>
+

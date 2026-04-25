@@ -1,0 +1,4 @@
+<TextBlock Text="First">
+  <TextBlock.Text>Second</TextBlock.Text>
+</TextBlock>
+

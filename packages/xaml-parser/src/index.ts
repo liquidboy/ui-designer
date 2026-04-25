@@ -2,6 +2,7 @@ import {
   XAML_LANGUAGE_NAMESPACE,
   XML_NAMESPACE,
   XMLNS_NAMESPACE,
+  validateXamlDocument,
   type XamlAttributeMap,
   type XamlDiagnostic,
   type XamlDocument,
@@ -18,10 +19,22 @@ import {
   type XamlSourcePosition,
   type XamlSourceSpan,
   type XamlTextNode,
+  type XamlValidationResult,
+  type XamlVocabularyRegistry,
   type XamlValueNode
 } from '@ui-designer/xaml-schema';
 
-export type { XamlParseDiagnostic, XamlParseOptions, XamlParseResult } from '@ui-designer/xaml-schema';
+export type {
+  XamlParseDiagnostic,
+  XamlParseOptions,
+  XamlParseResult,
+  XamlValidationResult,
+  XamlVocabularyRegistry
+} from '@ui-designer/xaml-schema';
+
+export interface XamlParseAndValidateResult extends XamlParseResult {
+  validation: XamlValidationResult;
+}
 
 const CONTENT_MEMBER_NAME = 'Content';
 
@@ -492,6 +505,30 @@ export function parseXamlToInfoset(input: string, options: XamlParseOptions = {}
   return {
     document,
     diagnostics: context.diagnostics
+  };
+}
+
+export function parseAndValidateXaml(
+  input: string,
+  options: XamlParseOptions = {},
+  registry?: XamlVocabularyRegistry
+): XamlParseAndValidateResult {
+  const parsed = parseXamlToInfoset(input, options);
+  if (!parsed.document) {
+    return {
+      ...parsed,
+      validation: {
+        diagnostics: parsed.diagnostics,
+        hasErrors: true
+      }
+    };
+  }
+
+  const validation = validateXamlDocument(parsed.document, registry);
+  return {
+    document: parsed.document,
+    diagnostics: validation.diagnostics,
+    validation
   };
 }
 

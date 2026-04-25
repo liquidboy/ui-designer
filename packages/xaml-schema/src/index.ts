@@ -111,6 +111,7 @@ export const UI_DESIGNER_NAMESPACE = 'https://liquidboy.dev/ui-designer';
 export const DESIGNER_METADATA_NAMESPACE = 'https://liquidboy.dev/ui-designer/designer';
 
 export type XamlTextSyntaxKind =
+  | 'any'
   | 'string'
   | 'number'
   | 'boolean'
@@ -161,6 +162,11 @@ export interface XamlVocabularyRegistry {
   types: readonly XamlTypeDefinition[];
   attachedMembers: readonly XamlMemberDefinition[];
   directives: readonly XamlMemberDefinition[];
+}
+
+export interface XamlValidationResult {
+  diagnostics: XamlDiagnostic[];
+  hasErrors: boolean;
 }
 
 export const controlCatalog = [
@@ -229,7 +235,7 @@ const visualMembers = [
 
 const textMembers = [
   member('Text', 'string'),
-  member('Content', 'string', { isContent: true }),
+  member('Content', 'any', { isContent: true }),
   member('Foreground', 'color'),
   member('FontSize', 'number'),
   member('FontWeight', 'string'),
@@ -481,4 +487,289 @@ export function resolveXamlMember(
       return memberDefinition.name === localName || memberDefinition.aliases?.includes(localName);
     }) ?? null
   );
+}
+
+function formatQualifiedName(name: string | XamlQualifiedName): string {
+  if (typeof name === 'string') {
+    return name;
+  }
+
+  return name.prefix ? `${name.prefix}:${name.localName}` : name.localName;
+}
+
+function registryHasNamespace(namespaceUri: string | null, registry: XamlVocabularyRegistry): boolean {
+  return registry.namespaces.some((namespace) => namespace.namespaceUri === namespaceUri);
+}
+
+function validationDiagnostic(
+  severity: XamlDiagnosticSeverity,
+  code: string,
+  message: string,
+  node?: { span?: XamlSourceSpan }
+): XamlDiagnostic {
+  return {
+    severity,
+    code,
+    message,
+    span: node?.span
+  };
+}
+
+function textFromValues(values: readonly XamlValueNode[]): string {
+  return values
+    .filter((value): value is XamlTextNode => value.kind === 'text')
+    .map((value) => value.text)
+    .join('');
+}
+
+function hasObjectValue(values: readonly XamlValueNode[]): boolean {
+  return values.some((value) => value.kind === 'object');
+}
+
+function validateTextSyntax(member: XamlMemberNode, definition: XamlMemberDefinition, diagnostics: XamlDiagnostic[]): void {
+  if (definition.valueSyntax === 'any') {
+    return;
+  }
+
+  const text = textFromValues(member.values).trim();
+  const hasObjects = hasObjectValue(member.values);
+
+  if (hasObjects && definition.valueSyntax !== 'object') {
+    diagnostics.push(validationDiagnostic(
+      'error',
+      'invalid-member-object-value',
+      `Member "${definition.name}" does not accept object values.`,
+      member
+    ));
+  }
+
+  if (!text) {
+    return;
+  }
+
+  if (definition.valueSyntax === 'number' && !Number.isFinite(Number(text))) {
+    diagnostics.push(validationDiagnostic(
+      'error',
+      'invalid-number-value',
+      `Member "${definition.name}" expects a numeric value.`,
+      member
+    ));
+  }
+
+  if (definition.valueSyntax === 'boolean' && text !== 'true' && text !== 'false') {
+    diagnostics.push(validationDiagnostic(
+      'error',
+      'invalid-boolean-value',
+      `Member "${definition.name}" expects "true" or "false".`,
+      member
+    ));
+  }
+
+  if (definition.valueSyntax === 'enum' && definition.allowedValues && !definition.allowedValues.includes(text)) {
+    diagnostics.push(validationDiagnostic(
+      'error',
+      'invalid-enum-value',
+      `Member "${definition.name}" expects one of: ${definition.allowedValues.join(', ')}.`,
+      member
+    ));
+  }
+}
+
+function warnUnsupportedMember(member: XamlMemberNode, definition: XamlMemberDefinition, diagnostics: XamlDiagnostic[]): void {
+  if (definition.isRuntimeSupported) {
+    return;
+  }
+
+  diagnostics.push(validationDiagnostic(
+    'warning',
+    definition.kind === 'directive' ? 'unsupported-directive' : 'unrenderable-member',
+    `Member "${formatQualifiedName(member.name)}" is schema-valid but not runtime-supported yet.`,
+    member
+  ));
+}
+
+function validateResolvedMember(
+  member: XamlMemberNode,
+  definition: XamlMemberDefinition,
+  diagnostics: XamlDiagnostic[]
+): void {
+  validateTextSyntax(member, definition, diagnostics);
+  warnUnsupportedMember(member, definition, diagnostics);
+}
+
+function memberDuplicateKey(member: XamlMemberNode, definition: XamlMemberDefinition): string | null {
+  if (definition.isCollection || member.syntax === 'content') {
+    return null;
+  }
+
+  if (definition.kind === 'attached') {
+    return `attached:${definition.attachedOwner ?? ''}.${definition.name}`;
+  }
+
+  return `${definition.kind}:${definition.namespaceUri ?? ''}:${definition.name}`;
+}
+
+function validateContentMember(
+  object: XamlObjectNode,
+  type: XamlTypeDefinition,
+  member: XamlMemberNode,
+  diagnostics: XamlDiagnostic[],
+  registry: XamlVocabularyRegistry
+): void {
+  for (const value of member.values) {
+    if (value.kind === 'object') {
+      if (!type.allowsChildren) {
+        diagnostics.push(validationDiagnostic(
+          'error',
+          'content-children-not-allowed',
+          `Type "${type.name}" does not allow child objects.`,
+          value
+        ));
+      }
+
+      validateObjectNode(value, diagnostics, registry);
+      continue;
+    }
+
+    if (value.text.trim() && !type.allowsText) {
+      diagnostics.push(validationDiagnostic(
+        'error',
+        'content-text-not-allowed',
+        `Type "${type.name}" does not allow text content.`,
+        value
+      ));
+    }
+  }
+
+  if (!type.contentProperty && member.values.length > 0) {
+    diagnostics.push(validationDiagnostic(
+      'warning',
+      'implicit-content-without-schema-member',
+      `Type "${type.name}" received content, but no content property is declared yet.`,
+      object
+    ));
+  }
+}
+
+function validateObjectNode(
+  object: XamlObjectNode,
+  diagnostics: XamlDiagnostic[],
+  registry: XamlVocabularyRegistry
+): void {
+  if (!registryHasNamespace(object.type.namespaceUri, registry)) {
+    diagnostics.push(validationDiagnostic(
+      'error',
+      'unknown-namespace',
+      `Unknown namespace "${object.type.namespaceUri}" for type "${formatQualifiedName(object.type)}".`,
+      object
+    ));
+    return;
+  }
+
+  const type = resolveXamlType(object.type, registry);
+  if (!type) {
+    diagnostics.push(validationDiagnostic(
+      'error',
+      'unknown-type',
+      `Unknown type "${formatQualifiedName(object.type)}".`,
+      object
+    ));
+    return;
+  }
+
+  const assignedMembers = new Set<string>();
+
+  for (const memberNode of object.members) {
+    if (memberNode.syntax === 'content') {
+      validateContentMember(object, type, memberNode, diagnostics, registry);
+      continue;
+    }
+
+    let definition: XamlMemberDefinition | null = null;
+
+    if (memberNode.isDirective) {
+      definition = resolveXamlDirective(memberNode.name, registry);
+      if (!definition) {
+        diagnostics.push(validationDiagnostic(
+          'error',
+          'unknown-directive',
+          `Unknown directive "${formatQualifiedName(memberNode.name)}".`,
+          memberNode
+        ));
+        continue;
+      }
+    } else if (memberNode.dotted) {
+      if (memberNode.dotted.owner.localName === type.name) {
+        definition = resolveXamlMember(type.name, memberNode.dotted.member, registry);
+      } else {
+        definition = resolveXamlAttachedMember(memberNode.dotted.owner.localName, memberNode.dotted.member, registry);
+      }
+
+      if (!definition) {
+        diagnostics.push(validationDiagnostic(
+          'error',
+          memberNode.dotted.owner.localName === type.name ? 'unknown-member' : 'unknown-attached-member',
+          `Unknown member "${memberNode.dotted.owner.localName}.${memberNode.dotted.member}".`,
+          memberNode
+        ));
+        continue;
+      }
+    } else {
+      definition = resolveXamlMember(type.name, memberNode.name, registry);
+      if (!definition) {
+        diagnostics.push(validationDiagnostic(
+          'error',
+          'unknown-member',
+          `Unknown member "${formatQualifiedName(memberNode.name)}" on type "${type.name}".`,
+          memberNode
+        ));
+        continue;
+      }
+    }
+
+    const duplicateKey = memberDuplicateKey(memberNode, definition);
+    if (duplicateKey && assignedMembers.has(duplicateKey)) {
+      diagnostics.push(validationDiagnostic(
+        'error',
+        'duplicate-member',
+        `Member "${formatQualifiedName(memberNode.name)}" is assigned more than once.`,
+        memberNode
+      ));
+      continue;
+    }
+
+    if (duplicateKey) {
+      assignedMembers.add(duplicateKey);
+    }
+
+    validateResolvedMember(memberNode, definition, diagnostics);
+
+    for (const value of memberNode.values) {
+      if (value.kind === 'object') {
+        validateObjectNode(value, diagnostics, registry);
+      }
+    }
+  }
+}
+
+export function validateXamlDocument(
+  document: XamlDocumentNode,
+  registry: XamlVocabularyRegistry = uiDesignerVocabularyRegistry
+): XamlValidationResult {
+  const diagnostics = [...document.diagnostics];
+
+  if (!document.root) {
+    diagnostics.push({
+      severity: 'error',
+      code: 'missing-root',
+      message: 'XAML document is missing a root object.'
+    });
+  } else {
+    validateObjectNode(document.root, diagnostics, registry);
+  }
+
+  return {
+    diagnostics,
+    hasErrors: diagnostics.some((diagnostic) => diagnostic.severity === 'error')
+  };
 }
