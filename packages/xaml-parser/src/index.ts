@@ -1288,6 +1288,13 @@ function isTypeExtension(extension: XamlMarkupExtensionNode): boolean {
   );
 }
 
+function isStaticExtension(extension: XamlMarkupExtensionNode): boolean {
+  return (
+    (extension.type.localName === 'Static' || extension.type.localName === 'StaticExtension') &&
+    extension.type.namespaceUri === XAML_LANGUAGE_NAMESPACE
+  );
+}
+
 function coerceRuntimePrimitive(value: unknown): XamlPrimitive {
   if (value == null) {
     return null;
@@ -1347,6 +1354,19 @@ function typeNameFromExtension(extension: XamlMarkupExtensionNode): string {
 
   const positionalType = extension.arguments.find((argument) => argument.kind === 'positional');
   return positionalType ? markupExtensionArgumentToText(positionalType.value).trim() : '';
+}
+
+function staticMemberFromExtension(extension: XamlMarkupExtensionNode): string {
+  const namedMember = extension.arguments.find((argument) => {
+    return argument.kind === 'named' && argument.name.toLowerCase() === 'member';
+  });
+
+  if (namedMember) {
+    return markupExtensionArgumentToText(namedMember.value).trim();
+  }
+
+  const positionalMember = extension.arguments.find((argument) => argument.kind === 'positional');
+  return positionalMember ? markupExtensionArgumentToText(positionalMember.value).trim() : '';
 }
 
 function readBindingPathSegment(value: unknown, segment: string): unknown {
@@ -1436,6 +1456,10 @@ function evaluateMarkupExtension(extension: XamlMarkupExtensionNode, options: Xa
 
   if (isTypeExtension(extension)) {
     return typeNameFromExtension(extension) || extension.raw;
+  }
+
+  if (isStaticExtension(extension)) {
+    return staticMemberFromExtension(extension) || extension.raw;
   }
 
   return extension.raw;

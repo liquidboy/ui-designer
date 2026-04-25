@@ -1201,6 +1201,55 @@ async function runPhase15IntrinsicArrayFixtures() {
   return files.length;
 }
 
+async function runPhase16IntrinsicStaticFixtures() {
+  const expectations = {
+    'static-positional.xaml': { errors: [], warnings: [] },
+    'static-named-member.xaml': { errors: [], warnings: [] },
+    'static-missing-member.xaml': { errors: ['missing-markup-extension-argument'], warnings: [] },
+    'static-invalid-member.xaml': { errors: ['invalid-static-member-reference'], warnings: [] }
+  };
+  const files = await listFixtureFiles('phase16-intrinsic-static');
+
+  for (const fileName of files) {
+    const input = await readFixture('phase16-intrinsic-static', fileName);
+    const parsed = parseXamlToInfoset(input);
+    assert.deepEqual(diagnosticsWithSeverity(parsed, 'error'), [], `${fileName} parse errors`);
+
+    const result = parseAndValidateXaml(input);
+    const expected = expectations[fileName];
+    assert.ok(expected, `Missing intrinsic static expectation for ${fileName}`);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'error'), expected.errors, `${fileName} validation errors`);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'warning'), expected.warnings, `${fileName} validation warnings`);
+
+    const textMember = findMember(result.document.root, 'Text', 'attribute');
+    assert.equal(textMember?.values[0]?.kind, 'markupExtension');
+    assert.equal(textMember.values[0].type.localName, 'Static');
+    assert.equal(textMember.values[0].type.namespaceUri, XAML_LANGUAGE_NAMESPACE);
+
+    if (expected.errors.length > 0) {
+      continue;
+    }
+
+    const preserved = lowerXamlDocument(result.document);
+    const runtime = parseRuntimeXaml(input);
+
+    if (fileName === 'static-positional.xaml') {
+      assert.equal(preserved.root.attributes.Text, '{x:Static TextBlock.Text}');
+      assert.equal(runtime.root.attributes.Text, 'TextBlock.Text');
+      assert.equal(runtime.root.text, 'TextBlock.Text');
+      assert.match(serializeXamlDocumentNode(result.document), /Text="\{x:Static TextBlock.Text\}"/);
+    }
+
+    if (fileName === 'static-named-member.xaml') {
+      assert.equal(preserved.root.attributes.Text, '{x:Static Member=TextBlock.Text}');
+      assert.equal(runtime.root.attributes.Text, 'TextBlock.Text');
+      assert.equal(runtime.root.text, 'TextBlock.Text');
+    }
+  }
+
+  return files.length;
+}
+
 async function runPhase6CollectionFixtures() {
   const expectations = {
     'theme-dictionary-xkey.xaml': { errors: [], warnings: [] },
@@ -1255,7 +1304,8 @@ const phase12Count = await runPhase12ObjectResourceFixtures();
 const phase13Count = await runPhase13DynamicResourceFixtures();
 const phase14Count = await runPhase14WhitespaceNormalizationFixtures();
 const phase15Count = await runPhase15IntrinsicArrayFixtures();
+const phase16Count = await runPhase16IntrinsicStaticFixtures();
 
 console.log(
-  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources, ${phase9Count} serializer, ${phase10Count} designer serializer, ${phase11Count} XML scope, ${phase12Count} object resources, ${phase13Count} dynamic resources, ${phase14Count} whitespace normalization, ${phase15Count} intrinsic arrays).`
+  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources, ${phase9Count} serializer, ${phase10Count} designer serializer, ${phase11Count} XML scope, ${phase12Count} object resources, ${phase13Count} dynamic resources, ${phase14Count} whitespace normalization, ${phase15Count} intrinsic arrays, ${phase16Count} intrinsic static references).`
 );

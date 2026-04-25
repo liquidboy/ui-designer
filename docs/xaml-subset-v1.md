@@ -152,6 +152,22 @@ Supported `x:Type` form:
 </x:Array>
 ```
 
+## Intrinsic Static Members
+
+Current status:
+
+1. `{x:Static ...}` and `{x:Static Member=...}` markup extensions parse as intrinsic XAML language expressions.
+2. Static references must provide a type-qualified member token, such as `TextBlock.Text`.
+3. Authoring lowering preserves the original `{x:Static ...}` source.
+4. Runtime lowering emits the stable member-token string.
+5. CLR/static value resolution and object-element static forms remain outside v1.
+
+Supported form:
+
+```xaml
+<TextBlock xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Text="{x:Static TextBlock.Text}" />
+```
+
 ## Binding v1
 
 Supported runtime form:

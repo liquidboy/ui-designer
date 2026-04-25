@@ -901,6 +901,13 @@ function isXamlTypeExtension(extension: XamlMarkupExtensionNode): boolean {
   );
 }
 
+function isXamlStaticExtension(extension: XamlMarkupExtensionNode): boolean {
+  return (
+    (extension.type.localName === 'Static' || extension.type.localName === 'StaticExtension') &&
+    extension.type.namespaceUri === XAML_LANGUAGE_NAMESPACE
+  );
+}
+
 function xamlTypeNameFromExtension(extension: XamlMarkupExtensionNode): string {
   const namedType = extension.arguments.find((argument) => {
     return (
@@ -944,13 +951,35 @@ function registryHasTypeName(typeName: string, registry: XamlVocabularyRegistry)
   return localName ? registry.types.some((type) => type.name === localName) : false;
 }
 
+function xamlStaticMemberFromExtension(extension: XamlMarkupExtensionNode): string {
+  const namedMember = extension.arguments.find((argument) => {
+    return argument.kind === 'named' && argument.name.toLowerCase() === 'member' && typeof argument.value === 'string';
+  });
+  if (namedMember?.kind === 'named' && typeof namedMember.value === 'string') {
+    return namedMember.value.trim();
+  }
+
+  const positionalMember = extension.arguments.find((argument) => {
+    return argument.kind === 'positional' && typeof argument.value === 'string';
+  });
+  return positionalMember?.kind === 'positional' && typeof positionalMember.value === 'string'
+    ? positionalMember.value.trim()
+    : '';
+}
+
+function isWellFormedStaticMemberReference(memberName: string): boolean {
+  const separator = memberName.lastIndexOf('.');
+  return separator > 0 && separator < memberName.length - 1;
+}
+
 function isRuntimeSupportedMarkupExtension(extension: XamlMarkupExtensionNode): boolean {
   return (
     (extension.type.localName === 'Binding' && extension.type.namespaceUri == null) ||
     (extension.type.localName === 'StaticResource' && extension.type.namespaceUri == null) ||
     (extension.type.localName === 'DynamicResource' && extension.type.namespaceUri == null) ||
     (extension.type.localName === 'Null' && extension.type.namespaceUri === XAML_LANGUAGE_NAMESPACE) ||
-    isXamlTypeExtension(extension)
+    isXamlTypeExtension(extension) ||
+    isXamlStaticExtension(extension)
   );
 }
 
@@ -981,6 +1010,32 @@ function validateXamlTypeExtension(
   }
 }
 
+function validateXamlStaticExtension(
+  extension: XamlMarkupExtensionNode,
+  diagnostics: XamlDiagnostic[],
+  fallbackNode: XamlMemberNode
+): void {
+  const memberName = xamlStaticMemberFromExtension(extension);
+  if (!memberName) {
+    diagnostics.push(validationDiagnostic(
+      'error',
+      'missing-markup-extension-argument',
+      'Markup extension "x:Static" requires a member name.',
+      extension.span ? extension : fallbackNode
+    ));
+    return;
+  }
+
+  if (!isWellFormedStaticMemberReference(memberName)) {
+    diagnostics.push(validationDiagnostic(
+      'error',
+      'invalid-static-member-reference',
+      `Markup extension "x:Static" requires a type-qualified member reference, such as "Type.Member".`,
+      extension.span ? extension : fallbackNode
+    ));
+  }
+}
+
 function validateMarkupExtensions(
   member: XamlMemberNode,
   diagnostics: XamlDiagnostic[],
@@ -989,6 +1044,11 @@ function validateMarkupExtensions(
   for (const extension of markupExtensionsFromValues(member.values)) {
     if (isXamlTypeExtension(extension)) {
       validateXamlTypeExtension(extension, diagnostics, registry, member);
+      continue;
+    }
+
+    if (isXamlStaticExtension(extension)) {
+      validateXamlStaticExtension(extension, diagnostics, member);
       continue;
     }
 

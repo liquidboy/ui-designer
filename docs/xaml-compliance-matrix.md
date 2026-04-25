@@ -70,7 +70,7 @@ Default rule: parser support should be broader than runtime execution support. U
 | `x:Type` / `x:TypeExtension` | Partial | Phase 5 | Parse structured type markup extensions, validate required type names, and validate known simple object type names. | Runtime lowering evaluates supported `{x:Type ...}` forms to type-name strings; authoring lowering preserves raw source. | CLR type resolution, primitive CLR types, generic type arguments, and object-element `x:Type` forms remain deferred. |
 | `x:Null` | Partial | Phase 5 | Parse as markup extension or intrinsic null expression. | Runtime lowering maps `{x:Null}` to semantic `null`; authoring lowering preserves raw text. | Serializer support for emitting `x:` namespace declarations from null values is still pending. |
 | `x:Array` | Partial | Phase 5 | Parse and validate intrinsic `x:Array` object elements, required `Type`, direct content, `x:Array.Items`, and simple `{x:Type ...}` item-type expressions. | Lowers structurally as an `Array` node with item children; runtime lowering evaluates `{x:Type ...}` item type values to type-name strings. | True array-valued runtime assignment and primitive CLR item types remain deferred. |
-| `x:Static` | Deferred | Deferred | Preserve as unsupported markup extension. | Not evaluated. | Requires a static member resolution model. |
+| `x:Static` / `x:StaticExtension` | Partial | Phase 5 | Parse structured static markup extensions and validate required type-qualified member references. | Runtime lowering evaluates supported `{x:Static ...}` forms to stable member-token strings; authoring lowering preserves raw source. | CLR/static value resolution and object-element static forms remain deferred. |
 | `x:Reference` | Deferred | Deferred | Preserve as unsupported markup extension. | Not evaluated. | Requires namescope and object reference resolution. |
 | `xml:lang` | Current | Phase 4 | Parse, preserve, validate, and propagate as effective object metadata. | Compatibility lowering emits inherited `lang` metadata on descendants. | Runtime text/layout consumers can now read inherited language metadata from lowered attributes. |
 | `xml:space` | Partial | Phase 4 | Parse, preserve, validate, and apply scoped whitespace preservation/reset. | Preserved whitespace-only text lowers into text-capable content; default text lowering collapses and trims XML whitespace. | Edge-case whitespace behavior around future templates/object islands is still pending. |
@@ -125,7 +125,7 @@ Current limitation:
 
 1. Namescope validation currently treats the document root as the only namescope. Nested namescopes for templates, resources, or future object islands are still deferred.
 2. Markup extension parsing currently covers attribute values and property-element text; `x:Array` object elements are now structural, while remaining object-element intrinsic forms are still deferred.
-3. Runtime resource lookup supports primitive resources, known control object resources, dynamic resource overrides, and structural object resources; true array-valued resource execution and CLR type resolution remain deferred.
+3. Runtime resource lookup supports primitive resources, known control object resources, dynamic resource overrides, and structural object resources; true array-valued resource execution, CLR type resolution, and CLR static value resolution remain deferred.
 4. Runtime `Binding` evaluation is v1-only: one-way path lookup against a supplied data context, without converters or multi-binding.
 5. Designer infoset edit propagation currently covers mapped object paths, attribute/property-element values, and child insert/remove/move operations. If a future edit targets a lowered compatibility shape that cannot be mapped back to an infoset node safely, serialization still falls back to the lowered shape rather than saving stale semantic source.
 
@@ -148,8 +148,9 @@ Completed foundation work:
 13. Default text lowering now applies XML whitespace normalization, while `xml:space` preserve/default controls opt-in exact whitespace preservation.
 14. Intrinsic `x:Array` object elements now parse, validate required `Type`, validate simple object item types, serialize, and lower as structural `Array` compatibility nodes.
 15. `{x:Type ...}` now validates known simple object type names, preserves authoring source, and runtime-lowers to type-name strings for scenarios such as `x:Array Type`.
+16. `{x:Static ...}` now validates required type-qualified member references, preserves authoring source, and runtime-lowers to stable member-token strings.
 
 Next slice:
 
-1. Continue deferred intrinsic coverage such as `x:Static` and `x:Reference`.
+1. Continue deferred intrinsic coverage such as `x:Reference`.
 2. Expand namescope support beyond the current document-wide namescope.
