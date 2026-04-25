@@ -71,6 +71,8 @@ interface XamlLoweringContext extends XamlLoweringOptions {
   registry: XamlVocabularyRegistry;
   rootObject: XamlObjectNode;
   namedObjects: Map<string, XamlObjectNode>;
+  loweredObjects: WeakMap<XamlObjectNode, XamlNode>;
+  loweringObjects: WeakSet<XamlObjectNode>;
   resolvingReferences: Set<string>;
 }
 
@@ -1418,13 +1420,21 @@ function resolveBindingPath(dataContext: unknown, path: string): unknown {
   return trimmed.split('.').reduce(readBindingPathSegment, dataContext);
 }
 
-function cloneLoweredXamlNode(node: XamlNode): XamlNode {
-  return {
+function cloneLoweredXamlNode(node: XamlNode, clones = new WeakMap<XamlNode, XamlNode>()): XamlNode {
+  const existing = clones.get(node);
+  if (existing) {
+    return existing;
+  }
+
+  const clone: XamlNode = {
     type: node.type,
     attributes: { ...node.attributes },
-    children: node.children.map(cloneLoweredXamlNode),
+    children: [],
     text: node.text
   };
+  clones.set(node, clone);
+  clone.children = node.children.map((child) => cloneLoweredXamlNode(child, clones));
+  return clone;
 }
 
 function isLoweredXamlNode(value: XamlRuntimeResourceValue): value is XamlNode {
@@ -1453,8 +1463,13 @@ function resolveReferenceObject(name: string, options: XamlLoweringContext): Xam
     throw new Error(`Reference "${name}" could not be resolved.`);
   }
 
-  if (options.resolvingReferences.has(name)) {
+  if (options.resolvingReferences.has(name) || options.loweringObjects.has(object)) {
     throw new Error(`Reference "${name}" creates a circular x:Reference chain.`);
+  }
+
+  const existing = options.loweredObjects.get(object);
+  if (existing) {
+    return existing;
   }
 
   options.resolvingReferences.add(name);
@@ -1882,57 +1897,74 @@ function lowerObjectNode(
   registry: XamlVocabularyRegistry,
   options: XamlLoweringContext
 ): XamlNode {
+  const existing = options.loweredObjects.get(object);
+  if (existing) {
+    return existing;
+  }
+
   const ownerType = resolveXamlType(object.type, registry);
   const scopedOptions = object !== options.rootObject && ownerType?.createsNamescope
     ? lowerContextWithNamescope(options, object)
     : options;
-  const localOptions = collectResourcesForObject(object, ownerType, registry, scopedOptions);
   const attributes: XamlAttributeMap = {};
   const node: XamlNode = {
     type: lowerTypeName(object, registry),
     attributes,
     children: []
   };
+  let completed = false;
+  options.loweredObjects.set(object, node);
+  options.loweringObjects.add(object);
 
-  if (object.xmlLang != null) {
-    attributes.lang = object.xmlLang;
-  }
+  try {
+    const localOptions = collectResourcesForObject(object, ownerType, registry, scopedOptions);
 
-  for (const declaration of object.namespaceDeclarations) {
-    if (!resolveXamlType(object.type, registry)) {
-      attributes[namespaceAttributeName(declaration)] = declaration.namespaceUri;
-    }
-  }
-
-  for (const member of object.members) {
-    if (localOptions.evaluateMarkupExtensions && isResourcesMember(member, ownerType, registry)) {
-      continue;
+    if (object.xmlLang != null) {
+      attributes.lang = object.xmlLang;
     }
 
-    if (member.syntax === 'attribute') {
-      const memberName = lowerMemberName(member, ownerType, registry);
-      const textValue = textValueFromMember(member, localOptions);
-      const primitiveValue = primitiveValueFromValues(member.values, localOptions);
-      if (primitiveValue !== undefined) {
-        attributes[memberName] = primitiveValue;
+    for (const declaration of object.namespaceDeclarations) {
+      if (!resolveXamlType(object.type, registry)) {
+        attributes[namespaceAttributeName(declaration)] = declaration.namespaceUri;
+      }
+    }
+
+    for (const member of object.members) {
+      if (localOptions.evaluateMarkupExtensions && isResourcesMember(member, ownerType, registry)) {
+        continue;
       }
 
-      if ((memberName === 'Text' || memberName === 'Content') && ownerType?.contentProperty === memberName) {
-        node.text = textValue;
+      if (member.syntax === 'attribute') {
+        const memberName = lowerMemberName(member, ownerType, registry);
+        const textValue = textValueFromMember(member, localOptions);
+        const primitiveValue = primitiveValueFromValues(member.values, localOptions);
+        if (primitiveValue !== undefined) {
+          attributes[memberName] = primitiveValue;
+        }
+
+        if ((memberName === 'Text' || memberName === 'Content') && ownerType?.contentProperty === memberName) {
+          node.text = textValue;
+        }
+
+        continue;
       }
 
-      continue;
+      if (member.syntax === 'propertyElement') {
+        lowerPropertyMember(node, ownerType, member, registry, localOptions);
+        continue;
+      }
+
+      lowerContentMember(node, ownerType, member, registry, localOptions);
     }
 
-    if (member.syntax === 'propertyElement') {
-      lowerPropertyMember(node, ownerType, member, registry, localOptions);
-      continue;
+    completed = true;
+    return node;
+  } finally {
+    options.loweringObjects.delete(object);
+    if (!completed) {
+      options.loweredObjects.delete(object);
     }
-
-    lowerContentMember(node, ownerType, member, registry, localOptions);
   }
-
-  return node;
 }
 
 function rawTextValueFromValues(values: readonly XamlValueNode[]): string {
@@ -2010,6 +2042,8 @@ function createLoweringContext(
     registry,
     rootObject: root,
     namedObjects: namedObjectsForScope(root, registry),
+    loweredObjects: new WeakMap(),
+    loweringObjects: new WeakSet(),
     resolvingReferences: new Set()
   };
 }

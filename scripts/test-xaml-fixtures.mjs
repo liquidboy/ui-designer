@@ -1283,6 +1283,7 @@ async function runPhase17IntrinsicReferenceFixtures() {
       assert.equal(runtime.root.children[1]?.children[0]?.type, 'TextBlock');
       assert.equal(runtime.root.children[1]?.children[0]?.attributes.Name, 'SharedLabel');
       assert.equal(runtime.root.children[1]?.children[0]?.attributes.Text, 'Shared label');
+      assert.strictEqual(runtime.root.children[1]?.children[0], runtime.root.children[0]);
       assert.match(serializeXamlDocumentNode(result.document), /\{x:Reference SharedLabel\}/);
     }
 
@@ -1290,12 +1291,14 @@ async function runPhase17IntrinsicReferenceFixtures() {
       assert.equal(preserved.root.children[1]?.attributes.Child, '{x:Reference Name=SharedLabel}');
       assert.equal(runtime.root.children[1]?.children[0]?.type, 'TextBlock');
       assert.equal(runtime.root.children[1]?.children[0]?.attributes.Text, 'Named reference label');
+      assert.strictEqual(runtime.root.children[1]?.children[0], runtime.root.children[0]);
     }
 
     if (fileName === 'reference-forward.xaml') {
       assert.equal(runtime.root.children[0]?.children[0]?.type, 'TextBlock');
       assert.equal(runtime.root.children[0]?.children[0]?.attributes.Text, 'Forward label');
       assert.equal(runtime.root.children[1]?.attributes.Text, 'Forward label');
+      assert.strictEqual(runtime.root.children[0]?.children[0], runtime.root.children[1]);
     }
   }
 
@@ -1341,6 +1344,44 @@ async function runPhase18NamescopeBoundaryFixtures() {
       assert.equal(staticBorder.children[0]?.attributes.Name, 'SharedLabel');
       assert.equal(staticBorder.children[0]?.attributes.Text, 'Resource label');
     }
+  }
+
+  return files.length;
+}
+
+async function runPhase19ReferenceIdentityFixtures() {
+  const expectations = {
+    'circular-reference.xaml': {
+      errors: [],
+      warnings: ['unsupported-directive'],
+      runtimeError: /circular x:Reference chain/
+    },
+    'shared-reference-identity.xaml': {
+      errors: [],
+      warnings: ['unsupported-directive']
+    }
+  };
+  const files = await listFixtureFiles('phase19-reference-identity');
+
+  for (const fileName of files) {
+    const input = await readFixture('phase19-reference-identity', fileName);
+    const result = parseAndValidateXaml(input);
+    const expected = expectations[fileName];
+    assert.ok(expected, `Missing reference identity expectation for ${fileName}`);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'error'), expected.errors, `${fileName} validation errors`);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'warning'), expected.warnings, `${fileName} validation warnings`);
+
+    if (expected.runtimeError) {
+      assert.throws(() => parseRuntimeXaml(input), expected.runtimeError, `${fileName} runtime error`);
+      continue;
+    }
+
+    const runtime = parseRuntimeXaml(input);
+    const sharedLabel = runtime.root.children[0];
+    const positionalReference = runtime.root.children[1]?.children[0];
+    const namedReference = runtime.root.children[2]?.children[0];
+    assert.strictEqual(positionalReference, sharedLabel);
+    assert.strictEqual(namedReference, sharedLabel);
   }
 
   return files.length;
@@ -1403,7 +1444,8 @@ const phase15Count = await runPhase15IntrinsicArrayFixtures();
 const phase16Count = await runPhase16IntrinsicStaticFixtures();
 const phase17Count = await runPhase17IntrinsicReferenceFixtures();
 const phase18Count = await runPhase18NamescopeBoundaryFixtures();
+const phase19Count = await runPhase19ReferenceIdentityFixtures();
 
 console.log(
-  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources, ${phase9Count} serializer, ${phase10Count} designer serializer, ${phase11Count} XML scope, ${phase12Count} object resources, ${phase13Count} dynamic resources, ${phase14Count} whitespace normalization, ${phase15Count} intrinsic arrays, ${phase16Count} intrinsic static references, ${phase17Count} intrinsic references, ${phase18Count} namescope boundaries).`
+  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources, ${phase9Count} serializer, ${phase10Count} designer serializer, ${phase11Count} XML scope, ${phase12Count} object resources, ${phase13Count} dynamic resources, ${phase14Count} whitespace normalization, ${phase15Count} intrinsic arrays, ${phase16Count} intrinsic static references, ${phase17Count} intrinsic references, ${phase18Count} namescope boundaries, ${phase19Count} reference identity).`
 );

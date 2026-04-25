@@ -176,9 +176,10 @@ Current status:
 1. `{x:Reference ...}` and `{x:Reference Name=...}` markup extensions parse as intrinsic XAML language expressions.
 2. Reference names must resolve to an `x:Name` in the active namescope, including forward references.
 3. Authoring lowering preserves the original `{x:Reference ...}` source.
-4. Runtime lowering emits a cloned compatibility node for object-valued reference members.
+4. Runtime lowering emits the same lowered object instance for supported object-valued reference members.
 5. `ResourceDictionary` is a local namescope boundary: dictionary-local references can see dictionary-local names, while outer visual-tree references cannot see names hidden inside the dictionary.
-6. True object identity and template/object-island namescope boundaries remain outside v1.
+6. Circular reference chains fail during runtime lowering.
+7. Template/object-island namescope boundaries and object-element `x:Reference` forms remain outside v1.
 
 Supported form:
 

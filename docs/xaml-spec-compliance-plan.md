@@ -52,22 +52,23 @@ The repo now has the core compliance foundation in place:
 14. Intrinsic `x:Array` object elements now parse, validate required `Type`, validate simple object item types, serialize, and lower as structural `Array` compatibility nodes.
 15. `{x:Type ...}` now validates known simple object type names, preserves authoring source, and runtime-lowers to type-name strings for scenarios such as `x:Array Type`.
 16. `{x:Static ...}` now validates required type-qualified member references, preserves authoring source, and runtime-lowers to stable member-token strings.
-17. `{x:Reference ...}` now validates required names, supports forward references within the active namescope, preserves authoring source, and runtime-lowers object-valued references to cloned compatibility nodes.
+17. `{x:Reference ...}` now validates required names, supports forward references within the active namescope, preserves authoring source, and runtime-lowers supported object-valued references to the same lowered object instance.
 18. `ResourceDictionary` now creates a local namescope boundary, so resource-local `x:Name` values are isolated from the visual tree while dictionary-local `x:Reference` expressions resolve within that dictionary.
-19. The validator currently covers known namespaces/types/members, duplicate scalar members, content rules, enum/primitive checks, scoped namescope collisions for `x:Name`, root-only placement for `x:Class`, collection item-type constraints, dictionary key validation, and warning-only preservation for unsupported markup extensions.
+19. Runtime lowering caches lowered object nodes for `x:Reference`, preserves shared references during resource graph cloning, and still rejects circular reference chains.
+20. The validator currently covers known namespaces/types/members, duplicate scalar members, content rules, enum/primitive checks, scoped namescope collisions for `x:Name`, root-only placement for `x:Class`, collection item-type constraints, dictionary key validation, and warning-only preservation for unsupported markup extensions.
 
-Approximate targeted core `MS-XAML-2017` support: **74%**. This is a progress estimate for the scoped language/object-mapping work, not a claim of complete XAML or WPF vocabulary parity.
+Approximate targeted core `MS-XAML-2017` support: **76%**. This is a progress estimate for the scoped language/object-mapping work, not a claim of complete XAML or WPF vocabulary parity.
 
 The main remaining gaps are now:
 
-1. True object identity/reference semantics beyond cloned compatibility nodes.
+1. Full schema-driven text conversion instead of legacy parser-wide primitive coercion.
 2. Richer namescope boundaries for future templates and object islands.
-3. True array-valued runtime assignment, primitive CLR item types, CLR type resolution, CLR static value resolution, generic type execution, and full schema-driven text conversion.
+3. True array-valued runtime assignment, primitive CLR item types, CLR type resolution, CLR static value resolution, and generic type execution.
 
 Current limitation:
 
 1. Structured markup extension parsing currently applies to attribute values and property-element text; `x:Array` is supported as a structural object element, but remaining object-element intrinsic forms are still deferred.
-2. Runtime resource lookup supports primitive and known control object resources plus dynamic resource overrides; full WPF-style resource invalidation and dependency tracking are still outside the current target.
+2. Runtime resource lookup supports primitive and known control object resources plus dynamic resource overrides; resource object retrieval still creates resource instances, and full WPF-style resource invalidation and dependency tracking are still outside the current target.
 3. Runtime `Binding` support is intentionally v1-only: one-way path lookup, no converters, and no multi-binding.
 4. Designer infoset edit propagation is intentionally conservative: if a lowered compatibility path cannot be mapped safely back to the infoset, the designer falls back to lowered serialization instead of risking stale or corrupt semantic output.
 5. `ResourceDictionary` is the first nested namescope boundary; template/object-island namescopes remain deferred until those vocabularies exist.
@@ -376,8 +377,8 @@ We should call this initiative complete only when all of the following are true:
 
 The next concrete work item should be:
 
-1. add true object identity/reference semantics for supported `{x:Reference ...}` runtime lowering instead of cloning compatibility nodes
-2. preserve the existing authoring round-trip behavior for references while adding runtime identity tests
-3. keep template/object-island namescope work separate until those vocabulary concepts exist
+1. move primitive/text conversion into schema-owned text syntax metadata for known runtime members
+2. keep compatibility lowering behavior stable while replacing parser-wide coercion paths incrementally
+3. add fixtures for invalid numeric, boolean, enum, and color values at member boundaries
 
-That keeps this track focused on correctness before we widen the supported vocabulary surface again.
+That moves more behavior under the XAML schema model instead of leaving it in compatibility-era parsing helpers.
