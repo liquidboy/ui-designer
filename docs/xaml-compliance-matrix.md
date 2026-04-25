@@ -50,7 +50,7 @@ Default rule: parser support should be broader than runtime execution support. U
 | Content property inference | Current | Current | Use vocabulary metadata to route child objects/text into content members. | Implemented for the current runtime and designer vocabularies. |
 | Attached member syntax | Current | Current | Represent attached owner/member names structurally. | Lowered to canonical `Owner.Member` attribute names for compatibility. |
 | Collection members | Partial | Phase 3+ | Add list semantics to vocabulary metadata and lowering. | Known list containers now validate allowed item types; semantic collection lowering is still compatibility-shaped. |
-| Dictionary members | Partial | Phase 3+ | Add dictionary semantics, key validation, and lowering. | Designer theme `Colors` now validates dictionary items with explicit `x:Key` or implicit `Color.Id`; broader resource dictionaries are still pending. |
+| Dictionary members | Partial | Phase 3+ | Add dictionary semantics, key validation, and lowering. | Designer theme `Colors` validates dictionary items with explicit `x:Key` or implicit `Color.Id`; runtime `ResourceDictionary` now lowers primitive `Color`/`Number`/`String` resources for `StaticResource` lookup. |
 | Text syntax conversion | Partial | Phase 2 | Move primitive conversion into schema-defined text syntax. | Validation is schema-aware today, but legacy lowering still uses shared primitive coercion. |
 | Whitespace handling | Missing | Phase 3+ | Add schema-aware whitespace preservation/collapse rules. | Include `xml:space` once directive propagation exists. |
 | Markup extension AST | Partial | Phase 5 | Parse brace syntax into structured expressions. | Attribute values and property-element text now parse into a structured AST; runtime lowering evaluates supported extensions while authoring lowering preserves raw text. |
@@ -63,7 +63,7 @@ Default rule: parser support should be broader than runtime execution support. U
 | Directive or namespace feature | Current status | Target | Current behavior | Runtime behavior | Notes |
 | --- | --- | --- | --- | --- | --- |
 | `x:Name` | Current | Phase 4 | Parse, preserve, and validate uniqueness within the current document namescope. | Lowered to `Name` in the legacy adapter; runtime still does not resolve object references by name. | Bare `Name` is still not a schema alias. |
-| `x:Key` | Partial | Phase 4 | Parse and validate as a dictionary item key. | Valid dictionary keys are accepted without preserved-only warnings; runtime resource lookup still ignores them. | Misplaced `x:Key`, missing dictionary keys, and duplicate dictionary keys now produce errors. |
+| `x:Key` | Partial | Phase 4 | Parse and validate as a dictionary item key. | Valid dictionary keys are accepted without preserved-only warnings; runtime resource lookup uses them for primitive `ResourceDictionary` entries. | Misplaced `x:Key`, missing dictionary keys, and duplicate dictionary keys now produce errors. |
 | `x:Class` | Current | Phase 4 | Parse, preserve, and enforce root-only placement. | Preserved-only; no markup compilation. | Non-root usage now raises `invalid-directive-placement`. |
 | `x:Uid` | Current | Phase 4 | Parse and preserve with warning. | Preserved-only. | Useful for localization metadata, not rendering. |
 | `x:TypeArguments` | Current | Phase 4 | Parse and preserve with warning. | Preserved-only. | Generic type execution can remain unsupported. |
@@ -113,7 +113,7 @@ Default rule: parser support should be broader than runtime execution support. U
 | Multiple values for single-child content property | Error | Prevents ambiguous lowering. |
 | Unsupported but preserved directive | Warning unless placement is invalid. | Keeps parser round-trip broader than runtime support. |
 | Unsupported markup extension | Warning until a member requires concrete value evaluation. | Keeps source round-trippable without pretending runtime support exists. |
-| Supported runtime markup extension | No warning. | `Binding` and `{x:Null}` are evaluated by runtime lowering and preserved by authoring lowering. |
+| Supported runtime markup extension | No warning. | `Binding`, `StaticResource`, and `{x:Null}` are evaluated by runtime lowering and preserved by authoring lowering. |
 | Invalid directive placement | Error | Placement rules are part of the language target. |
 | Namescope collision | Error | Required once `x:Name` validation exists. |
 | Invalid collection item type | Error | Collection metadata controls which known item types can appear in a list or dictionary. |
@@ -124,7 +124,8 @@ Current limitation:
 
 1. Namescope validation currently treats the document root as the only namescope. Nested namescopes for templates, resources, or future object islands are still deferred.
 2. Markup extension parsing currently covers attribute values and property-element text; object-element intrinsic forms such as `x:Array` remain deferred.
-3. Runtime `Binding` evaluation is v1-only: one-way path lookup against a supplied data context, without converters or multi-binding.
+3. Runtime resource lookup is primitive-only: `ResourceDictionary` supports `Color`, `Number`, and `String` entries, not object resources or dynamic updates.
+4. Runtime `Binding` evaluation is v1-only: one-way path lookup against a supplied data context, without converters or multi-binding.
 
 ## Current Implementation Checkpoint
 
@@ -136,9 +137,9 @@ Completed foundation work:
 4. Intrinsic directive validation now includes `x:Name` document-namescope checks and root-only `x:Class` placement.
 5. Attribute-value and property-element text markup extensions now parse into structured AST nodes, including nested extensions, escaped `{}{...}` literals, and prefixed forms such as `{x:Null}`, while authoring lowering preserves the original raw text for source compatibility.
 6. Collection metadata now validates allowed item types for list containers, and dictionary metadata validates explicit `x:Key`, implicit key properties, missing keys, and duplicate keys.
-7. Runtime lowering now evaluates v1 `Binding` paths against a supplied data context and maps `{x:Null}` to semantic `null`.
+7. Runtime lowering now evaluates v1 `Binding` paths against a supplied data context, maps `{x:Null}` to semantic `null`, and resolves scoped primitive `{StaticResource ...}` references.
 
 Next slice:
 
-1. Broaden resource dictionary lowering and resource-reference semantics beyond designer theme key validation.
-2. Follow that with semantic serializer coverage for namespaces, directives, markup extensions, and collections.
+1. Add semantic serializer coverage for namespaces, directives, markup extensions, and collections.
+2. Follow that with `xml:space` whitespace behavior and `xml:lang` propagation.

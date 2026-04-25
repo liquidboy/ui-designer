@@ -75,7 +75,22 @@ Current status:
 1. Runtime child containers such as `Canvas`, `StackPanel`, and `Grid` validate their child content as list collections of known controls.
 2. Designer theme `Colors` validates as a dictionary, with entries keyed by explicit `x:Key` or implicit `Color.Id`.
 3. Missing keys, duplicate keys, invalid collection item types, and `x:Key` outside dictionary items produce validation errors.
-4. Runtime resource lookup and semantic dictionary lowering are not available yet.
+4. Runtime `ResourceDictionary` supports primitive `Color`, `Number`, and `String` resources keyed by `x:Key`.
+5. Top-level `{StaticResource ...}` references resolve against the nearest scoped runtime resources during runtime lowering.
+6. Object-valued resources, dynamic resources, and resource serialization are still pending.
+
+Supported runtime form:
+
+```xaml
+<Canvas xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Canvas.Resources>
+    <ResourceDictionary>
+      <Color x:Key="Accent">#67c7ff</Color>
+    </ResourceDictionary>
+  </Canvas.Resources>
+  <TextBlock Foreground="{StaticResource Accent}" Text="Resource-backed text" />
+</Canvas>
+```
 
 ## Binding v1
 

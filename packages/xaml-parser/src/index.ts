@@ -54,7 +54,14 @@ export interface XamlLoweringOptions {
   dataContext?: unknown;
 }
 
+interface XamlLoweringContext extends XamlLoweringOptions {
+  resources: Map<string, XamlPrimitive>;
+}
+
 const CONTENT_MEMBER_NAME = 'Content';
+const RESOURCES_MEMBER_NAME = 'Resources';
+const RESOURCE_DICTIONARY_TYPE_NAME = 'ResourceDictionary';
+const PRIMITIVE_RESOURCE_TYPE_NAMES = new Set(['Color', 'Number', 'String']);
 
 interface SourceLocator {
   span(startOffset: number, endOffset: number): XamlSourceSpan;
@@ -1043,6 +1050,10 @@ function isBindingExtension(extension: XamlMarkupExtensionNode): boolean {
   return extension.type.localName === 'Binding' && extension.type.namespaceUri == null;
 }
 
+function isStaticResourceExtension(extension: XamlMarkupExtensionNode): boolean {
+  return extension.type.localName === 'StaticResource' && extension.type.namespaceUri == null;
+}
+
 function coerceRuntimePrimitive(value: unknown): XamlPrimitive {
   if (value == null) {
     return null;
@@ -1072,6 +1083,22 @@ function bindingPathFromExtension(extension: XamlMarkupExtensionNode): string {
   return positionalPath ? markupExtensionArgumentToText(positionalPath.value).trim() : '';
 }
 
+function resourceKeyFromExtension(extension: XamlMarkupExtensionNode): string {
+  const namedKey = extension.arguments.find((argument) => {
+    return (
+      argument.kind === 'named' &&
+      ['resourcekey', 'key'].includes(argument.name.toLowerCase())
+    );
+  });
+
+  if (namedKey) {
+    return markupExtensionArgumentToText(namedKey.value).trim();
+  }
+
+  const positionalKey = extension.arguments.find((argument) => argument.kind === 'positional');
+  return positionalKey ? markupExtensionArgumentToText(positionalKey.value).trim() : '';
+}
+
 function readBindingPathSegment(value: unknown, segment: string): unknown {
   if (value == null || !segment) {
     return undefined;
@@ -1097,7 +1124,7 @@ function resolveBindingPath(dataContext: unknown, path: string): unknown {
   return trimmed.split('.').reduce(readBindingPathSegment, dataContext);
 }
 
-function evaluateMarkupExtension(extension: XamlMarkupExtensionNode, options: XamlLoweringOptions): XamlPrimitive {
+function evaluateMarkupExtension(extension: XamlMarkupExtensionNode, options: XamlLoweringContext): XamlPrimitive {
   if (isNullExtension(extension)) {
     return null;
   }
@@ -1106,10 +1133,23 @@ function evaluateMarkupExtension(extension: XamlMarkupExtensionNode, options: Xa
     return coerceRuntimePrimitive(resolveBindingPath(options.dataContext, bindingPathFromExtension(extension)));
   }
 
+  if (isStaticResourceExtension(extension)) {
+    const key = resourceKeyFromExtension(extension);
+    if (!key) {
+      throw new Error('StaticResource markup extension requires a resource key.');
+    }
+
+    if (!options.resources.has(key)) {
+      throw new Error(`StaticResource "${key}" could not be resolved.`);
+    }
+
+    return options.resources.get(key) ?? null;
+  }
+
   return extension.raw;
 }
 
-function primitiveValueFromNode(value: XamlValueNode, options: XamlLoweringOptions): XamlPrimitive | undefined {
+function primitiveValueFromNode(value: XamlValueNode, options: XamlLoweringContext): XamlPrimitive | undefined {
   if (value.kind === 'text') {
     return value.text;
   }
@@ -1125,11 +1165,11 @@ function textFromPrimitive(value: XamlPrimitive | undefined): string {
   return value == null ? '' : String(value);
 }
 
-function scalarTextFromValue(value: XamlValueNode, options: XamlLoweringOptions): string {
+function scalarTextFromValue(value: XamlValueNode, options: XamlLoweringContext): string {
   return textFromPrimitive(primitiveValueFromNode(value, options));
 }
 
-function primitiveValueFromValues(values: readonly XamlValueNode[], options: XamlLoweringOptions): XamlPrimitive | undefined {
+function primitiveValueFromValues(values: readonly XamlValueNode[], options: XamlLoweringContext): XamlPrimitive | undefined {
   if (values.length === 1) {
     const value = primitiveValueFromNode(values[0], options);
     if (value !== undefined) {
@@ -1147,7 +1187,7 @@ function primitiveValueFromValues(values: readonly XamlValueNode[], options: Xam
   return parseAttributeValue(text);
 }
 
-function textValueFromMember(member: XamlMemberNode, options: XamlLoweringOptions): string {
+function textValueFromMember(member: XamlMemberNode, options: XamlLoweringContext): string {
   return member.values.map((value) => scalarTextFromValue(value, options)).join('');
 }
 
@@ -1159,7 +1199,7 @@ function lowerTypeName(object: XamlObjectNode, registry: XamlVocabularyRegistry)
   return resolveXamlType(object.type, registry)?.name ?? qualifiedNameToString(object.type);
 }
 
-function textValueFromValues(values: readonly XamlValueNode[], options: XamlLoweringOptions): string {
+function textValueFromValues(values: readonly XamlValueNode[], options: XamlLoweringContext): string {
   return values.map((value) => scalarTextFromValue(value, options)).join('').trim();
 }
 
@@ -1190,10 +1230,128 @@ function lowerMemberName(
     : qualifiedNameToString(member.name);
 }
 
+function isResourcesMember(
+  member: XamlMemberNode,
+  ownerType: XamlTypeDefinition | null,
+  registry: XamlVocabularyRegistry
+): boolean {
+  if (!ownerType || member.isDirective || member.syntax === 'content') {
+    return false;
+  }
+
+  if (member.dotted) {
+    return member.dotted.owner.localName === ownerType.name && member.dotted.member === RESOURCES_MEMBER_NAME;
+  }
+
+  return resolveXamlMember(ownerType, member.name, registry)?.name === RESOURCES_MEMBER_NAME;
+}
+
+function lowerContextWithResources(
+  context: XamlLoweringContext,
+  resources: Map<string, XamlPrimitive>
+): XamlLoweringContext {
+  return {
+    ...context,
+    resources
+  };
+}
+
+function isResourceDictionaryObject(object: XamlObjectNode, registry: XamlVocabularyRegistry): boolean {
+  return resolveXamlType(object.type, registry)?.name === RESOURCE_DICTIONARY_TYPE_NAME;
+}
+
+function resourceKeyFromObject(object: XamlObjectNode, context: XamlLoweringContext): string {
+  const keyMember = object.members.find((member) => {
+    return (
+      member.isDirective &&
+      member.name.namespaceUri === XAML_LANGUAGE_NAMESPACE &&
+      member.name.localName === 'Key'
+    );
+  });
+
+  return keyMember ? textValueFromValues(keyMember.values, context).trim() : '';
+}
+
+function primitiveResourceValueFromNode(node: XamlNode): XamlPrimitive | undefined {
+  if (!PRIMITIVE_RESOURCE_TYPE_NAMES.has(node.type)) {
+    return undefined;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(node.attributes, 'Value')) {
+    return node.attributes.Value;
+  }
+
+  if (node.text != null) {
+    return node.text;
+  }
+
+  return '';
+}
+
+function collectResourceObject(
+  object: XamlObjectNode,
+  registry: XamlVocabularyRegistry,
+  context: XamlLoweringContext
+): void {
+  const key = resourceKeyFromObject(object, context);
+  if (!key) {
+    return;
+  }
+
+  const lowered = lowerObjectNode(object, registry, context);
+  const value = primitiveResourceValueFromNode(lowered);
+  if (value !== undefined) {
+    context.resources.set(key, value);
+  }
+}
+
+function resourceObjectsFromMember(member: XamlMemberNode, registry: XamlVocabularyRegistry): XamlObjectNode[] {
+  const objects = member.values.filter((value): value is XamlObjectNode => value.kind === 'object');
+  return objects.flatMap((object) => {
+    if (!isResourceDictionaryObject(object, registry)) {
+      return [object];
+    }
+
+    return object.members.flatMap((dictionaryMember) => {
+      if (dictionaryMember.syntax !== 'content') {
+        return [];
+      }
+
+      return dictionaryMember.values.filter((value): value is XamlObjectNode => value.kind === 'object');
+    });
+  });
+}
+
+function collectResourcesForObject(
+  object: XamlObjectNode,
+  ownerType: XamlTypeDefinition | null,
+  registry: XamlVocabularyRegistry,
+  context: XamlLoweringContext
+): XamlLoweringContext {
+  if (!context.evaluateMarkupExtensions) {
+    return context;
+  }
+
+  const resources = new Map(context.resources);
+  const localContext = lowerContextWithResources(context, resources);
+
+  for (const member of object.members) {
+    if (!isResourcesMember(member, ownerType, registry)) {
+      continue;
+    }
+
+    for (const resourceObject of resourceObjectsFromMember(member, registry)) {
+      collectResourceObject(resourceObject, registry, localContext);
+    }
+  }
+
+  return localContext;
+}
+
 function lowerValueObjects(
   values: readonly XamlValueNode[],
   registry: XamlVocabularyRegistry,
-  options: XamlLoweringOptions
+  options: XamlLoweringContext
 ): XamlNode[] {
   return values
     .filter((value): value is XamlObjectNode => value.kind === 'object')
@@ -1205,7 +1363,7 @@ function lowerPropertyMember(
   ownerType: XamlTypeDefinition | null,
   member: XamlMemberNode,
   registry: XamlVocabularyRegistry,
-  options: XamlLoweringOptions
+  options: XamlLoweringContext
 ): void {
   const memberName = lowerMemberName(member, ownerType, registry);
   const valueObjects = lowerValueObjects(member.values, registry, options);
@@ -1261,7 +1419,7 @@ function lowerContentMember(
   ownerType: XamlTypeDefinition | null,
   member: XamlMemberNode,
   registry: XamlVocabularyRegistry,
-  options: XamlLoweringOptions
+  options: XamlLoweringContext
 ): void {
   const valueObjects = lowerValueObjects(member.values, registry, options);
   const textValue = textValueFromValues(member.values, options);
@@ -1301,9 +1459,10 @@ function lowerContentMember(
 function lowerObjectNode(
   object: XamlObjectNode,
   registry: XamlVocabularyRegistry,
-  options: XamlLoweringOptions
+  options: XamlLoweringContext
 ): XamlNode {
   const ownerType = resolveXamlType(object.type, registry);
+  const localOptions = collectResourcesForObject(object, ownerType, registry, options);
   const attributes: XamlAttributeMap = {};
   const node: XamlNode = {
     type: lowerTypeName(object, registry),
@@ -1318,10 +1477,14 @@ function lowerObjectNode(
   }
 
   for (const member of object.members) {
+    if (localOptions.evaluateMarkupExtensions && isResourcesMember(member, ownerType, registry)) {
+      continue;
+    }
+
     if (member.syntax === 'attribute') {
       const memberName = lowerMemberName(member, ownerType, registry);
-      const textValue = textValueFromMember(member, options);
-      const primitiveValue = primitiveValueFromValues(member.values, options);
+      const textValue = textValueFromMember(member, localOptions);
+      const primitiveValue = primitiveValueFromValues(member.values, localOptions);
       if (primitiveValue !== undefined) {
         attributes[memberName] = primitiveValue;
       }
@@ -1334,14 +1497,21 @@ function lowerObjectNode(
     }
 
     if (member.syntax === 'propertyElement') {
-      lowerPropertyMember(node, ownerType, member, registry, options);
+      lowerPropertyMember(node, ownerType, member, registry, localOptions);
       continue;
     }
 
-    lowerContentMember(node, ownerType, member, registry, options);
+    lowerContentMember(node, ownerType, member, registry, localOptions);
   }
 
   return node;
+}
+
+function createLoweringContext(options: XamlLoweringOptions): XamlLoweringContext {
+  return {
+    ...options,
+    resources: new Map()
+  };
 }
 
 export function lowerXamlDocument(
@@ -1354,7 +1524,7 @@ export function lowerXamlDocument(
   }
 
   return {
-    root: lowerObjectNode(document.root, registry, options)
+    root: lowerObjectNode(document.root, registry, createLoweringContext(options))
   };
 }
 

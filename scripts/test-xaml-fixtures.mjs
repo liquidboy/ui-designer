@@ -557,7 +557,7 @@ async function runPhase5MarkupExtensionFixtures() {
     'binding-property-element.xaml': { errors: [], warnings: [] },
     'nested-extension.xaml': {
       errors: [],
-      warnings: ['unsupported-markup-extension']
+      warnings: []
     },
     'escaped-literal.xaml': { errors: [], warnings: [] },
     'escaped-property-element.xaml': { errors: [], warnings: [] },
@@ -755,6 +755,62 @@ async function runPhase7RuntimeExtensionFixtures() {
   return files.length;
 }
 
+async function runPhase8ResourceFixtures() {
+  const expectations = {
+    'runtime-resource-dictionary.xaml': { errors: [], warnings: [] },
+    'scoped-resource-dictionary.xaml': { errors: [], warnings: [] },
+    'missing-static-resource.xaml': { errors: [], warnings: [] },
+    'resource-dictionary-missing-key.xaml': { errors: ['missing-dictionary-key'], warnings: [] },
+    'resource-dictionary-duplicate-key.xaml': { errors: ['duplicate-dictionary-key'], warnings: [] },
+    'resource-dictionary-invalid-item.xaml': { errors: ['invalid-collection-item-type'], warnings: [] }
+  };
+
+  const files = await listFixtureFiles('phase8-resources');
+
+  for (const fileName of files) {
+    const input = await readFixture('phase8-resources', fileName);
+    const result = parseAndValidateXaml(input);
+    const expected = expectations[fileName];
+    assert.ok(expected, `Missing resource expectation for ${fileName}`);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'error'), expected.errors, `${fileName} validation errors`);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'warning'), expected.warnings, `${fileName} validation warnings`);
+
+    if (fileName === 'missing-static-resource.xaml') {
+      assert.throws(
+        () => parseRuntimeXaml(input),
+        /StaticResource "Missing" could not be resolved/,
+        `${fileName} runtime resource lookup`
+      );
+      continue;
+    }
+
+    if (expected.errors.length > 0) {
+      continue;
+    }
+
+    const preserved = lowerXamlDocument(result.document);
+    const runtime = parseRuntimeXaml(input);
+
+    if (fileName === 'runtime-resource-dictionary.xaml') {
+      assert.equal(preserved.root.children[0]?.type, 'Resources');
+      assert.equal(preserved.root.children[0]?.children[0]?.type, 'ResourceDictionary');
+      assert.equal(preserved.root.children[1]?.attributes.Text, '{StaticResource HeroTitle}');
+      assert.equal(runtime.root.children.length, 1);
+      assert.equal(runtime.root.children[0]?.attributes.Text, 'Resource title');
+      assert.equal(runtime.root.children[0]?.attributes.Foreground, '#67c7ff');
+      assert.equal(runtime.root.children[0]?.attributes.FontSize, 24);
+    }
+
+    if (fileName === 'scoped-resource-dictionary.xaml') {
+      assert.equal(runtime.root.children.length, 2);
+      assert.equal(runtime.root.children[0]?.attributes.Foreground, '#111111');
+      assert.equal(runtime.root.children[1]?.children[0]?.attributes.Foreground, '#222222');
+    }
+  }
+
+  return files.length;
+}
+
 async function runPhase6CollectionFixtures() {
   const expectations = {
     'theme-dictionary-xkey.xaml': { errors: [], warnings: [] },
@@ -801,7 +857,8 @@ const phase4Count = await runPhase4DesignerConfigFixtures();
 const phase5Count = await runPhase5MarkupExtensionFixtures();
 const phase6Count = await runPhase6CollectionFixtures();
 const phase7Count = await runPhase7RuntimeExtensionFixtures();
+const phase8Count = await runPhase8ResourceFixtures();
 
 console.log(
-  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions).`
+  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources).`
 );

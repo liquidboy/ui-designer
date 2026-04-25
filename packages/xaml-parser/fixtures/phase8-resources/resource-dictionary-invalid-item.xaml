@@ -1,0 +1,7 @@
+<Canvas>
+  <Canvas.Resources>
+    <ResourceDictionary>
+      <TextBlock Text="Not a primitive resource" />
+    </ResourceDictionary>
+  </Canvas.Resources>
+</Canvas>

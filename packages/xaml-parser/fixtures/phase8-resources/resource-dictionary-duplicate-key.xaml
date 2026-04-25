@@ -1,0 +1,8 @@
+<Canvas xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Canvas.Resources>
+    <ResourceDictionary>
+      <Color x:Key="Accent">#67c7ff</Color>
+      <Color x:Key="Accent">#101820</Color>
+    </ResourceDictionary>
+  </Canvas.Resources>
+</Canvas>

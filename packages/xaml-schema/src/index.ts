@@ -309,6 +309,10 @@ const eventMembers = [
   member('Click', 'string', { isRuntimeSupported: false })
 ] as const;
 
+const resourceMembers = [
+  member('Resources', 'object')
+] as const;
+
 type TypeDefinitionOptions = Pick<XamlTypeDefinition, 'members' | 'contentProperty' | 'allowsText' | 'allowsChildren'> & {
   namespaceUri?: string | null;
   collectionKind?: XamlCollectionKind;
@@ -391,8 +395,34 @@ export const xamlIntrinsicDirectives = [
 ] as const;
 
 export const uiDesignerTypes = [
+  typeDefinition('ResourceDictionary', {
+    members: [],
+    contentProperty: 'Children',
+    collectionKind: 'dictionary',
+    allowedContentTypes: ['Color', 'Number', 'String'],
+    allowsText: false,
+    allowsChildren: true
+  }),
+  typeDefinition('Color', {
+    members: [member('Value', 'color', { isContent: true })],
+    contentProperty: 'Value',
+    allowsText: true,
+    allowsChildren: false
+  }),
+  typeDefinition('Number', {
+    members: [member('Value', 'number', { isContent: true })],
+    contentProperty: 'Value',
+    allowsText: true,
+    allowsChildren: false
+  }),
+  typeDefinition('String', {
+    members: [member('Value', 'string', { isContent: true })],
+    contentProperty: 'Value',
+    allowsText: true,
+    allowsChildren: false
+  }),
   typeDefinition('Canvas', {
-    members: [...commonLayoutMembers, ...eventMembers],
+    members: [...commonLayoutMembers, ...resourceMembers, ...eventMembers],
     contentProperty: 'Children',
     collectionKind: 'list',
     allowedContentTypes: runtimeControlContentTypes,
@@ -400,7 +430,7 @@ export const uiDesignerTypes = [
     allowsChildren: true
   }),
   typeDefinition('StackPanel', {
-    members: [...commonLayoutMembers, member('Spacing', 'number'), member('Orientation', 'enum', {
+    members: [...commonLayoutMembers, ...resourceMembers, member('Spacing', 'number'), member('Orientation', 'enum', {
       allowedValues: ['Vertical', 'Horizontal'],
       isRuntimeSupported: false
     }), ...eventMembers],
@@ -411,7 +441,7 @@ export const uiDesignerTypes = [
     allowsChildren: true
   }),
   typeDefinition('Grid', {
-    members: [...commonLayoutMembers, member('Rows', 'number'), member('Columns', 'number'), ...eventMembers],
+    members: [...commonLayoutMembers, ...resourceMembers, member('Rows', 'number'), member('Columns', 'number'), ...eventMembers],
     contentProperty: 'Children',
     collectionKind: 'list',
     allowedContentTypes: runtimeControlContentTypes,
@@ -419,29 +449,29 @@ export const uiDesignerTypes = [
     allowsChildren: true
   }),
   typeDefinition('Border', {
-    members: [...commonLayoutMembers, ...visualMembers, member('Child', 'object', { isContent: true }), ...eventMembers],
+    members: [...commonLayoutMembers, ...resourceMembers, ...visualMembers, member('Child', 'object', { isContent: true }), ...eventMembers],
     contentProperty: 'Child',
     allowsText: false,
     allowsChildren: true
   }),
   typeDefinition('Rectangle', {
-    members: [...commonLayoutMembers, member('Fill', 'color'), ...eventMembers],
+    members: [...commonLayoutMembers, ...resourceMembers, member('Fill', 'color'), ...eventMembers],
     allowsText: false,
     allowsChildren: false
   }),
   typeDefinition('TextBlock', {
-    members: [...commonLayoutMembers, ...textMembers, ...eventMembers],
+    members: [...commonLayoutMembers, ...resourceMembers, ...textMembers, ...eventMembers],
     contentProperty: 'Text',
     allowsText: true,
     allowsChildren: false
   }),
   typeDefinition('Image', {
-    members: [...commonLayoutMembers, ...imageMembers, member('Background', 'color'), ...eventMembers],
+    members: [...commonLayoutMembers, ...resourceMembers, ...imageMembers, member('Background', 'color'), ...eventMembers],
     allowsText: false,
     allowsChildren: false
   }),
   typeDefinition('Button', {
-    members: [...commonLayoutMembers, ...visualMembers, ...textMembers, ...eventMembers],
+    members: [...commonLayoutMembers, ...resourceMembers, ...visualMembers, ...textMembers, ...eventMembers],
     contentProperty: 'Content',
     allowsText: true,
     allowsChildren: true
@@ -850,6 +880,7 @@ function markupExtensionsFromValues(values: readonly XamlValueNode[]): XamlMarku
 function isRuntimeSupportedMarkupExtension(extension: XamlMarkupExtensionNode): boolean {
   return (
     (extension.type.localName === 'Binding' && extension.type.namespaceUri == null) ||
+    (extension.type.localName === 'StaticResource' && extension.type.namespaceUri == null) ||
     (extension.type.localName === 'Null' && extension.type.namespaceUri === XAML_LANGUAGE_NAMESPACE)
   );
 }
