@@ -11,7 +11,8 @@
     "dev:playground": "npm run dev --workspace @ui-designer/playground",
     "dev:designer": "npm run dev --workspace @ui-designer/designer",
     "build": "tsc -b",
-    "typecheck": "tsc -b --pretty false"
+    "typecheck": "tsc -b --pretty false",
+    "test:xaml": "npm run build && node scripts/test-xaml-fixtures.mjs"
   },
   "dependencies": {
     "preact": "^10.26.9"

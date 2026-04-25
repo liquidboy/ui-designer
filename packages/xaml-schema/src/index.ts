@@ -616,9 +616,12 @@ function validateContentMember(
   diagnostics: XamlDiagnostic[],
   registry: XamlVocabularyRegistry
 ): void {
+  let hasInvalidContent = false;
+
   for (const value of member.values) {
     if (value.kind === 'object') {
       if (!type.allowsChildren) {
+        hasInvalidContent = true;
         diagnostics.push(validationDiagnostic(
           'error',
           'content-children-not-allowed',
@@ -632,6 +635,7 @@ function validateContentMember(
     }
 
     if (value.text.trim() && !type.allowsText) {
+      hasInvalidContent = true;
       diagnostics.push(validationDiagnostic(
         'error',
         'content-text-not-allowed',
@@ -641,7 +645,7 @@ function validateContentMember(
     }
   }
 
-  if (!type.contentProperty && member.values.length > 0) {
+  if (!hasInvalidContent && !type.contentProperty && member.values.length > 0) {
     diagnostics.push(validationDiagnostic(
       'warning',
       'implicit-content-without-schema-member',
