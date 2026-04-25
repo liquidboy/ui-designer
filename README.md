@@ -30,4 +30,5 @@ XAML-inspired UI framework targeting WebGPU, with an infinite-canvas visual desi
 
 - [Architecture](./docs/architecture.md)
 - [XAML Subset v1](./docs/xaml-subset-v1.md)
+- [XAML Spec Compliance Plan](./docs/xaml-spec-compliance-plan.md)
 - [Milestone Plan](./docs/milestone-plan.md)

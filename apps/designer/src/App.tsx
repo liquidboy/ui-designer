@@ -1,5 +1,5 @@
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { JSX } from 'preact';
-import { useEffect, useRef, useState } from 'preact/hooks';
 import {
   CommandStack,
   buildDesignerTree,
@@ -17,663 +17,99 @@ import {
   worldToScreen,
   type CameraState,
   type DesignerDocument,
-  type DesignerCommand
+  type DesignerCommand,
+  type DesignerTreeItem
 } from '@ui-designer/designer-core';
 import { RuntimeHost } from '@ui-designer/ui-runtime-web';
-import { ensureImageNaturalSize, getImageNaturalSize, type ColorRgba, type Point, type UiElement } from '@ui-designer/ui-core';
-import type { XamlNode } from '@ui-designer/xaml-schema';
-
-function svgDataUri(svg: string): string {
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-}
-
-const IMAGE_ASSET_HORIZON = svgDataUri(`
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200">
-  <defs>
-    <linearGradient id="sky" x1="0" x2="1" y1="0" y2="1">
-      <stop offset="0%" stop-color="#0d1b2a" />
-      <stop offset="100%" stop-color="#2256d6" />
-    </linearGradient>
-  </defs>
-  <rect width="320" height="200" rx="24" fill="url(#sky)" />
-  <circle cx="250" cy="56" r="34" fill="#ffd166" fill-opacity="0.88" />
-  <path d="M44 152C84 96 132 76 198 88C232 94 260 112 286 144" fill="none" stroke="#f8fafc" stroke-width="18" stroke-linecap="round" />
-  <rect x="48" y="42" width="108" height="18" rx="9" fill="#f8fafc" fill-opacity="0.4" />
-  <rect x="48" y="72" width="82" height="14" rx="7" fill="#f8fafc" fill-opacity="0.28" />
-</svg>
-`);
-
-const IMAGE_ASSET_BLUEPRINT = svgDataUri(`
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200">
-  <rect width="320" height="200" rx="24" fill="#091119" />
-  <rect x="26" y="26" width="268" height="148" rx="14" fill="none" stroke="#6fd3ff" stroke-width="4" stroke-opacity="0.35" />
-  <path d="M52 64H268M52 100H268M52 136H268M92 38V162M160 38V162M228 38V162" stroke="#6fd3ff" stroke-width="2" stroke-opacity="0.22" />
-  <path d="M86 138L132 84L176 110L232 62" fill="none" stroke="#ffd166" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" />
-  <circle cx="232" cy="62" r="10" fill="#ffd166" />
-</svg>
-`);
-
-const IMAGE_ASSET_POSTER = svgDataUri(`
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200">
-  <defs>
-    <linearGradient id="poster" x1="0" x2="1" y1="0" y2="1">
-      <stop offset="0%" stop-color="#2a142f" />
-      <stop offset="100%" stop-color="#a83d7a" />
-    </linearGradient>
-  </defs>
-  <rect width="320" height="200" rx="24" fill="url(#poster)" />
-  <rect x="38" y="34" width="92" height="132" rx="18" fill="#f8fafc" fill-opacity="0.12" />
-  <circle cx="214" cy="74" r="42" fill="#ffcf7a" fill-opacity="0.95" />
-  <path d="M72 150C108 116 152 102 198 108C232 112 260 126 286 148" fill="none" stroke="#f8fafc" stroke-width="16" stroke-linecap="round" />
-  <rect x="160" y="40" width="96" height="18" rx="9" fill="#f8fafc" fill-opacity="0.42" />
-  <rect x="160" y="68" width="74" height="12" rx="6" fill="#f8fafc" fill-opacity="0.28" />
-</svg>
-`);
-
-type ImageAssetId = 'horizon' | 'blueprint' | 'poster';
-type FontPresetId = 'ui-sans' | 'editorial-serif' | 'humanist-sans' | 'mono';
-
-interface ImageAssetPreset {
-  id: ImageAssetId;
-  title: string;
-  description: string;
-  source: string;
-  background: string;
-}
-
-interface FontPreset {
-  id: FontPresetId;
-  title: string;
-  family: string;
-  sample: string;
-  note: string;
-}
-
-const IMAGE_ASSETS: readonly ImageAssetPreset[] = [
-  {
-    id: 'horizon',
-    title: 'Horizon',
-    description: 'Soft hero art for product, landing, or dashboard compositions.',
-    source: IMAGE_ASSET_HORIZON,
-    background: '#101823'
-  },
-  {
-    id: 'blueprint',
-    title: 'Blueprint',
-    description: 'Diagram-like art with grid rhythm and strong contrast.',
-    source: IMAGE_ASSET_BLUEPRINT,
-    background: '#091119'
-  },
-  {
-    id: 'poster',
-    title: 'Poster',
-    description: 'Editorial-style art block for cards, promos, and showcases.',
-    source: IMAGE_ASSET_POSTER,
-    background: '#2a142f'
-  }
-] as const;
-
-const FONT_PRESETS: readonly FontPreset[] = [
-  {
-    id: 'ui-sans',
-    title: 'UI Sans',
-    family: '"Segoe UI", system-ui, sans-serif',
-    sample: 'Fast readable product UI',
-    note: 'Balanced default for controls and dashboards.'
-  },
-  {
-    id: 'editorial-serif',
-    title: 'Editorial Serif',
-    family: 'Georgia, "Times New Roman", serif',
-    sample: 'Opinionated display copy',
-    note: 'Good for headings and narrative blocks.'
-  },
-  {
-    id: 'humanist-sans',
-    title: 'Humanist Sans',
-    family: '"Avenir Next", "Segoe UI", sans-serif',
-    sample: 'Warm expressive interface text',
-    note: 'A softer alternative for labels and hero copy.'
-  },
-  {
-    id: 'mono',
-    title: 'Mono',
-    family: '"IBM Plex Mono", "SFMono-Regular", Menlo, monospace',
-    sample: 'Structured metrics and code',
-    note: 'Useful for inspector values and technical surfaces.'
-  }
-] as const;
-
-const sampleXaml = `
-<Canvas Width="1600" Height="1200">
-  <Grid Rows="2" Columns="2" Width="980" Height="640" X="120" Y="80">
-    <Border Grid.Row="0" Grid.Column="0" Background="#18222e" Padding="16">
-      <StackPanel Spacing="12">
-        <TextBlock FontStyle="Italic" FontFamily="Georgia" Text="Inspector-Driven Design Surface" />
-        <TextBlock
-          Width="260"
-          TextWrapping="Wrap"
-          Text="WebGPU text now wraps, clips, uses fallback-aware font loading, and shares the canvas with image-backed components."
-        />
-        <TextBlock
-          Width="260"
-          TextWrapping="Wrap"
-          FlowDirection="RightToLeft"
-          Text="مرحبا بالنص عبر WebGPU مع اتجاه من اليمين إلى اليسار داخل المصمم."
-        />
-        <Button Width="186" TextTrimming="CharacterEllipsis" Content="Primary Action with Extended Copy" />
-      </StackPanel>
-    </Border>
-    <Image Grid.Row="0" Grid.Column="1" Source="${IMAGE_ASSET_HORIZON}" Stretch="UniformToFill" Background="#101823" />
-    <Rectangle Grid.Row="1" Grid.Column="0" Fill="#ff8157" />
-    <Rectangle Grid.Row="1" Grid.Column="1" Fill="#3fca9d" />
-  </Grid>
-</Canvas>
-`;
-const GRID_SIZE = 8;
-const DRAFT_STORAGE_KEY = 'ui-designer:document-draft:v1';
-const DEFAULT_NODE_COLORS = ['#3472ff', '#ff8157', '#3fca9d', '#ffd166', '#6fd3ff', '#b88cff'];
-const DEFAULT_FILE_NAME = 'designer-document.xaml';
-
-type TreeDropIntent = 'before' | 'inside' | 'after';
-
-type PaletteTemplateId =
-  | 'accent-rectangle'
-  | 'text-label'
-  | 'image-frame'
-  | 'primary-button'
-  | 'content-stack'
-  | 'metric-card'
-  | 'swatch-grid'
-  | 'section-frame';
-
-interface PaletteTemplate {
-  id: PaletteTemplateId;
-  title: string;
-  description: string;
-  accent: string;
-  parentTypes?: readonly string[];
-  build(index: number): XamlNode;
-}
-
-function xamlNode(
-  type: string,
-  attributes: Record<string, string | number | boolean>,
-  children: XamlNode[] = []
-): XamlNode {
-  return {
-    type,
-    attributes,
-    children
-  };
-}
-
-const PALETTE_TEMPLATES: readonly PaletteTemplate[] = [
-  {
-    id: 'accent-rectangle',
-    title: 'Accent Rectangle',
-    description: 'Simple visual block for wireframes, artwork, or emphasis.',
-    accent: '#3472ff',
-    build: (index) =>
-      xamlNode('Rectangle', {
-        Width: 160,
-        Height: 96,
-        Fill: DEFAULT_NODE_COLORS[index % DEFAULT_NODE_COLORS.length]
-      })
-  },
-  {
-    id: 'text-label',
-    title: 'Text Label',
-    description: 'Single-line copy block for headings or supporting text.',
-    accent: '#6fd3ff',
-    build: (index) =>
-      xamlNode('TextBlock', {
-        Text: `Label ${index + 1}`
-      })
-  },
-  {
-    id: 'image-frame',
-    title: 'Image Frame',
-    description: 'Image-backed block for hero art, thumbnails, or composition tests.',
-    accent: '#ffd166',
-    build: () =>
-      xamlNode('Image', {
-        Width: 220,
-        Height: 140,
-        Source: IMAGE_ASSET_HORIZON,
-        Stretch: 'UniformToFill',
-        Background: '#101823'
-      })
-  },
-  {
-    id: 'primary-button',
-    title: 'Primary Button',
-    description: 'Action button with a strong default size and call-to-action label.',
-    accent: '#3fca9d',
-    build: (index) =>
-      xamlNode('Button', {
-        Content: `Action ${index + 1}`,
-        Width: 152,
-        Height: 40
-      })
-  },
-  {
-    id: 'content-stack',
-    title: 'Content Stack',
-    description: 'Headline, supporting copy, and a primary action in a vertical rhythm.',
-    accent: '#b88cff',
-    build: (index) =>
-      xamlNode(
-        'StackPanel',
-        {
-          Width: 260,
-          Spacing: 10,
-          Background: '#18222e'
-        },
-        [
-          xamlNode('TextBlock', { Text: `Section ${index + 1}`, FontFamily: 'Georgia' }),
-          xamlNode('TextBlock', {
-            Width: 260,
-            TextWrapping: 'Wrap',
-            Text: 'Concise supporting copy for the selected design block with real wrapped text.'
-          }),
-          xamlNode('Button', {
-            Content: 'Continue with a longer call to action',
-            Width: 168,
-            Height: 40,
-            TextTrimming: 'CharacterEllipsis'
-          })
-        ]
-      )
-  },
-  {
-    id: 'metric-card',
-    title: 'Metric Card',
-    description: 'A bordered summary tile with a label and a large value.',
-    accent: '#ff8157',
-    build: (index) =>
-      xamlNode(
-        'Border',
-        {
-          Width: 240,
-          Height: 132,
-          Background: '#18222e',
-          Padding: 16
-        },
-        [
-          xamlNode('StackPanel', { Spacing: 10 }, [
-            xamlNode('TextBlock', { Text: `Metric ${index + 1}` }),
-            xamlNode('TextBlock', { Text: '128' })
-          ])
-        ]
-      )
-  },
-  {
-    id: 'swatch-grid',
-    title: 'Swatch Grid',
-    description: 'A compact 2x2 composition for testing nested layout and color systems.',
-    accent: '#ffd166',
-    build: (index) =>
-      xamlNode(
-        'Grid',
-        {
-          Width: 280,
-          Height: 180,
-          Rows: 2,
-          Columns: 2,
-          Background: '#18222e'
-        },
-        [
-          xamlNode('Rectangle', {
-            'Grid.Row': 0,
-            'Grid.Column': 0,
-            Fill: DEFAULT_NODE_COLORS[index % DEFAULT_NODE_COLORS.length]
-          }),
-          xamlNode('Rectangle', {
-            'Grid.Row': 0,
-            'Grid.Column': 1,
-            Fill: DEFAULT_NODE_COLORS[(index + 1) % DEFAULT_NODE_COLORS.length]
-          }),
-          xamlNode('Rectangle', {
-            'Grid.Row': 1,
-            'Grid.Column': 0,
-            Fill: DEFAULT_NODE_COLORS[(index + 2) % DEFAULT_NODE_COLORS.length]
-          }),
-          xamlNode('Rectangle', {
-            'Grid.Row': 1,
-            'Grid.Column': 1,
-            Fill: DEFAULT_NODE_COLORS[(index + 3) % DEFAULT_NODE_COLORS.length]
-          })
-        ]
-      )
-  },
-  {
-    id: 'section-frame',
-    title: 'Section Frame',
-    description: 'Container block with a heading and room for nested content or imagery.',
-    accent: '#6fd3ff',
-    build: (index) =>
-      xamlNode(
-        'Border',
-        {
-          Width: 280,
-          Height: 180,
-          Background: '#111923',
-          Padding: 18
-        },
-        [
-          xamlNode('StackPanel', { Spacing: 12 }, [
-            xamlNode('TextBlock', { Text: `Frame ${index + 1}` }),
-            xamlNode('Image', {
-              Width: 220,
-              Height: 88,
-              Source: IMAGE_ASSET_HORIZON,
-              Stretch: 'UniformToFill',
-              Background: DEFAULT_NODE_COLORS[(index + 4) % DEFAULT_NODE_COLORS.length]
-            })
-          ])
-        ]
-      )
-  }
-] as const;
-
-function clamp01(value: number): number {
-  return Math.max(0, Math.min(1, value));
-}
-
-function colorToHex(color: ColorRgba | null): string | null {
-  if (!color) {
-    return null;
-  }
-
-  const r = Math.round(clamp01(color.r) * 255)
-    .toString(16)
-    .padStart(2, '0');
-  const g = Math.round(clamp01(color.g) * 255)
-    .toString(16)
-    .padStart(2, '0');
-  const b = Math.round(clamp01(color.b) * 255)
-    .toString(16)
-    .padStart(2, '0');
-  return `#${r}${g}${b}`;
-}
-
-function parseHexColor(input: string): ColorRgba | null {
-  const value = input.trim();
-  const normalized = value.startsWith('#') ? value.slice(1) : value;
-
-  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) {
-    return null;
-  }
-
-  const r = Number.parseInt(normalized.slice(0, 2), 16) / 255;
-  const g = Number.parseInt(normalized.slice(2, 4), 16) / 255;
-  const b = Number.parseInt(normalized.slice(4, 6), 16) / 255;
-  return { r, g, b, a: 1 };
-}
-
-function asFiniteNumber(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value;
-  }
-
-  if (typeof value === 'string' && value.trim()) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-
-  return null;
-}
-
-function isTextNode(node: XamlNode | null): node is XamlNode {
-  const type = node?.type.toLowerCase();
-  return type === 'textblock' || type === 'button';
-}
-
-function isImageNode(node: XamlNode | null): node is XamlNode {
-  return node?.type.toLowerCase() === 'image';
-}
-
-function readStringAttribute(node: XamlNode | null, key: string): string {
-  const value = node?.attributes[key];
-  return typeof value === 'string' ? value : '';
-}
-
-function walkDocumentNodes(node: XamlNode, visit: (current: XamlNode) => void): void {
-  visit(node);
-  for (const child of node.children) {
-    walkDocumentNodes(child, visit);
-  }
-}
-
-function collectDocumentImageSources(document: DesignerDocument | null): string[] {
-  if (!document) {
-    return [];
-  }
-
-  const sources = new Set<string>();
-  walkDocumentNodes(document.root, (node) => {
-    if (!isImageNode(node)) {
-      return;
-    }
-
-    const source = readStringAttribute(node, 'Source').trim();
-    if (source) {
-      sources.add(source);
-    }
-  });
-
-  return Array.from(sources);
-}
-
-function collectDocumentFontFamilies(document: DesignerDocument | null): string[] {
-  if (!document) {
-    return [];
-  }
-
-  const families = new Set<string>();
-  walkDocumentNodes(document.root, (node) => {
-    if (!isTextNode(node)) {
-      return;
-    }
-
-    const family = readStringAttribute(node, 'FontFamily').trim();
-    if (family) {
-      families.add(family);
-    }
-  });
-
-  return Array.from(families);
-}
-
-function resolveImageAspectRatio(node: XamlNode | null, element: UiElement | null): number {
-  const source = readStringAttribute(node, 'Source').trim();
-  const natural = source ? getImageNaturalSize(source) : null;
-  const width = natural?.width ?? asFiniteNumber(node?.attributes.Width) ?? element?.layout.width ?? 220;
-  const height = natural?.height ?? asFiniteNumber(node?.attributes.Height) ?? element?.layout.height ?? 140;
-
-  if (width > 0 && height > 0) {
-    return width / height;
-  }
-
-  return 220 / 140;
-}
-
-function resolveAspectLockedSize(
-  width: number,
-  height: number,
-  aspectRatio: number,
-  previousWidth: number,
-  previousHeight: number
-): { width: number; height: number } {
-  const widthDelta = Math.abs(width - previousWidth) / Math.max(previousWidth, 1);
-  const heightDelta = Math.abs(height - previousHeight) / Math.max(previousHeight, 1);
-
-  if (widthDelta >= heightDelta) {
-    return {
-      width,
-      height: width / aspectRatio
-    };
-  }
-
-  return {
-    width: height * aspectRatio,
-    height
-  };
-}
-
-function inferColorAttribute(
-  node: { type: string; attributes: Record<string, unknown> }
-): 'Background' | 'Fill' | 'Foreground' {
-  if ('Foreground' in node.attributes) {
-    return 'Foreground';
-  }
-
-  if ('Background' in node.attributes) {
-    return 'Background';
-  }
-
-  if ('Fill' in node.attributes) {
-    return 'Fill';
-  }
-
-  return node.type.toLowerCase() === 'textblock' ? 'Foreground' : node.type.toLowerCase() === 'rectangle' ? 'Fill' : 'Background';
-}
-
-function readDraftXaml(): string | null {
-  try {
-    const xaml = localStorage.getItem(DRAFT_STORAGE_KEY);
-    if (!xaml) {
-      return null;
-    }
-    return xaml;
-  } catch {
-    return null;
-  }
-}
-
-function canHostAdditionalChildren(node: XamlNode | null): boolean {
-  if (!node) {
-    return false;
-  }
-
-  switch (node.type.toLowerCase()) {
-    case 'canvas':
-    case 'grid':
-    case 'stackpanel':
-      return true;
-    case 'border':
-      return node.children.length === 0;
-    default:
-      return false;
-  }
-}
-
-function canInsertTemplateIntoParent(template: PaletteTemplate, parentNode: XamlNode | null): boolean {
-  if (!parentNode || !canHostAdditionalChildren(parentNode)) {
-    return false;
-  }
-
-  if (!template.parentTypes) {
-    return true;
-  }
-
-  return template.parentTypes.includes(parentNode.type.toLowerCase());
-}
-
-function applyContainerPlacement(parentNode: XamlNode, node: XamlNode, index: number): XamlNode {
-  const next = cloneXamlNode(node);
-  const parentType = parentNode.type.toLowerCase();
-
-  delete next.attributes['Designer.OffsetX'];
-  delete next.attributes['Designer.OffsetY'];
-  delete next.attributes.X;
-  delete next.attributes.Y;
-  delete next.attributes['Canvas.Left'];
-  delete next.attributes['Canvas.Top'];
-  delete next.attributes.Left;
-  delete next.attributes.Top;
-  delete next.attributes['Grid.Row'];
-  delete next.attributes['Grid.Column'];
-
-  if (parentType === 'canvas') {
-    next.attributes.X = 72 + (index % 4) * 196;
-    next.attributes.Y = 72 + Math.floor(index / 4) * 144;
-    return next;
-  }
-
-  if (parentType === 'grid') {
-    const columns = Math.max(1, asFiniteNumber(parentNode.attributes.Columns) ?? 1);
-    next.attributes['Grid.Row'] = Math.floor(index / columns);
-    next.attributes['Grid.Column'] = index % columns;
-  }
-
-  return next;
-}
-
-function createTemplateNode(template: PaletteTemplate, parentNode: XamlNode, index: number): XamlNode {
-  return applyContainerPlacement(parentNode, template.build(index), index);
-}
-
-function findPaletteTemplate(templateId: PaletteTemplateId): PaletteTemplate {
-  return PALETTE_TEMPLATES.find((template) => template.id === templateId) ?? PALETTE_TEMPLATES[0];
-}
-
-function findImageAsset(assetId: ImageAssetId): ImageAssetPreset {
-  return IMAGE_ASSETS.find((asset) => asset.id === assetId) ?? IMAGE_ASSETS[0];
-}
-
-function findFontPreset(fontId: FontPresetId): FontPreset {
-  return FONT_PRESETS.find((preset) => preset.id === fontId) ?? FONT_PRESETS[0];
-}
-
-function normalizeFileName(fileName: string | null | undefined): string {
-  const value = fileName?.trim();
-  return value ? value : DEFAULT_FILE_NAME;
-}
-
-function inferDropIntent(itemId: string, rect: DOMRect, clientY: number): TreeDropIntent {
-  if (itemId === 'root.0') {
-    return 'inside';
-  }
-
-  const relativeY = (clientY - rect.top) / Math.max(rect.height, 1);
-  if (relativeY <= 0.28) {
-    return 'before';
-  }
-
-  if (relativeY >= 0.72) {
-    return 'after';
-  }
-
-  return 'inside';
-}
-
-function getNodeIndexFromId(id: string): number | null {
-  const segments = id.split('.');
-  if (segments.length < 2) {
-    return null;
-  }
-
-  const index = Number.parseInt(segments[segments.length - 1], 10);
-  return Number.isInteger(index) && index >= 0 ? index : null;
-}
+import { ensureImageNaturalSize, getImageNaturalSize, type Point, type UiElement } from '@ui-designer/ui-core';
+import { Inspector } from './components/Inspector';
+import { LeftRail } from './components/LeftRail';
+import { Viewport } from './components/Viewport';
+import {
+  asFiniteNumber,
+  applyContainerPlacement,
+  canHostAdditionalChildren,
+  canInsertTemplateIntoParent,
+  collectDocumentFontFamilies,
+  collectDocumentImageSources,
+  colorToHex,
+  createTemplateNode,
+  getNodeIndexFromId,
+  inferColorAttribute,
+  inferDropIntent,
+  isImageNode,
+  isTextNode,
+  normalizeFileName,
+  parseHexColor,
+  readStringAttribute,
+  resolveAspectLockedSize,
+  resolveImageAspectRatio,
+  type TreeDropIntent
+} from './designer/document';
+import {
+  createViewportOverlayState,
+  DEFAULT_DEBUG_OVERLAY_SETTINGS,
+  type DebugOverlaySettings
+} from './designer/overlays';
+import {
+  BUILTIN_FONT_ASSETS,
+  BUILTIN_IMAGE_ASSETS,
+  DEFAULT_FILE_NAME,
+  PALETTE_TEMPLATES,
+  findFontAsset,
+  findImageAsset,
+  findPaletteTemplate,
+  GRID_SIZE,
+  sampleXaml,
+  type DesignerFontAsset,
+  type DesignerImageAsset,
+  type PaletteTemplateId
+} from './designer/presets';
+import {
+  buildFontLibrary,
+  buildImageLibrary,
+  fontAssetsToFaceDefinitions,
+  importFontAssetFiles,
+  importImageAssetFiles,
+  mergeFontAssets,
+  mergeImageAssets,
+  resolveImageInsertionSize
+} from './designer/resources';
+import {
+  clearDraftXaml,
+  readCustomFontAssets,
+  readCustomImageAssets,
+  readDraftXaml,
+  writeCustomFontAssets,
+  writeCustomImageAssets,
+  writeDraftXaml
+} from './designer/storage';
 
 export function App() {
+  const [customImageAssets, setCustomImageAssets] = useState<DesignerImageAsset[]>(() => readCustomImageAssets());
+  const [customFontAssets, setCustomFontAssets] = useState<DesignerFontAsset[]>(() => readCustomFontAssets());
+  const imageAssets = useMemo(() => buildImageLibrary(customImageAssets), [customImageAssets]);
+  const fontAssets = useMemo(() => buildFontLibrary(customFontAssets), [customFontAssets]);
+  const fontFaceDefinitions = useMemo(() => fontAssetsToFaceDefinitions(fontAssets), [fontAssets]);
+
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const documentFileInputRef = useRef<HTMLInputElement | null>(null);
+  const imageAssetInputRef = useRef<HTMLInputElement | null>(null);
+  const fontAssetInputRef = useRef<HTMLInputElement | null>(null);
   const runtimeRef = useRef<RuntimeHost | null>(null);
+
   const [status, setStatus] = useState('Initializing designer viewport...');
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [hoveredElement, setHoveredElement] = useState<UiElement | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selectedIdRef = useRef<string | null>(null);
   const [selectedElement, setSelectedElement] = useState<UiElement | null>(null);
   const [documentXaml, setDocumentXaml] = useState(sampleXaml);
   const [documentFileName, setDocumentFileName] = useState(DEFAULT_FILE_NAME);
-  const [treeItems, setTreeItems] = useState<ReturnType<typeof buildDesignerTree>>([]);
+  const [treeItems, setTreeItems] = useState<DesignerTreeItem[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<PaletteTemplateId>('metric-card');
-  const [selectedAssetId, setSelectedAssetId] = useState<ImageAssetId>('horizon');
-  const [selectedFontId, setSelectedFontId] = useState<FontPresetId>('ui-sans');
+  const [selectedAssetId, setSelectedAssetId] = useState(BUILTIN_IMAGE_ASSETS[0].id);
+  const [selectedFontId, setSelectedFontId] = useState(BUILTIN_FONT_ASSETS[0].id);
   const [sourceDraft, setSourceDraft] = useState(sampleXaml);
   const [sourceDirty, setSourceDirty] = useState(false);
   const [sourceError, setSourceError] = useState<string | null>(null);
@@ -699,6 +135,8 @@ export function App() {
   const [snapEnabled, setSnapEnabled] = useState(true);
   const [historyVersion, setHistoryVersion] = useState(0);
   const [cameraView, setCameraView] = useState<CameraState>(() => createCameraState());
+  const [overlaySettings, setOverlaySettings] = useState<DebugOverlaySettings>(DEFAULT_DEBUG_OVERLAY_SETTINGS);
+
   const cameraRef = useRef<CameraState>(cameraView);
   const commandStackRef = useRef(new CommandStack());
   const selectedElementRef = useRef<UiElement | null>(null);
@@ -778,6 +216,69 @@ export function App() {
     };
   };
 
+  const syncHoveredElement = (id: string | null) => {
+    const runtime = runtimeRef.current;
+    setHoveredId(id);
+    setHoveredElement(id && runtime ? runtime.getElementById(id) : null);
+  };
+
+  const syncSelectedElement = (id: string | null = selectedIdRef.current) => {
+    const runtime = runtimeRef.current;
+    const currentDocument = documentRef.current;
+
+    if (!runtime || !id) {
+      clearInspectorState();
+      return;
+    }
+
+    const element = runtime.getElementById(id);
+    if (!element) {
+      clearInspectorState();
+      return;
+    }
+
+    setSelectedElement(element);
+    selectedElementRef.current = element;
+    setXInput(element.layout.x.toFixed(0));
+    setYInput(element.layout.y.toFixed(0));
+    setWidthInput(element.layout.width.toFixed(0));
+    setHeightInput(element.layout.height.toFixed(0));
+    setColorInput(getDocumentColorValue(id) ?? '#67c7ff');
+
+    const node = currentDocument ? findDocumentNodeById(currentDocument, id) : null;
+    const source = readStringAttribute(node, 'Source');
+    const family = readStringAttribute(node, 'FontFamily');
+    const fontSource = readStringAttribute(node, 'FontSource');
+
+    setImageSourceInput(source);
+    setImageStretchInput(readStringAttribute(node, 'Stretch') || 'UniformToFill');
+    setImageOpacityInput(`${asFiniteNumber(node?.attributes.Opacity) ?? 1}`);
+    setFontFamilyInput(family);
+    setFontSizeAttrInput(
+      readStringAttribute(node, 'FontSize') || `${asFiniteNumber(node?.attributes.FontSize) ?? ''}`.trim()
+    );
+    setFontWeightInput(
+      readStringAttribute(node, 'FontWeight') || `${asFiniteNumber(node?.attributes.FontWeight) ?? ''}`.trim()
+    );
+    setFontStyleInput(readStringAttribute(node, 'FontStyle') || 'Normal');
+    setTextAlignmentInput(readStringAttribute(node, 'TextAlignment') || (element.type.toLowerCase() === 'button' ? 'Center' : 'Left'));
+    setFlowDirectionInput(readStringAttribute(node, 'FlowDirection') || 'Auto');
+
+    const matchingAsset = source ? imageAssets.find((asset) => asset.source === source) ?? null : null;
+    if (matchingAsset) {
+      setSelectedAssetId(matchingAsset.id);
+    }
+
+    const matchingFont = family
+      ? fontAssets.find((font) => font.family === family && (font.source ?? '') === fontSource) ??
+        fontAssets.find((font) => font.family === family) ??
+        null
+      : null;
+    if (matchingFont) {
+      setSelectedFontId(matchingFont.id);
+    }
+  };
+
   const setSelection = (id: string | null) => {
     const runtime = runtimeRef.current;
 
@@ -822,6 +323,7 @@ export function App() {
     }
 
     setSelection(nextSelectionId);
+    syncHoveredElement(hoveredId);
   };
 
   const applyCommittedDocument = (
@@ -839,45 +341,6 @@ export function App() {
 
   const previewDocument = (document: DesignerDocument) => {
     applyRenderedDocument(document, false);
-  };
-
-  const syncSelectedElement = (id: string | null = selectedIdRef.current) => {
-    const runtime = runtimeRef.current;
-    const currentDocument = documentRef.current;
-
-    if (!runtime || !id) {
-      clearInspectorState();
-      return;
-    }
-
-    const element = runtime.getElementById(id);
-    if (!element) {
-      clearInspectorState();
-      return;
-    }
-
-    setSelectedElement(element);
-    selectedElementRef.current = element;
-    setXInput(element.layout.x.toFixed(0));
-    setYInput(element.layout.y.toFixed(0));
-    setWidthInput(element.layout.width.toFixed(0));
-    setHeightInput(element.layout.height.toFixed(0));
-    setColorInput(getDocumentColorValue(id) ?? '#67c7ff');
-
-    const node = currentDocument ? findDocumentNodeById(currentDocument, id) : null;
-    setImageSourceInput(readStringAttribute(node, 'Source'));
-    setImageStretchInput(readStringAttribute(node, 'Stretch') || 'UniformToFill');
-    setImageOpacityInput(`${asFiniteNumber(node?.attributes.Opacity) ?? 1}`);
-    setFontFamilyInput(readStringAttribute(node, 'FontFamily'));
-    setFontSizeAttrInput(
-      readStringAttribute(node, 'FontSize') || `${asFiniteNumber(node?.attributes.FontSize) ?? ''}`.trim()
-    );
-    setFontWeightInput(
-      readStringAttribute(node, 'FontWeight') || `${asFiniteNumber(node?.attributes.FontWeight) ?? ''}`.trim()
-    );
-    setFontStyleInput(readStringAttribute(node, 'FontStyle') || 'Normal');
-    setTextAlignmentInput(readStringAttribute(node, 'TextAlignment') || (element.type.toLowerCase() === 'button' ? 'Center' : 'Left'));
-    setFlowDirectionInput(readStringAttribute(node, 'FlowDirection') || 'Auto');
   };
 
   const executeDocumentCommand = (
@@ -923,14 +386,14 @@ export function App() {
     document: DesignerDocument,
     elementId: string,
     size: { width: number; height: number },
-    options?: { preserveAspect?: boolean; selectedNode?: XamlNode | null; selectedUiElement?: UiElement | null }
+    options?: { preserveAspect?: boolean; selectedNode?: ReturnType<typeof findDocumentNodeById>; selectedUiElement?: UiElement | null }
   ) => {
     let nextSize = {
       width: Math.max(24, size.width),
       height: Math.max(24, size.height)
     };
 
-    if (options?.preserveAspect && isImageNode(options?.selectedNode ?? null)) {
+    if (options?.preserveAspect && isImageNode(options.selectedNode ?? null)) {
       nextSize = resolveAspectLockedSize(
         nextSize.width,
         nextSize.height,
@@ -989,6 +452,7 @@ export function App() {
       'Stretch',
       'Opacity',
       'FontFamily',
+      'FontSource',
       'FontSize',
       'FontWeight',
       'FontStyle',
@@ -1022,7 +486,7 @@ export function App() {
       return;
     }
 
-    const asset = findImageAsset(selectedAssetId);
+    const asset = findImageAsset(imageAssets, selectedAssetId);
     const natural = getImageNaturalSize(asset.source);
     executeDocumentCommand(
       'asset-apply-image',
@@ -1051,27 +515,39 @@ export function App() {
       return;
     }
 
-    const asset = findImageAsset(selectedAssetId);
-    const natural = getImageNaturalSize(asset.source);
-    const nextNode = applyContainerPlacement(
-      parentNode,
-      xamlNode('Image', {
-        Width: natural?.width ?? 220,
-        Height: natural?.height ?? 140,
-        Source: asset.source,
-        Stretch: 'UniformToFill',
-        Background: asset.background
-      }),
-      parentNode.children.length
-    );
-    const nextDocument = insertDocumentChild(currentDocument, parentId, nextNode, parentNode.children.length);
-    const nextSelectionId = `${parentId}.${parentNode.children.length}`;
+    const asset = findImageAsset(imageAssets, selectedAssetId);
+    const previousSelectionId = selectedIdRef.current;
+    void resolveImageInsertionSize(asset.source).then((size) => {
+      const latestDocument = documentRef.current;
+      const latestParentNode = latestDocument ? findDocumentNodeById(latestDocument, parentId) : null;
+      if (!latestDocument || !latestParentNode || !canHostAdditionalChildren(latestParentNode)) {
+        return;
+      }
 
-    executeDocumentCommand('asset-insert-image', nextDocument, {
-      nextSelectionId,
-      previousSelectionId: selectedIdRef.current
+      const nextNode = applyContainerPlacement(
+        latestParentNode,
+        cloneXamlNode({
+          type: 'Image',
+          attributes: {
+            Width: size.width,
+            Height: size.height,
+            Source: asset.source,
+            Stretch: 'UniformToFill',
+            Background: asset.background
+          },
+          children: []
+        }),
+        latestParentNode.children.length
+      );
+      const nextDocument = insertDocumentChild(latestDocument, parentId, nextNode, latestParentNode.children.length);
+      const nextSelectionId = `${parentId}.${latestParentNode.children.length}`;
+
+      executeDocumentCommand('asset-insert-image', nextDocument, {
+        nextSelectionId,
+        previousSelectionId
+      });
+      setStatus(`Inserted ${asset.title} into ${latestParentNode.type}.`);
     });
-    setStatus(`Inserted ${asset.title} into ${parentNode.type}.`);
   };
 
   const applySelectedFontToSelection = () => {
@@ -1083,14 +559,15 @@ export function App() {
       return;
     }
 
-    const preset = findFontPreset(selectedFontId);
+    const font = findFontAsset(fontAssets, selectedFontId);
     executeDocumentCommand(
       'asset-apply-font',
       buildAttributeDocument(currentDocument, id, {
-        FontFamily: preset.family
+        FontFamily: font.family,
+        FontSource: font.source ?? null
       })
     );
-    setStatus(`Applied ${preset.title} to the selected text element.`);
+    setStatus(`Applied ${font.title} to the selected text element.`);
   };
 
   const applyNaturalImageSize = () => {
@@ -1140,6 +617,11 @@ export function App() {
       return;
     }
 
+    const matchingAsset = imageAssets.find((asset) => asset.source === nextSource) ?? null;
+    if (matchingAsset) {
+      setSelectedAssetId(matchingAsset.id);
+    }
+
     executeDocumentCommand(
       'image-settings',
       buildAttributeDocument(currentDocument, id, {
@@ -1164,10 +646,19 @@ export function App() {
       return;
     }
 
+    const matchingFont =
+      fontAssets.find((font) => font.family === fontFamilyInput.trim() && (font.source ?? '') === readStringAttribute(node, 'FontSource')) ??
+      fontAssets.find((font) => font.family === fontFamilyInput.trim()) ??
+      null;
+    if (matchingFont) {
+      setSelectedFontId(matchingFont.id);
+    }
+
     executeDocumentCommand(
       'text-typography',
       buildAttributeDocument(currentDocument, id, {
         FontFamily: fontFamilyInput.trim() || null,
+        FontSource: (matchingFont?.source ?? readStringAttribute(node, 'FontSource')) || null,
         FontSize: fontSize == null ? null : Math.max(1, Math.round(fontSize)),
         FontWeight: fontWeightInput.trim() || null,
         FontStyle: fontStyleInput === 'Normal' ? null : fontStyleInput,
@@ -1191,19 +682,15 @@ export function App() {
       return;
     }
 
-    if (
-      loadDocumentFromText(nextSource, {
-        fileName: documentFileName,
-        successStatus: 'Applied XAML source and reset the designer history baseline.',
-        failurePrefix: 'XAML apply failed',
-        setAsBase: true,
-        clearHistory: true,
-        resetSelection: true,
-        reflectErrorInSourcePane: true
-      })
-    ) {
-      return;
-    }
+    loadDocumentFromText(nextSource, {
+      fileName: documentFileName,
+      successStatus: 'Applied XAML source and reset the designer history baseline.',
+      failurePrefix: 'XAML apply failed',
+      setAsBase: true,
+      clearHistory: true,
+      resetSelection: true,
+      reflectErrorInSourcePane: true
+    });
   };
 
   const loadDocumentFromText = (
@@ -1223,7 +710,7 @@ export function App() {
       const normalizedXaml = serializeDesignerDocument(nextDocument);
 
       if (options.fileName) {
-        setDocumentFileName(normalizeFileName(options.fileName));
+        setDocumentFileName(normalizeFileName(options.fileName, DEFAULT_FILE_NAME));
       }
       if (options.clearHistory) {
         commandStackRef.current.clear();
@@ -1256,7 +743,7 @@ export function App() {
 
   const saveDocumentToFile = async () => {
     const xaml = documentRef.current ? serializeDesignerDocument(documentRef.current) : documentXaml;
-    const nextFileName = normalizeFileName(documentFileName);
+    const nextFileName = normalizeFileName(documentFileName, DEFAULT_FILE_NAME);
     const platformWindow = window as Window & {
       showSaveFilePicker?: (options?: unknown) => Promise<{
         name?: string;
@@ -1284,8 +771,8 @@ export function App() {
         const writable = await handle.createWritable();
         await writable.write(xaml);
         await writable.close();
-        setDocumentFileName(normalizeFileName(handle.name ?? nextFileName));
-        setStatus(`Saved XAML to ${normalizeFileName(handle.name ?? nextFileName)}.`);
+        setDocumentFileName(normalizeFileName(handle.name ?? nextFileName, DEFAULT_FILE_NAME));
+        setStatus(`Saved XAML to ${normalizeFileName(handle.name ?? nextFileName, DEFAULT_FILE_NAME)}.`);
         return;
       } catch (error: unknown) {
         if (error instanceof DOMException && error.name === 'AbortError') {
@@ -1305,7 +792,15 @@ export function App() {
   };
 
   const openDocumentFilePicker = () => {
-    fileInputRef.current?.click();
+    documentFileInputRef.current?.click();
+  };
+
+  const openImageAssetFilePicker = () => {
+    imageAssetInputRef.current?.click();
+  };
+
+  const openFontAssetFilePicker = () => {
+    fontAssetInputRef.current?.click();
   };
 
   const loadDocumentFromFile = async (file: File) => {
@@ -1329,6 +824,79 @@ export function App() {
 
     await loadDocumentFromFile(file);
     input.value = '';
+  };
+
+  const handleImageAssetFileChange = async (event: JSX.TargetedEvent<HTMLInputElement, Event>) => {
+    const input = event.currentTarget;
+    const files = input.files ? Array.from(input.files) : [];
+    if (files.length === 0) {
+      return;
+    }
+
+    try {
+      const imported = await importImageAssetFiles(files);
+      const nextAssets = mergeImageAssets(customImageAssets, imported);
+      setCustomImageAssets(nextAssets);
+      if (imported[0]) {
+        setSelectedAssetId(imported[0].id);
+      }
+      setStatus(`Imported ${imported.length} image asset${imported.length === 1 ? '' : 's'}.`);
+    } catch (error: unknown) {
+      const reason = error instanceof Error ? error.message : String(error);
+      setStatus(`Image import failed: ${reason}`);
+    } finally {
+      input.value = '';
+    }
+  };
+
+  const handleFontAssetFileChange = async (event: JSX.TargetedEvent<HTMLInputElement, Event>) => {
+    const input = event.currentTarget;
+    const files = input.files ? Array.from(input.files) : [];
+    if (files.length === 0) {
+      return;
+    }
+
+    try {
+      const imported = await importFontAssetFiles(files);
+      const nextFonts = mergeFontAssets(customFontAssets, imported);
+      setCustomFontAssets(nextFonts);
+      if (imported[0]) {
+        setSelectedFontId(imported[0].id);
+        setFontFamilyInput(imported[0].family);
+      }
+      const runtime = runtimeRef.current;
+      if (runtime) {
+        void runtime.registerFontFaces(fontAssetsToFaceDefinitions(imported));
+      }
+      setStatus(`Imported ${imported.length} font asset${imported.length === 1 ? '' : 's'}.`);
+    } catch (error: unknown) {
+      const reason = error instanceof Error ? error.message : String(error);
+      setStatus(`Font import failed: ${reason}`);
+    } finally {
+      input.value = '';
+    }
+  };
+
+  const removeSelectedImageAsset = () => {
+    const asset = findImageAsset(imageAssets, selectedAssetId);
+    if (asset.kind !== 'imported') {
+      return;
+    }
+
+    setCustomImageAssets((current) => current.filter((entry) => entry.id !== asset.id));
+    setSelectedAssetId(BUILTIN_IMAGE_ASSETS[0].id);
+    setStatus(`Removed ${asset.title} from the image library.`);
+  };
+
+  const removeSelectedFont = () => {
+    const font = findFontAsset(fontAssets, selectedFontId);
+    if (font.kind !== 'imported') {
+      return;
+    }
+
+    setCustomFontAssets((current) => current.filter((entry) => entry.id !== font.id));
+    setSelectedFontId(BUILTIN_FONT_ASSETS[0].id);
+    setStatus(`Removed ${font.title} from the font library.`);
   };
 
   const insertTemplateAt = (parentId: string, insertIndex: number, previousSelectionId: string | null, modeLabel: string) => {
@@ -1549,7 +1117,7 @@ export function App() {
       event.dataTransfer.effectAllowed = 'move';
       event.dataTransfer.setData('text/plain', itemId);
     }
-    selectElement(itemId);
+    setSelection(itemId);
   };
 
   const handleTreeDragOver = (itemId: string, event: JSX.TargetedDragEvent<HTMLButtonElement>) => {
@@ -1590,10 +1158,6 @@ export function App() {
     setStatus(`Moved element to ${intent === 'inside' ? 'inside' : intent} ${itemId}.`);
   };
 
-  const handleTreeDragEnd = () => {
-    clearTreeDragState();
-  };
-
   const performUndo = () => {
     if (!commandStackRef.current.canUndo()) {
       return;
@@ -1613,13 +1177,9 @@ export function App() {
   };
 
   const saveDraftToStorage = () => {
-    try {
-      const currentDocument = documentRef.current;
-      const xaml = currentDocument ? serializeDesignerDocument(currentDocument) : documentXaml;
-      localStorage.setItem(DRAFT_STORAGE_KEY, xaml);
-    } catch {
-      // Best-effort local persistence.
-    }
+    const currentDocument = documentRef.current;
+    const xaml = currentDocument ? serializeDesignerDocument(currentDocument) : documentXaml;
+    writeDraftXaml(xaml);
   };
 
   const loadDraftFromStorage = () => {
@@ -1645,28 +1205,16 @@ export function App() {
     }
   };
 
-  const clearDraftFromStorage = () => {
-    try {
-      localStorage.removeItem(DRAFT_STORAGE_KEY);
-    } catch {
-      // Best-effort local persistence cleanup.
-    }
-  };
-
-  const selectElement = (id: string | null) => {
-    const runtime = runtimeRef.current;
-    if (!runtime) {
-      return;
-    }
-
-    runtime.setSelectedElement(id);
-  };
-
   const applyCamera = (cameraState: CameraState) => {
     const runtime = runtimeRef.current;
     cameraRef.current = cameraState;
     setCameraView(cameraState);
     runtime?.setCamera(cameraState);
+  };
+
+  const clearDraftStorage = () => {
+    clearDraftXaml();
+    setStatus('Cleared saved draft storage.');
   };
 
   useEffect(() => {
@@ -1676,46 +1224,59 @@ export function App() {
       return;
     }
 
-    let initialDocument: DesignerDocument;
+    let runtime: RuntimeHost | null = null;
+
     try {
-      initialDocument = parseDesignerDocument(readDraftXaml() ?? sampleXaml);
-    } catch {
-      initialDocument = parseDesignerDocument(sampleXaml);
+      setStatus('Preparing designer document...');
+
+      let initialDocument: DesignerDocument;
+      try {
+        initialDocument = parseDesignerDocument(readDraftXaml() ?? sampleXaml);
+      } catch {
+        initialDocument = parseDesignerDocument(sampleXaml);
+      }
+
+      const initialXaml = serializeDesignerDocument(initialDocument);
+      documentRef.current = cloneXamlDocument(initialDocument);
+      baseDocumentRef.current = cloneXamlDocument(initialDocument);
+      setDocumentXaml(initialXaml);
+      setSourceDraft(initialXaml);
+      setTreeItems(buildDesignerTree(initialDocument));
+
+      runtime = new RuntimeHost(canvas);
+      runtimeRef.current = runtime;
+      runtime.setCamera(cameraRef.current);
+      setStatus('Initializing WebGPU renderer...');
+
+      void runtime
+        .boot({
+          xaml: initialXaml,
+          canvas,
+          fontFaces: fontFaceDefinitions,
+          onHoveredElementChange: (id: string | null) => {
+            syncHoveredElement(id);
+          },
+          onSelectedElementChange: (id: string | null) => {
+            selectedIdRef.current = id;
+            setSelectedId(id);
+            syncSelectedElement(id);
+          }
+        })
+        .then(() => {
+          setStatus('Design surface online. Left-drag to move, handle-drag to resize, middle-drag to pan.');
+          runtime?.start();
+        })
+        .catch((error: unknown) => {
+          const reason = error instanceof Error ? error.message : String(error);
+          setStatus(`Failed to initialize viewport: ${reason}`);
+        });
+    } catch (error: unknown) {
+      const reason = error instanceof Error ? error.message : String(error);
+      setStatus(`Failed to prepare designer runtime: ${reason}`);
     }
 
-    const initialXaml = serializeDesignerDocument(initialDocument);
-    documentRef.current = cloneXamlDocument(initialDocument);
-    baseDocumentRef.current = cloneXamlDocument(initialDocument);
-    setDocumentXaml(initialXaml);
-    setSourceDraft(initialXaml);
-    setTreeItems(buildDesignerTree(initialDocument));
-
-    const runtime = new RuntimeHost(canvas);
-    runtimeRef.current = runtime;
-    runtime.setCamera(cameraRef.current);
-
-    runtime
-      .boot({
-        xaml: initialXaml,
-        canvas,
-        onHoveredElementChange: setHoveredId,
-        onSelectedElementChange: (id: string | null) => {
-          selectedIdRef.current = id;
-          setSelectedId(id);
-          syncSelectedElement(id);
-        }
-      })
-      .then(() => {
-        setStatus('Design surface online. Left-drag to move, handle-drag to resize, middle-drag to pan.');
-        runtime.start();
-      })
-      .catch((error: unknown) => {
-        const reason = error instanceof Error ? error.message : String(error);
-        setStatus(`Failed to initialize viewport: ${reason}`);
-      });
-
     return () => {
-      runtime.stop();
+      runtime?.stop();
       runtimeRef.current = null;
     };
   }, []);
@@ -1725,6 +1286,14 @@ export function App() {
   }, [documentXaml]);
 
   useEffect(() => {
+    writeCustomImageAssets(customImageAssets);
+  }, [customImageAssets]);
+
+  useEffect(() => {
+    writeCustomFontAssets(customFontAssets);
+  }, [customFontAssets]);
+
+  useEffect(() => {
     if (!sourceDirty) {
       setSourceDraft(documentXaml);
       setSourceError(null);
@@ -1732,7 +1301,7 @@ export function App() {
   }, [documentXaml, sourceDirty]);
 
   useEffect(() => {
-    const sources = new Set<string>(IMAGE_ASSETS.map((asset) => asset.source));
+    const sources = new Set<string>(imageAssets.map((asset) => asset.source));
     for (const source of collectDocumentImageSources(documentRef.current)) {
       sources.add(source);
     }
@@ -1740,7 +1309,25 @@ export function App() {
     void Promise.allSettled(Array.from(sources, (source) => ensureImageNaturalSize(source))).then(() => {
       setResourceVersion((value) => value + 1);
     });
-  }, [documentXaml]);
+  }, [documentXaml, imageAssets]);
+
+  useEffect(() => {
+    const runtime = runtimeRef.current;
+    if (!runtime) {
+      return;
+    }
+
+    void runtime.registerFontFaces(fontFaceDefinitions);
+  }, [fontFaceDefinitions]);
+
+  useEffect(() => {
+    const runtime = runtimeRef.current;
+    if (!runtime) {
+      return;
+    }
+
+    setHoveredElement(hoveredId ? runtime.getElementById(hoveredId) : null);
+  }, [hoveredId, documentXaml, cameraView]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -2095,14 +1682,19 @@ export function App() {
 
     executeDocumentCommand(
       'inspector-resize',
-      buildResizeDocument(currentDocument, id, {
-        width: Math.max(24, snapValue(nextWidth)),
-        height: Math.max(24, snapValue(nextHeight))
-      }, {
-        preserveAspect: lockAspectRatio && isImageNode(node),
-        selectedNode: node,
-        selectedUiElement: selectedElement
-      })
+      buildResizeDocument(
+        currentDocument,
+        id,
+        {
+          width: Math.max(24, snapValue(nextWidth)),
+          height: Math.max(24, snapValue(nextHeight))
+        },
+        {
+          preserveAspect: lockAspectRatio && isImageNode(node),
+          selectedNode: node,
+          selectedUiElement: selectedElement
+        }
+      )
     );
   };
 
@@ -2129,8 +1721,8 @@ export function App() {
   const isSelectedTextNode = isTextNode(selectedTreeNode);
   const isSelectedImageNode = isImageNode(selectedTreeNode);
   const selectedTemplate = findPaletteTemplate(selectedTemplateId);
-  const selectedAsset = findImageAsset(selectedAssetId);
-  const selectedFontPreset = findFontPreset(selectedFontId);
+  const selectedAsset = findImageAsset(imageAssets, selectedAssetId);
+  const selectedFont = findFontAsset(fontAssets, selectedFontId);
   const parentTreeItem =
     selectedTreeItem?.parentId ? treeItems.find((item) => item.id === selectedTreeItem.parentId) ?? null : null;
   const selectedTreeIndex = selectedTreeItem ? getNodeIndexFromId(selectedTreeItem.id) : null;
@@ -2141,12 +1733,12 @@ export function App() {
   const previousSiblingNode =
     previousSiblingId && documentRef.current ? findDocumentNodeById(documentRef.current, previousSiblingId) : null;
   const selectedOrRootId = selectedTreeItem?.id ?? 'root.0';
-  const selectedOrRootNode =
-    documentRef.current ? findDocumentNodeById(documentRef.current, selectedOrRootId) : null;
+  const selectedOrRootNode = documentRef.current ? findDocumentNodeById(documentRef.current, selectedOrRootId) : null;
   const siblingParentNode =
     selectedTreeItem?.parentId && documentRef.current
       ? findDocumentNodeById(documentRef.current, selectedTreeItem.parentId)
       : null;
+  const parentElement = parentTreeItem?.id && runtimeRef.current ? runtimeRef.current.getElementById(parentTreeItem.id) : null;
   const canAddChild = canInsertTemplateIntoParent(selectedTemplate, selectedOrRootNode);
   const canAddSibling = !!selectedTreeItem?.parentId && canInsertTemplateIntoParent(selectedTemplate, siblingParentNode);
   const canDeleteSelected = !!selectedTreeItem && selectedTreeItem.id !== 'root.0';
@@ -2158,22 +1750,24 @@ export function App() {
   const documentImageSources = collectDocumentImageSources(documentRef.current);
   const documentFontFamilies = collectDocumentFontFamilies(documentRef.current);
   const selectedImageNaturalSize = isSelectedImageNode ? getImageNaturalSize(imageSourceInput.trim()) : null;
+  const selectedImageNaturalSizeLabel = selectedImageNaturalSize
+    ? `${selectedImageNaturalSize.width}x${selectedImageNaturalSize.height}`
+    : 'Loading or unavailable';
   const origin = worldToScreen({ x: 0, y: 0 }, cameraView);
   const canUndo = commandStackRef.current.canUndo();
   const canRedo = commandStackRef.current.canRedo();
-  const selectedScreenRect = selectedElement
-    ? {
-        x: (selectedElement.layout.x - cameraView.x) * cameraView.zoom,
-        y: (selectedElement.layout.y - cameraView.y) * cameraView.zoom,
-        width: Math.max(8, selectedElement.layout.width * cameraView.zoom),
-        height: Math.max(8, selectedElement.layout.height * cameraView.zoom)
-      }
-    : null;
+  const overlayState = createViewportOverlayState({
+    camera: cameraView,
+    selectedElement,
+    hoveredElement,
+    parentElement,
+    selectedNode: selectedTreeNode
+  });
   const gridStep = Math.max(4, GRID_SIZE * cameraView.zoom);
   const gridOffsetX = -((cameraView.x * cameraView.zoom) % gridStep);
   const gridOffsetY = -((cameraView.y * cameraView.zoom) % gridStep);
 
-  const onResizeHandlePointerDown = (event: PointerEvent) => {
+  const onResizeHandlePointerDown: JSX.PointerEventHandler<HTMLButtonElement> = (event) => {
     event.preventDefault();
     event.stopPropagation();
 
@@ -2208,522 +1802,195 @@ export function App() {
     canvas.classList.add('is-resizing');
   };
 
+  const updateOverlaySetting = (key: keyof DebugOverlaySettings, value: boolean) => {
+    setOverlaySettings((current) => ({
+      ...current,
+      [key]: value
+    }));
+  };
+
+  const resolveImageTokenLabel = (source: string, index: number): string => {
+    const knownAsset = imageAssets.find((asset) => asset.source === source) ?? null;
+    if (knownAsset) {
+      return knownAsset.title;
+    }
+
+    return source.startsWith('data:image/') ? `Embedded Image ${index + 1}` : `Image ${index + 1}`;
+  };
+
   return (
     <main className="designer-shell">
       <input
-        ref={fileInputRef}
+        ref={documentFileInputRef}
         className="visually-hidden"
         type="file"
         accept=".xaml,.xml,.txt,text/plain,application/xml"
         onChange={handleDocumentFileChange}
       />
-      <aside className="left-rail">
-        <h1>Designer</h1>
-        <p>{status}</p>
-        <div className="origin">Screen origin: {origin.x.toFixed(0)}, {origin.y.toFixed(0)}</div>
-        <div className="origin">Camera: {cameraView.x.toFixed(0)}, {cameraView.y.toFixed(0)}</div>
-        <div className="origin">Zoom: {(cameraView.zoom * 100).toFixed(0)}%</div>
-        <div className="origin">Snap: {snapEnabled ? `On (${GRID_SIZE}px)` : 'Off'} (toggle: G)</div>
-        <div className="origin">File: {documentFileName}</div>
-        <div className="toolbar-row">
-          <button className="toolbar-btn" type="button" onClick={performUndo} disabled={!canUndo}>
-            Undo
-          </button>
-          <button className="toolbar-btn" type="button" onClick={performRedo} disabled={!canRedo}>
-            Redo
-          </button>
-        </div>
-        <div className="toolbar-row">
-          <button className="toolbar-btn" type="button" onClick={saveDraftToStorage}>
-            Save Draft
-          </button>
-          <button className="toolbar-btn" type="button" onClick={loadDraftFromStorage}>
-            Load Draft
-          </button>
-        </div>
-        <div className="toolbar-row">
-          <button className="toolbar-btn" type="button" onClick={openDocumentFilePicker}>
-            Import File
-          </button>
-          <button className="toolbar-btn" type="button" onClick={() => void saveDocumentToFile()}>
-            Export File
-          </button>
-        </div>
-        <button className="toolbar-btn full-width" type="button" onClick={clearDraftFromStorage}>
-          Clear Draft Storage
-        </button>
-        <section className="palette-panel">
-          <h2>Palette</h2>
-          <p className="tree-caption">
-            Pick a template, then insert it as a child or sibling. Placement adapts automatically for `Canvas` and `Grid` containers.
-          </p>
-          <div className="palette-grid">
-            {PALETTE_TEMPLATES.map((template) => {
-              const childEnabled = canInsertTemplateIntoParent(template, selectedOrRootNode);
-              const siblingEnabled = !!selectedTreeItem?.parentId && canInsertTemplateIntoParent(template, siblingParentNode);
+      <input
+        ref={imageAssetInputRef}
+        className="visually-hidden"
+        type="file"
+        accept="image/*,.svg"
+        multiple
+        onChange={handleImageAssetFileChange}
+      />
+      <input
+        ref={fontAssetInputRef}
+        className="visually-hidden"
+        type="file"
+        accept=".woff,.woff2,.ttf,.otf,font/*"
+        multiple
+        onChange={handleFontAssetFileChange}
+      />
 
-              return (
-                <button
-                  key={template.id}
-                  className={`palette-card ${selectedTemplateId === template.id ? 'is-selected' : ''}`}
-                  type="button"
-                  onClick={() => setSelectedTemplateId(template.id)}
-                >
-                  <span className="palette-swatch" style={{ background: template.accent }} />
-                  <span className="palette-title">{template.title}</span>
-                  <span className="palette-description">{template.description}</span>
-                  <span className="palette-meta">
-                    {childEnabled ? 'Child OK' : 'Child blocked'} | {siblingEnabled ? 'Sibling OK' : 'Sibling blocked'}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-        <section className="tree-panel">
-          <h2>Component Tree</h2>
-          <p className="tree-caption">
-            Target: {selectedTreeNode ? `${selectedTreeNode.type} (${selectedTreeItem?.id})` : 'Root canvas'}
-          </p>
-          <p className="tree-caption">
-            Template: {selectedTemplate.title} | Child target: {childTargetLabel} | Sibling target: {siblingTargetLabel}
-          </p>
-          <div className="tree-toolbar">
-            <div className="toolbar-row">
-              <button className="toolbar-btn" type="button" onClick={createChildElement} disabled={!canAddChild}>
-                Add Child
-              </button>
-              <button className="toolbar-btn" type="button" onClick={createSiblingElement} disabled={!canAddSibling}>
-                Add Sibling
-              </button>
-            </div>
-            <div className="toolbar-row">
-              <button className="toolbar-btn" type="button" onClick={reparentSelectedIn} disabled={!canReparentIn}>
-                Nest In
-              </button>
-              <button className="toolbar-btn" type="button" onClick={reparentSelectedOut} disabled={!canReparentOut}>
-                Move Out
-              </button>
-            </div>
-            <button className="toolbar-btn full-width" type="button" onClick={deleteSelectedElement} disabled={!canDeleteSelected}>
-              Delete Selected
-            </button>
-          </div>
-          <div className="tree-list" role="tree">
-            {treeItems.map((item) => (
-              <button
-                key={item.id}
-                className={`tree-item ${selectedId === item.id ? 'is-selected' : ''} ${
-                  treeDragSourceId === item.id ? 'is-drag-source' : ''
-                } ${treeDropTargetId === item.id && treeDropIntent === 'before' ? 'drop-before' : ''} ${
-                  treeDropTargetId === item.id && treeDropIntent === 'inside' ? 'drop-inside' : ''
-                } ${treeDropTargetId === item.id && treeDropIntent === 'after' ? 'drop-after' : ''}`}
-                style={{ paddingLeft: `${12 + item.depth * 16}px` }}
-                type="button"
-                draggable={item.id !== 'root.0'}
-                onClick={() => selectElement(item.id)}
-                onDragStart={(event) => handleTreeDragStart(item.id, event)}
-                onDragOver={(event) => handleTreeDragOver(item.id, event)}
-                onDrop={(event) => handleTreeDrop(item.id, event)}
-                onDragEnd={handleTreeDragEnd}
-              >
-                <span className="tree-type">{item.type}</span>
-                <span className="tree-label">{item.label}</span>
-              </button>
-            ))}
-          </div>
-        </section>
-        <section className="library-panel">
-          <h2>Asset Library</h2>
-          <p className="tree-caption">
-            Choose a built-in image or font preset, then apply it directly to the current selection.
-          </p>
-          <div className="asset-grid">
-            {IMAGE_ASSETS.map((asset) => (
-              <button
-                key={asset.id}
-                className={`asset-card ${selectedAssetId === asset.id ? 'is-selected' : ''}`}
-                type="button"
-                onClick={() => setSelectedAssetId(asset.id)}
-              >
-                <span
-                  className="asset-preview"
-                  style={{
-                    backgroundColor: asset.background,
-                    backgroundImage: `url(${asset.source})`
-                  }}
-                />
-                <span className="palette-title">{asset.title}</span>
-                <span className="palette-description">{asset.description}</span>
-              </button>
-            ))}
-          </div>
-          <div className="toolbar-row">
-            <button className="toolbar-btn" type="button" onClick={applySelectedAssetToSelection} disabled={!isSelectedImageNode}>
-              Apply to Image
-            </button>
-            <button className="toolbar-btn" type="button" onClick={insertSelectedAssetImage}>
-              Insert Asset
-            </button>
-          </div>
-          <div className="library-summary">
-            <span className="summary-label">Document assets</span>
-            <div className="token-list">
-              {documentImageSources.length > 0 ? (
-                documentImageSources.map((source, index) => {
-                  const knownAsset = IMAGE_ASSETS.find((asset) => asset.source === source);
-                  return (
-                    <span key={`${source}-${index}`} className="library-token">
-                      {knownAsset?.title ?? `Image ${index + 1}`}
-                    </span>
-                  );
-                })
-              ) : (
-                <span className="library-empty">No image assets in this document yet.</span>
-              )}
-            </div>
-          </div>
-          <h2>Font Library</h2>
-          <div className="font-grid">
-            {FONT_PRESETS.map((preset) => (
-              <button
-                key={preset.id}
-                className={`font-card ${selectedFontId === preset.id ? 'is-selected' : ''}`}
-                type="button"
-                onClick={() => {
-                  setSelectedFontId(preset.id);
-                  setFontFamilyInput(preset.family);
-                }}
-              >
-                <span className="font-preview" style={{ fontFamily: preset.family }}>
-                  {preset.sample}
-                </span>
-                <span className="palette-title">{preset.title}</span>
-                <span className="palette-description">{preset.note}</span>
-              </button>
-            ))}
-          </div>
-          <button className="toolbar-btn full-width" type="button" onClick={applySelectedFontToSelection} disabled={!isSelectedTextNode}>
-            Apply Font Preset
-          </button>
-          <div className="library-summary">
-            <span className="summary-label">Document fonts</span>
-            <div className="token-list">
-              {documentFontFamilies.length > 0 ? (
-                documentFontFamilies.map((family) => (
-                  <span key={family} className="library-token" style={{ fontFamily: family }}>
-                    {family}
-                  </span>
-                ))
-              ) : (
-                <span className="library-empty">No explicit font families in this document yet.</span>
-              )}
-            </div>
-          </div>
-          <p className="tree-caption">
-            Active presets: image {selectedAsset.title}, font {selectedFontPreset.title}.
-          </p>
-        </section>
-        <div className="origin">Hover: {hoveredId ?? 'none'}</div>
-        <div className="origin">Selected: {selectedId ?? 'none'}</div>
-      </aside>
-      <section className="canvas-wrap">
-        <div className="viewport-layer">
-          <div
-            className={`grid-overlay ${snapEnabled ? 'is-visible' : ''}`}
-            style={{
-              backgroundSize: `${gridStep}px ${gridStep}px`,
-              backgroundPosition: `${gridOffsetX}px ${gridOffsetY}px`
-            }}
-          />
-          <canvas className="canvas" ref={canvasRef} />
-          {selectedScreenRect ? (
-            <div
-              className="selection-rect"
-              style={{
-                left: `${selectedScreenRect.x}px`,
-                top: `${selectedScreenRect.y}px`,
-                width: `${selectedScreenRect.width}px`,
-                height: `${selectedScreenRect.height}px`
-              }}
-            >
-              <button
-                className="resize-handle"
-                type="button"
-                aria-label="Resize selected element"
-                onPointerDown={onResizeHandlePointerDown}
-              />
-            </div>
-          ) : null}
-        </div>
-      </section>
-      <aside className="inspector">
-        <h2>Inspector</h2>
-        <p className="selection-label">Current selection: {selectedId ?? 'none'}</p>
-        {selectedElement ? (
-          <section className="inspector-group">
-            <h3>Element</h3>
-            <label className="field">
-              <span>Type</span>
-              <input readOnly value={selectedElement.type} />
-            </label>
-            <label className="field">
-              <span>X</span>
-              <input
-                value={xInput}
-                onInput={(event) => setXInput((event.target as HTMLInputElement).value)}
-                onBlur={commitInspectorPosition}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    commitInspectorPosition();
-                  }
-                }}
-              />
-            </label>
-            <label className="field">
-              <span>Y</span>
-              <input
-                value={yInput}
-                onInput={(event) => setYInput((event.target as HTMLInputElement).value)}
-                onBlur={commitInspectorPosition}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    commitInspectorPosition();
-                  }
-                }}
-              />
-            </label>
-            <label className="field">
-              <span>Width</span>
-              <input
-                value={widthInput}
-                onInput={(event) => setWidthInput((event.target as HTMLInputElement).value)}
-                onBlur={commitInspectorSize}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    commitInspectorSize();
-                  }
-                }}
-              />
-            </label>
-            <label className="field">
-              <span>Height</span>
-              <input
-                value={heightInput}
-                onInput={(event) => setHeightInput((event.target as HTMLInputElement).value)}
-                onBlur={commitInspectorSize}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    commitInspectorSize();
-                  }
-                }}
-              />
-            </label>
-            <label className="field">
-              <span>Color</span>
-              <input
-                value={colorInput}
-                onInput={(event) => setColorInput((event.target as HTMLInputElement).value)}
-                onBlur={commitInspectorColor}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    commitInspectorColor();
-                  }
-                }}
-              />
-            </label>
-            <button
-              className="toolbar-btn full-width"
-              type="button"
-              onClick={() => {
-                const id = selectedIdRef.current;
-                if (id) {
-                  executeResetElementCommand(id);
-                }
-              }}
-            >
-              Reset Element Edits
-            </button>
-          </section>
-        ) : null}
-        {selectedElement && isSelectedImageNode ? (
-          <section className="inspector-group">
-            <h3>Image</h3>
-            <p className="source-caption">
-              Natural size: {selectedImageNaturalSize ? `${selectedImageNaturalSize.width}x${selectedImageNaturalSize.height}` : 'Loading or unavailable'}
-            </p>
-            <label className="field">
-              <span>Source</span>
-              <input
-                value={imageSourceInput}
-                onInput={(event) => setImageSourceInput((event.target as HTMLInputElement).value)}
-                onBlur={commitImageSettings}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    commitImageSettings();
-                  }
-                }}
-              />
-            </label>
-            <label className="field">
-              <span>Stretch</span>
-              <select
-                value={imageStretchInput}
-                onInput={(event) => setImageStretchInput((event.target as HTMLSelectElement).value)}
-                onBlur={commitImageSettings}
-              >
-                <option value="Fill">Fill</option>
-                <option value="Uniform">Uniform</option>
-                <option value="UniformToFill">UniformToFill</option>
-                <option value="None">None</option>
-              </select>
-            </label>
-            <label className="field">
-              <span>Opacity</span>
-              <input
-                value={imageOpacityInput}
-                onInput={(event) => setImageOpacityInput((event.target as HTMLInputElement).value)}
-                onBlur={commitImageSettings}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    commitImageSettings();
-                  }
-                }}
-              />
-            </label>
-            <label className="toggle-row">
-              <input
-                type="checkbox"
-                checked={lockAspectRatio}
-                onInput={(event) => setLockAspectRatio((event.target as HTMLInputElement).checked)}
-              />
-              <span>Preserve aspect ratio while resizing</span>
-            </label>
-            <div className="toolbar-row">
-              <button className="toolbar-btn" type="button" onClick={commitImageSettings}>
-                Apply Image
-              </button>
-              <button className="toolbar-btn" type="button" onClick={applyNaturalImageSize}>
-                Use Natural Size
-              </button>
-            </div>
-          </section>
-        ) : null}
-        {selectedElement && isSelectedTextNode ? (
-          <section className="inspector-group">
-            <h3>Typography</h3>
-            <label className="field">
-              <span>Font Family</span>
-              <input
-                value={fontFamilyInput}
-                onInput={(event) => setFontFamilyInput((event.target as HTMLInputElement).value)}
-                onBlur={commitTypographySettings}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    commitTypographySettings();
-                  }
-                }}
-              />
-            </label>
-            <label className="field">
-              <span>Font Size</span>
-              <input
-                value={fontSizeAttrInput}
-                onInput={(event) => setFontSizeAttrInput((event.target as HTMLInputElement).value)}
-                onBlur={commitTypographySettings}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    commitTypographySettings();
-                  }
-                }}
-              />
-            </label>
-            <label className="field">
-              <span>Font Weight</span>
-              <input
-                value={fontWeightInput}
-                onInput={(event) => setFontWeightInput((event.target as HTMLInputElement).value)}
-                onBlur={commitTypographySettings}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    commitTypographySettings();
-                  }
-                }}
-              />
-            </label>
-            <label className="field">
-              <span>Font Style</span>
-              <select
-                value={fontStyleInput}
-                onInput={(event) => setFontStyleInput((event.target as HTMLSelectElement).value)}
-                onBlur={commitTypographySettings}
-              >
-                <option value="Normal">Normal</option>
-                <option value="Italic">Italic</option>
-                <option value="Oblique">Oblique</option>
-              </select>
-            </label>
-            <label className="field">
-              <span>Text Alignment</span>
-              <select
-                value={textAlignmentInput}
-                onInput={(event) => setTextAlignmentInput((event.target as HTMLSelectElement).value)}
-                onBlur={commitTypographySettings}
-              >
-                <option value="Left">Left</option>
-                <option value="Center">Center</option>
-                <option value="Right">Right</option>
-              </select>
-            </label>
-            <label className="field">
-              <span>Flow Direction</span>
-              <select
-                value={flowDirectionInput}
-                onInput={(event) => setFlowDirectionInput((event.target as HTMLSelectElement).value)}
-                onBlur={commitTypographySettings}
-              >
-                <option value="Auto">Auto</option>
-                <option value="LeftToRight">LeftToRight</option>
-                <option value="RightToLeft">RightToLeft</option>
-              </select>
-            </label>
-            <button className="toolbar-btn full-width" type="button" onClick={commitTypographySettings}>
-              Apply Typography
-            </button>
-          </section>
-        ) : null}
-        <section className="inspector-group">
-          <h3>XAML Draft</h3>
-          <p className="source-caption">
-            Edit raw XAML, then apply it back into the designer. Applying source resets undo history and refreshes the reset baseline.
-          </p>
-          <textarea
-            className={`source-preview ${sourceError ? 'has-error' : ''}`}
-            value={sourceDraft}
-            onInput={(event) => {
-              setSourceDraft((event.target as HTMLTextAreaElement).value);
-              setSourceDirty(true);
-              setSourceError(null);
-            }}
-            onKeyDown={(event) => {
-              if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
-                event.preventDefault();
-                applySourceDraft();
-              }
-            }}
-            spellcheck={false}
-          />
-          {sourceError ? <p className="source-error">Parse error: {sourceError}</p> : null}
-          <div className="toolbar-row">
-            <button className="toolbar-btn" type="button" onClick={applySourceDraft} disabled={!canApplySource}>
-              Apply XAML
-            </button>
-            <button className="toolbar-btn" type="button" onClick={revertSourceDraft} disabled={!sourceDirty}>
-              Revert
-            </button>
-          </div>
-        </section>
-      </aside>
+      <LeftRail
+        status={status}
+        origin={origin}
+        cameraView={cameraView}
+        snapEnabled={snapEnabled}
+        documentFileName={documentFileName}
+        canUndo={canUndo}
+        canRedo={canRedo}
+        onUndo={performUndo}
+        onRedo={performRedo}
+        onSaveDraft={saveDraftToStorage}
+        onLoadDraft={loadDraftFromStorage}
+        onImportFile={openDocumentFilePicker}
+        onExportFile={() => void saveDocumentToFile()}
+        onClearDraftStorage={clearDraftStorage}
+        paletteTemplates={PALETTE_TEMPLATES}
+        selectedTemplateId={selectedTemplateId}
+        selectedTemplateTitle={selectedTemplate.title}
+        canUseTemplateAsChild={(template) => canInsertTemplateIntoParent(template, selectedOrRootNode)}
+        canUseTemplateAsSibling={(template) => !!selectedTreeItem?.parentId && canInsertTemplateIntoParent(template, siblingParentNode)}
+        onSelectTemplate={(id) => setSelectedTemplateId(id as PaletteTemplateId)}
+        selectedTreeNodeLabel={selectedTreeNode ? selectedTreeNode.type : 'Root canvas'}
+        selectedTreeItemId={selectedTreeItem?.id ?? null}
+        childTargetLabel={childTargetLabel}
+        siblingTargetLabel={siblingTargetLabel}
+        canAddChild={canAddChild}
+        canAddSibling={canAddSibling}
+        canDeleteSelected={canDeleteSelected}
+        canReparentIn={canReparentIn}
+        canReparentOut={canReparentOut}
+        onAddChild={createChildElement}
+        onAddSibling={createSiblingElement}
+        onDeleteSelected={deleteSelectedElement}
+        onNestIn={reparentSelectedIn}
+        onMoveOut={reparentSelectedOut}
+        treeItems={treeItems}
+        selectedId={selectedId}
+        treeDragSourceId={treeDragSourceId}
+        treeDropTargetId={treeDropTargetId}
+        treeDropIntent={treeDropIntent}
+        onSelectElement={setSelection}
+        onTreeDragStart={handleTreeDragStart}
+        onTreeDragOver={handleTreeDragOver}
+        onTreeDrop={handleTreeDrop}
+        onTreeDragEnd={clearTreeDragState}
+        imageAssets={imageAssets}
+        selectedAssetId={selectedAssetId}
+        onSelectAsset={setSelectedAssetId}
+        onApplySelectedAsset={applySelectedAssetToSelection}
+        onInsertSelectedAsset={insertSelectedAssetImage}
+        onImportImageAsset={openImageAssetFilePicker}
+        onRemoveSelectedImageAsset={removeSelectedImageAsset}
+        canRemoveSelectedImageAsset={selectedAsset.kind === 'imported'}
+        documentImageSources={documentImageSources}
+        resolveImageTokenLabel={resolveImageTokenLabel}
+        fontAssets={fontAssets}
+        selectedFontId={selectedFontId}
+        onSelectFont={(id) => {
+          const font = findFontAsset(fontAssets, id);
+          setSelectedFontId(id);
+          setFontFamilyInput(font.family);
+        }}
+        onApplySelectedFont={applySelectedFontToSelection}
+        onImportFontAsset={openFontAssetFilePicker}
+        onRemoveSelectedFont={removeSelectedFont}
+        canRemoveSelectedFont={selectedFont.kind === 'imported'}
+        documentFontFamilies={documentFontFamilies}
+        selectedAssetTitle={selectedAsset.title}
+        selectedFontTitle={selectedFont.title}
+        hoveredId={hoveredId}
+        overlaySettings={overlaySettings}
+        onOverlaySettingChange={updateOverlaySetting}
+        isSelectedImageNode={isSelectedImageNode}
+        isSelectedTextNode={isSelectedTextNode}
+      />
+
+      <Viewport
+        canvasRef={canvasRef}
+        snapEnabled={snapEnabled}
+        gridStep={gridStep}
+        gridOffsetX={gridOffsetX}
+        gridOffsetY={gridOffsetY}
+        overlaySettings={overlaySettings}
+        overlayState={overlayState}
+        onResizeHandlePointerDown={onResizeHandlePointerDown}
+      />
+
+      <Inspector
+        selectedId={selectedId}
+        selectedElement={selectedElement}
+        isSelectedImageNode={isSelectedImageNode}
+        isSelectedTextNode={isSelectedTextNode}
+        xInput={xInput}
+        yInput={yInput}
+        widthInput={widthInput}
+        heightInput={heightInput}
+        colorInput={colorInput}
+        onChangeX={setXInput}
+        onChangeY={setYInput}
+        onChangeWidth={setWidthInput}
+        onChangeHeight={setHeightInput}
+        onChangeColor={setColorInput}
+        onCommitPosition={commitInspectorPosition}
+        onCommitSize={commitInspectorSize}
+        onCommitColor={commitInspectorColor}
+        onResetElement={() => {
+          const id = selectedIdRef.current;
+          if (id) {
+            executeResetElementCommand(id);
+          }
+        }}
+        imageSourceInput={imageSourceInput}
+        imageStretchInput={imageStretchInput}
+        imageOpacityInput={imageOpacityInput}
+        selectedImageNaturalSizeLabel={selectedImageNaturalSizeLabel}
+        lockAspectRatio={lockAspectRatio}
+        onChangeImageSource={setImageSourceInput}
+        onChangeImageStretch={setImageStretchInput}
+        onChangeImageOpacity={setImageOpacityInput}
+        onCommitImage={commitImageSettings}
+        onApplyNaturalImageSize={applyNaturalImageSize}
+        onChangeLockAspectRatio={setLockAspectRatio}
+        fontFamilyInput={fontFamilyInput}
+        fontSizeInput={fontSizeAttrInput}
+        fontWeightInput={fontWeightInput}
+        fontStyleInput={fontStyleInput}
+        textAlignmentInput={textAlignmentInput}
+        flowDirectionInput={flowDirectionInput}
+        onChangeFontFamily={setFontFamilyInput}
+        onChangeFontSize={setFontSizeAttrInput}
+        onChangeFontWeight={setFontWeightInput}
+        onChangeFontStyle={setFontStyleInput}
+        onChangeTextAlignment={setTextAlignmentInput}
+        onChangeFlowDirection={setFlowDirectionInput}
+        onCommitTypography={commitTypographySettings}
+        sourceDraft={sourceDraft}
+        sourceDirty={sourceDirty}
+        sourceError={sourceError}
+        canApplySource={canApplySource}
+        onChangeSourceDraft={(value) => {
+          setSourceDraft(value);
+          setSourceDirty(true);
+          setSourceError(null);
+        }}
+        onApplySource={applySourceDraft}
+        onRevertSourceDraft={revertSourceDraft}
+      />
     </main>
   );
 }

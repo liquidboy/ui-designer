@@ -41,6 +41,77 @@ export interface RuntimeRenderDiagnostics extends RendererDebugSnapshot {
   boundsCommands: number;
 }
 
+function stringProp(props: Record<string, unknown>, key: string): string {
+  const value = props[key];
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function normalizeFontFaceSource(source: string): string {
+  const trimmed = source.trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  if (trimmed.startsWith('url(')) {
+    return trimmed;
+  }
+
+  return `url("${trimmed.replace(/"/g, '\\"')}")`;
+}
+
+function collectEmbeddedFontFaces(root: UiElement | null): RendererFontFaceDefinition[] {
+  if (!root) {
+    return [];
+  }
+
+  const faces = new Map<string, RendererFontFaceDefinition>();
+  const visit = (element: UiElement) => {
+    const family = stringProp(element.props, 'FontFamily');
+    const source = normalizeFontFaceSource(stringProp(element.props, 'FontSource'));
+
+    if (family && source) {
+      const weight = stringProp(element.props, 'FontWeight') || undefined;
+      const style = stringProp(element.props, 'FontStyle') || undefined;
+      const key = `${family}\u0000${source}\u0000${weight ?? ''}\u0000${style ?? ''}`;
+      faces.set(key, {
+        family,
+        source,
+        weight,
+        style
+      });
+    }
+
+    for (const child of element.children) {
+      visit(child);
+    }
+  };
+
+  visit(root);
+  return Array.from(faces.values());
+}
+
+function dedupeFontFaces(fontFaces: readonly RendererFontFaceDefinition[]): RendererFontFaceDefinition[] {
+  const faces = new Map<string, RendererFontFaceDefinition>();
+  for (const fontFace of fontFaces) {
+    const family = fontFace.family.trim();
+    const source = normalizeFontFaceSource(fontFace.source);
+    if (!family || !source) {
+      continue;
+    }
+
+    const weight = fontFace.weight != null ? `${fontFace.weight}` : '';
+    const style = fontFace.style?.trim() ?? '';
+    const key = `${family}\u0000${source}\u0000${weight}\u0000${style}`;
+    faces.set(key, {
+      ...fontFace,
+      family,
+      source
+    });
+  }
+
+  return Array.from(faces.values());
+}
+
 export class RuntimeHost {
   private readonly renderer: WebGPUCanvasRenderer;
   private readonly canvas: HTMLCanvasElement;
@@ -54,6 +125,7 @@ export class RuntimeHost {
   private readonly elementOffsets = new Map<string, Point>();
   private readonly elementSizeOverrides = new Map<string, { width: number; height: number }>();
   private readonly elementColorOverrides = new Map<string, ColorRgba>();
+  private explicitFontFaces: RendererFontFaceDefinition[] = [];
   private selectedElementId: string | null = null;
   private hoveredElementId: string | null = null;
   private onHoveredElementChange?: (elementId: string | null) => void;
@@ -68,6 +140,7 @@ export class RuntimeHost {
   }
 
   async boot(options: RuntimeBootOptions): Promise<void> {
+    this.explicitFontFaces = dedupeFontFaces(options.fontFaces ?? []);
     this.setXaml(options.xaml);
     this.onHoveredElementChange = options.onHoveredElementChange;
     this.onSelectedElementChange = options.onSelectedElementChange;
@@ -75,11 +148,10 @@ export class RuntimeHost {
 
     await this.renderer.initialize();
     this.rendererReady = true;
-    await this.renderer.registerFontFaces(options.fontFaces ?? []);
-    await this.warmSceneResources();
     this.canvas.addEventListener('pointermove', this.pointerMoveHandler);
     this.canvas.addEventListener('pointerdown', this.pointerDownHandler);
     this.layoutAndRender();
+    this.scheduleSceneWarmup();
   }
 
   start(): void {
@@ -230,6 +302,19 @@ export class RuntimeHost {
     if (this.onSelectedElementChange) {
       this.onSelectedElementChange(id);
     }
+  }
+
+  async registerFontFaces(fontFaces: readonly RendererFontFaceDefinition[] = []): Promise<void> {
+    if (fontFaces.length > 0) {
+      this.explicitFontFaces = dedupeFontFaces([...this.explicitFontFaces, ...fontFaces]);
+    }
+
+    if (!this.rendererReady) {
+      return;
+    }
+
+    await this.registerKnownFontFaces();
+    this.layoutAndRender();
   }
 
   getRenderDiagnostics(): RuntimeRenderDiagnostics {
@@ -513,6 +598,7 @@ export class RuntimeHost {
   }
 
   private async warmSceneResources(): Promise<void> {
+    await this.registerKnownFontFaces();
     await preloadUiAssets(this.root);
     await this.preloadSceneResources();
   }
@@ -520,12 +606,33 @@ export class RuntimeHost {
   private scheduleSceneWarmup(): void {
     const version = ++this.sceneWarmupVersion;
 
-    void this.warmSceneResources().then(() => {
-      if (version !== this.sceneWarmupVersion) {
-        return;
-      }
+    void this.warmSceneResources()
+      .then(() => {
+        if (version !== this.sceneWarmupVersion) {
+          return;
+        }
 
-      this.layoutAndRender();
-    });
+        this.layoutAndRender();
+      })
+      .catch((error: unknown) => {
+        if (version !== this.sceneWarmupVersion) {
+          return;
+        }
+
+        console.warn('Runtime resource warmup failed.', error);
+        this.layoutAndRender();
+      });
+  }
+
+  private getKnownFontFaces(): RendererFontFaceDefinition[] {
+    return dedupeFontFaces([...this.explicitFontFaces, ...collectEmbeddedFontFaces(this.root)]);
+  }
+
+  private async registerKnownFontFaces(): Promise<void> {
+    if (!this.rendererReady) {
+      return;
+    }
+
+    await this.renderer.registerFontFaces(this.getKnownFontFaces());
   }
 }

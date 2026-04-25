@@ -194,6 +194,18 @@ body,
   border: 1px solid rgba(118, 157, 193, 0.16);
 }
 
+.asset-origin {
+  display: inline-flex;
+  justify-self: start;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(102, 199, 255, 0.1);
+  color: #8fd2ff;
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
 .font-preview {
   display: block;
   padding: 10px 12px;
@@ -366,6 +378,118 @@ body,
   border: 1px dashed #67c7ff;
   box-shadow: 0 0 0 1px rgba(103, 199, 255, 0.2);
   pointer-events: none;
+  overflow: visible;
+}
+
+.hover-rect,
+.parent-rect,
+.text-guide,
+.image-guide {
+  position: absolute;
+  pointer-events: none;
+}
+
+.hover-rect {
+  border: 1px solid rgba(103, 199, 255, 0.7);
+  box-shadow: inset 0 0 0 1px rgba(103, 199, 255, 0.15);
+}
+
+.parent-rect {
+  border: 1px dashed rgba(255, 186, 102, 0.62);
+  box-shadow: 0 0 0 1px rgba(255, 186, 102, 0.14);
+}
+
+.text-guide {
+  border: 1px dashed rgba(181, 140, 255, 0.72);
+  background: rgba(184, 140, 255, 0.06);
+  overflow: hidden;
+}
+
+.text-guide-lines {
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(to bottom, rgba(181, 140, 255, 0.18) 1px, transparent 1px);
+}
+
+.image-guide {
+  border: 1px dashed rgba(255, 209, 102, 0.75);
+  background:
+    linear-gradient(135deg, rgba(255, 209, 102, 0.08), transparent 40%),
+    linear-gradient(315deg, rgba(111, 211, 255, 0.06), transparent 42%);
+  overflow: visible;
+}
+
+.image-media-frame {
+  position: absolute;
+  border: 1px solid rgba(255, 209, 102, 0.9);
+  background: rgba(255, 209, 102, 0.08);
+}
+
+.image-media-frame.is-cropped {
+  background:
+    repeating-linear-gradient(
+      135deg,
+      rgba(255, 209, 102, 0.16) 0,
+      rgba(255, 209, 102, 0.16) 8px,
+      rgba(255, 209, 102, 0.06) 8px,
+      rgba(255, 209, 102, 0.06) 16px
+    );
+}
+
+.overlay-chip {
+  position: absolute;
+  display: inline-flex;
+  max-width: min(420px, 100%);
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(7, 14, 20, 0.9);
+  border: 1px solid rgba(110, 147, 181, 0.35);
+  color: #eef6ff;
+  font-size: 0.68rem;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.selection-chip,
+.hover-chip,
+.parent-chip,
+.text-chip,
+.image-chip {
+  left: 0;
+  top: -28px;
+}
+
+.layout-chip {
+  left: 0;
+  bottom: -28px;
+}
+
+.selection-chip {
+  border-color: rgba(103, 199, 255, 0.5);
+  color: #9ddeff;
+}
+
+.hover-chip {
+  border-color: rgba(103, 199, 255, 0.38);
+  color: #ccecff;
+}
+
+.parent-chip {
+  border-color: rgba(255, 186, 102, 0.42);
+  color: #ffd59a;
+}
+
+.text-chip {
+  border-color: rgba(184, 140, 255, 0.42);
+  color: #ddc6ff;
+}
+
+.image-chip {
+  border-color: rgba(255, 209, 102, 0.46);
+  color: #ffe39d;
 }
 
 .resize-handle {
