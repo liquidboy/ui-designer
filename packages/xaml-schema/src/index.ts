@@ -1478,6 +1478,148 @@ function registryHasTypeName(
   return resolveXamlTypeNameReference(typeName, registry, context) != null;
 }
 
+function splitTopLevelTypeArgumentList(value: string): string[] | null {
+  const items: string[] = [];
+  let depth = 0;
+  let segmentStart = 0;
+
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index];
+
+    if (character === '(') {
+      depth += 1;
+      continue;
+    }
+
+    if (character === ')') {
+      if (depth === 0) {
+        return null;
+      }
+
+      depth -= 1;
+      continue;
+    }
+
+    if (character === ',' && depth === 0) {
+      const segment = value.slice(segmentStart, index).trim();
+      if (!segment) {
+        return null;
+      }
+
+      items.push(segment);
+      segmentStart = index + 1;
+    }
+  }
+
+  if (depth !== 0) {
+    return null;
+  }
+
+  const finalSegment = value.slice(segmentStart).trim();
+  if (!finalSegment) {
+    return null;
+  }
+
+  items.push(finalSegment);
+  return items;
+}
+
+function firstTopLevelTypeArgumentOpen(value: string): number {
+  let depth = 0;
+
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index];
+    if (character === '(') {
+      if (depth === 0) {
+        return index;
+      }
+
+      depth += 1;
+      continue;
+    }
+
+    if (character === ')' && depth > 0) {
+      depth -= 1;
+    }
+  }
+
+  return -1;
+}
+
+function pushInvalidTypeArgumentsDiagnostic(
+  diagnostics: XamlDiagnostic[],
+  node: { span?: XamlSourceSpan }
+): void {
+  diagnostics.push(validationDiagnostic(
+    'error',
+    'invalid-type-arguments',
+    'Directive "x:TypeArguments" expects a comma-separated list of type names.',
+    node
+  ));
+}
+
+function validateTypeArgumentExpression(
+  value: string,
+  diagnostics: XamlDiagnostic[],
+  registry: XamlVocabularyRegistry,
+  context: XamlValidationContext,
+  node: { span?: XamlSourceSpan }
+): boolean {
+  const openIndex = firstTopLevelTypeArgumentOpen(value);
+  const typeName = openIndex >= 0 ? value.slice(0, openIndex).trim() : value.trim();
+  if (!typeName || !registryHasTypeName(typeName, registry, context)) {
+    diagnostics.push(validationDiagnostic(
+      'error',
+      'unknown-xaml-type',
+      `Directive "x:TypeArguments" references unknown type "${typeName || value}".`,
+      node
+    ));
+    return false;
+  }
+
+  if (openIndex < 0) {
+    return true;
+  }
+
+  if (!value.endsWith(')')) {
+    pushInvalidTypeArgumentsDiagnostic(diagnostics, node);
+    return false;
+  }
+
+  return validateTypeArgumentList(value.slice(openIndex + 1, -1), diagnostics, registry, context, node);
+}
+
+function validateTypeArgumentList(
+  value: string,
+  diagnostics: XamlDiagnostic[],
+  registry: XamlVocabularyRegistry,
+  context: XamlValidationContext,
+  node: { span?: XamlSourceSpan }
+): boolean {
+  const items = splitTopLevelTypeArgumentList(value.trim());
+  if (!items) {
+    pushInvalidTypeArgumentsDiagnostic(diagnostics, node);
+    return false;
+  }
+
+  return items.every((item) => validateTypeArgumentExpression(item, diagnostics, registry, context, node));
+}
+
+function validateXamlTypeArgumentsDirective(
+  member: XamlMemberNode,
+  diagnostics: XamlDiagnostic[],
+  registry: XamlVocabularyRegistry,
+  context: XamlValidationContext
+): void {
+  const textValue = textFromValues(member.values).trim();
+  if (!textValue) {
+    pushInvalidTypeArgumentsDiagnostic(diagnostics, member);
+    return;
+  }
+
+  validateTypeArgumentList(textValue, diagnostics, registry, context, member);
+}
+
 function xamlStaticMemberFromExtension(extension: XamlMarkupExtensionNode): string {
   const namedMember = extension.arguments.find((argument) => {
     return argument.kind === 'named' && argument.name.toLowerCase() === 'member' && typeof argument.value === 'string';
@@ -1820,7 +1962,8 @@ function validateDirectiveSemantics(
   member: XamlMemberNode,
   definition: XamlMemberDefinition,
   diagnostics: XamlDiagnostic[],
-  context: XamlValidationContext
+  context: XamlValidationContext,
+  registry: XamlVocabularyRegistry
 ): void {
   const textValue = textFromValues(member.values).trim();
 
@@ -1860,6 +2003,11 @@ function validateDirectiveSemantics(
     return;
   }
 
+  if (definition.name === 'TypeArguments') {
+    validateXamlTypeArgumentsDirective(member, diagnostics, registry, context);
+    return;
+  }
+
   if (definition.name === 'Class' && object !== context.rootObject) {
     diagnostics.push(validationDiagnostic(
       'error',
@@ -1885,7 +2033,7 @@ function validateResolvedDirective(
     context.dictionaryKeyMembers.has(member);
 
   validateTextSyntax(member, definition, diagnostics);
-  validateDirectiveSemantics(object, member, definition, diagnostics, context);
+  validateDirectiveSemantics(object, member, definition, diagnostics, context, registry);
 
   if (isValidatedDictionaryKey) {
     validateMarkupExtensions(member, diagnostics, registry, context);

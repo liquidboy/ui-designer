@@ -1727,6 +1727,47 @@ async function runPhase24StaticResolutionFixtures() {
   return files.length;
 }
 
+async function runPhase25TypeArgumentFixtures() {
+  const expectations = {
+    'type-arguments-clr-list.xaml': { errors: [], warnings: ['unsupported-directive'] },
+    'type-arguments-empty.xaml': { errors: ['invalid-type-arguments'], warnings: [] },
+    'type-arguments-malformed-comma.xaml': { errors: ['invalid-type-arguments'], warnings: [] },
+    'type-arguments-malformed-nested.xaml': { errors: ['invalid-type-arguments'], warnings: [] },
+    'type-arguments-nested-preserved.xaml': { errors: [], warnings: ['unsupported-directive'] },
+    'type-arguments-unknown-clr.xaml': { errors: ['unknown-xaml-type'], warnings: [] },
+    'type-arguments-unknown-prefix.xaml': { errors: ['unknown-xaml-type'], warnings: [] }
+  };
+  const files = await listFixtureFiles('phase25-type-arguments');
+
+  for (const fileName of files) {
+    const input = await readFixture('phase25-type-arguments', fileName);
+    const result = parseAndValidateXaml(input);
+    const expected = expectations[fileName];
+    assert.ok(expected, `Missing type-argument expectation for ${fileName}`);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'error'), expected.errors, `${fileName} validation errors`);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'warning'), expected.warnings, `${fileName} validation warnings`);
+
+    if (expected.errors.length > 0) {
+      continue;
+    }
+
+    const serialized = serializeXamlDocumentNode(result.document);
+    const runtime = parseRuntimeXaml(input);
+
+    if (fileName === 'type-arguments-clr-list.xaml') {
+      assert.match(serialized, /x:TypeArguments="sys:Int32, ui:TextBlock, x:Decimal"/);
+      assert.equal(runtime.root.type, 'Canvas');
+    }
+
+    if (fileName === 'type-arguments-nested-preserved.xaml') {
+      assert.match(serialized, /x:TypeArguments="ui:Grid\(x:String, sys:Int32\)"/);
+      assert.equal(runtime.root.type, 'Canvas');
+    }
+  }
+
+  return files.length;
+}
+
 async function runPhase6CollectionFixtures() {
   const expectations = {
     'theme-dictionary-xkey.xaml': { errors: [], warnings: [] },
@@ -1790,7 +1831,8 @@ const phase21Count = await runPhase21IntrinsicObjectElementFixtures();
 const phase22Count = await runPhase22ClrTypeResolutionFixtures();
 const phase23Count = await runPhase23PrimitiveDecimalFixtures();
 const phase24Count = await runPhase24StaticResolutionFixtures();
+const phase25Count = await runPhase25TypeArgumentFixtures();
 
 console.log(
-  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources, ${phase9Count} serializer, ${phase10Count} designer serializer, ${phase11Count} XML scope, ${phase12Count} object resources, ${phase13Count} dynamic resources, ${phase14Count} whitespace normalization, ${phase15Count} intrinsic arrays, ${phase16Count} intrinsic static references, ${phase17Count} intrinsic references, ${phase18Count} namescope boundaries, ${phase19Count} reference identity, ${phase20Count} schema text syntax, ${phase21Count} intrinsic object elements, ${phase22Count} CLR type resolution, ${phase23Count} primitive decimals, ${phase24Count} static resolution).`
+  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources, ${phase9Count} serializer, ${phase10Count} designer serializer, ${phase11Count} XML scope, ${phase12Count} object resources, ${phase13Count} dynamic resources, ${phase14Count} whitespace normalization, ${phase15Count} intrinsic arrays, ${phase16Count} intrinsic static references, ${phase17Count} intrinsic references, ${phase18Count} namescope boundaries, ${phase19Count} reference identity, ${phase20Count} schema text syntax, ${phase21Count} intrinsic object elements, ${phase22Count} CLR type resolution, ${phase23Count} primitive decimals, ${phase24Count} static resolution, ${phase25Count} type arguments).`
 );

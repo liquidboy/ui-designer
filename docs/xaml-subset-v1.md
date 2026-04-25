@@ -135,6 +135,25 @@ Supported dynamic-resource form:
 </Canvas>
 ```
 
+## Generic Metadata
+
+Current status:
+
+1. `x:TypeArguments` parses as an intrinsic XAML directive and is preserved during semantic serialization.
+2. The directive validates comma-separated type-name lists, including nested parenthesized generic-looking forms.
+3. Type names resolve through in-scope XML namespace declarations, including namespace-qualified `ui-designer` types and validation-only `clr-namespace:System` primitive aliases.
+4. Valid `x:TypeArguments` metadata still produces an unsupported-directive warning because runtime generic execution remains outside v1.
+
+Supported preserved form:
+
+```xaml
+<ui:Canvas
+  xmlns:ui="https://liquidboy.dev/ui-designer"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:sys="clr-namespace:System;assembly=mscorlib"
+  x:TypeArguments="sys:Int32, ui:TextBlock, x:Decimal" />
+```
+
 ## Intrinsic Arrays
 
 Current status:

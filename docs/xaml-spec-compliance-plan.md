@@ -61,14 +61,15 @@ The repo now has the core compliance foundation in place:
 23. Type-name validation now resolves in-scope XML namespace declarations for `x:Type` and `x:Array Type`, including prefix-qualified `ui-designer` object types and validation-only `clr-namespace:System` primitive aliases such as `sys:Int32`.
 24. `x:Decimal` now validates decimal text separately from generic JavaScript numbers, enforces 28-scale and 96-bit range limits, and lowers runtime decimal values as strings to preserve exact source value fidelity.
 25. Validation-only `x:Static` member resolution now catches unknown static owners and members for known schema types and accepts scoped CLR primitive constants such as `sys:Double.NaN`, `sys:Int32.MaxValue`, and `sys:Decimal.MaxValue`.
+26. `x:TypeArguments` now validates comma-separated and nested type-name lists against in-scope namespaces, including namespace-qualified UI types and validation-only `clr-namespace:System` primitive aliases, while preserving valid generic metadata as source.
 
-Approximate targeted core `MS-XAML-2017` support: **90%**. This is a progress estimate for the scoped language/object-mapping work, not a claim of complete XAML or WPF vocabulary parity.
+Approximate targeted core `MS-XAML-2017` support: **91%**. This is a progress estimate for the scoped language/object-mapping work, not a claim of complete XAML or WPF vocabulary parity.
 
 The main remaining gaps are now:
 
-1. Validation-only `x:TypeArguments` type-name list parsing and future generic execution.
-2. Richer namescope boundaries for future templates and object islands.
-3. Arbitrary CLR type loading and CLR static value execution.
+1. Richer namescope boundaries for future templates and object islands.
+2. Preserved-only construction directives such as `x:FactoryMethod`/`x:Arguments`.
+3. Arbitrary CLR type loading, generic execution, and CLR static value execution.
 
 Current limitation:
 
@@ -382,8 +383,8 @@ We should call this initiative complete only when all of the following are true:
 
 The next concrete work item should be:
 
-1. add validation-only parsing/resolution for `x:TypeArguments` type-name lists
-2. support namespace-qualified and `clr-namespace:System` primitive aliases in those lists
-3. add fixtures for valid preserved generic metadata, unknown type arguments, and malformed type-argument syntax
+1. expand schema-marked namescope boundaries to template/future object-island vocabulary shapes
+2. add fixtures proving boundary-local `x:Name` and `x:Reference` behavior for those shapes
+3. keep runtime lowering stable until those vocabularies have rendering semantics
 
-That improves generic metadata fidelity without taking on generic type execution yet.
+That closes the main remaining namescope semantics gap before we choose between construction directives and deeper CLR execution.
