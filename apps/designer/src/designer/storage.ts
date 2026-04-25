@@ -5,6 +5,8 @@ const CHROME_DRAFT_STORAGE_KEY = 'ui-designer:chrome-draft:v1';
 const CHROME_APPLIED_STORAGE_KEY = 'ui-designer:chrome-applied:v1';
 const PANELS_DRAFT_STORAGE_KEY = 'ui-designer:panels-draft:v1';
 const PANELS_APPLIED_STORAGE_KEY = 'ui-designer:panels-applied:v1';
+const THEME_DRAFT_STORAGE_KEY = 'ui-designer:theme-draft:v1';
+const THEME_APPLIED_STORAGE_KEY = 'ui-designer:theme-applied:v1';
 const CUSTOM_IMAGE_ASSET_STORAGE_KEY = 'ui-designer:custom-image-assets:v1';
 const CUSTOM_FONT_ASSET_STORAGE_KEY = 'ui-designer:custom-font-assets:v1';
 
@@ -174,6 +176,30 @@ export function writeAppliedPanelsXaml(xaml: string): void {
 
 export function clearAppliedPanelsXaml(): void {
   removeStorageValue(PANELS_APPLIED_STORAGE_KEY);
+}
+
+export function readThemeDraftXaml(): string | null {
+  return readStorageValue(THEME_DRAFT_STORAGE_KEY);
+}
+
+export function writeThemeDraftXaml(xaml: string): void {
+  writeStorageValue(THEME_DRAFT_STORAGE_KEY, xaml);
+}
+
+export function clearThemeDraftXaml(): void {
+  removeStorageValue(THEME_DRAFT_STORAGE_KEY);
+}
+
+export function readAppliedThemeXaml(): string | null {
+  return readStorageValue(THEME_APPLIED_STORAGE_KEY);
+}
+
+export function writeAppliedThemeXaml(xaml: string): void {
+  writeStorageValue(THEME_APPLIED_STORAGE_KEY, xaml);
+}
+
+export function clearAppliedThemeXaml(): void {
+  removeStorageValue(THEME_APPLIED_STORAGE_KEY);
 }
 
 export function readCustomImageAssets(): DesignerImageAsset[] {

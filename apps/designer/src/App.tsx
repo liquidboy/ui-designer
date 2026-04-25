@@ -43,6 +43,12 @@ import {
   type DesignerPanelsDefinition
 } from './designer/panels';
 import {
+  DEFAULT_DESIGNER_THEME_XAML,
+  designerThemeDefinition as defaultDesignerThemeDefinition,
+  parseDesignerThemeDefinition,
+  type DesignerThemeDefinition
+} from './designer/theme';
+import {
   asFiniteNumber,
   applyContainerPlacement,
   canHostAdditionalChildren,
@@ -95,30 +101,37 @@ import {
 import {
   clearAppliedChromeXaml,
   clearAppliedPanelsXaml,
+  clearAppliedThemeXaml,
   clearChromeDraftXaml,
   clearDraftXaml,
   clearPanelsDraftXaml,
+  clearThemeDraftXaml,
   readAppliedChromeXaml,
   readAppliedPanelsXaml,
+  readAppliedThemeXaml,
   readChromeDraftXaml,
   readCustomFontAssets,
   readCustomImageAssets,
   readDraftXaml,
   readPanelsDraftXaml,
+  readThemeDraftXaml,
   writeChromeDraftXaml,
   writeAppliedChromeXaml,
   writeAppliedPanelsXaml,
+  writeAppliedThemeXaml,
   writeCustomFontAssets,
   writeCustomImageAssets,
   writeDraftXaml,
-  writePanelsDraftXaml
+  writePanelsDraftXaml,
+  writeThemeDraftXaml
 } from './designer/storage';
 
 const MAX_VISIBLE_SOURCE_DIAGNOSTICS = 4;
 const CHROME_DOCUMENT_FILE_NAME = 'DesignerChrome.xaml';
 const PANELS_DOCUMENT_FILE_NAME = 'DesignerPanels.xaml';
+const THEME_DOCUMENT_FILE_NAME = 'DesignerTheme.xaml';
 
-type SourceDocumentId = 'document' | 'chrome' | 'panels';
+type SourceDocumentId = 'document' | 'chrome' | 'panels' | 'theme';
 
 interface InitialChromeState {
   definition: DesignerChromeDefinition;
@@ -129,6 +142,13 @@ interface InitialChromeState {
 
 interface InitialPanelsState {
   definition: DesignerPanelsDefinition;
+  draft: string;
+  dirty: boolean;
+  diagnostic: SourceDiagnostic | null;
+}
+
+interface InitialThemeState {
+  definition: DesignerThemeDefinition;
   draft: string;
   dirty: boolean;
   diagnostic: SourceDiagnostic | null;
@@ -257,6 +277,45 @@ function createInitialPanelsState(): InitialPanelsState {
   };
 }
 
+function createInitialThemeState(): InitialThemeState {
+  const storedDraft = readThemeDraftXaml();
+  const storedApplied = readAppliedThemeXaml();
+  const appliedSource = storedApplied ?? storedDraft;
+
+  if (!appliedSource) {
+    return {
+      definition: defaultDesignerThemeDefinition,
+      draft: DEFAULT_DESIGNER_THEME_XAML,
+      dirty: false,
+      diagnostic: null
+    };
+  }
+
+  const parsedApplied = parseDesignerThemeDefinition(appliedSource);
+  const fallbackDefinition = parsedApplied.definition ?? defaultDesignerThemeDefinition;
+  const draftSource = storedDraft ?? fallbackDefinition.source;
+  const parsedDraft = parseDesignerThemeDefinition(draftSource);
+
+  if (parsedDraft.definition) {
+    return {
+      definition: parsedApplied.definition ?? parsedDraft.definition,
+      draft: parsedDraft.definition.source,
+      dirty: storedApplied != null && parsedDraft.definition.source !== fallbackDefinition.source,
+      diagnostic: parsedDraft.diagnostic
+    };
+  }
+
+  return {
+    definition: fallbackDefinition,
+    draft: draftSource,
+    dirty: true,
+    diagnostic: parsedDraft.diagnostic ?? {
+      severity: 'error',
+      message: 'Stored designer theme XAML is invalid.'
+    }
+  };
+}
+
 export function App() {
   const [customImageAssets, setCustomImageAssets] = useState<DesignerImageAsset[]>(() => readCustomImageAssets());
   const [customFontAssets, setCustomFontAssets] = useState<DesignerFontAsset[]>(() => readCustomFontAssets());
@@ -287,6 +346,7 @@ export function App() {
   const [sourceDiagnostic, setSourceDiagnostic] = useState<SourceDiagnostic | null>(null);
   const [initialChromeState] = useState<InitialChromeState>(() => createInitialChromeState());
   const [initialPanelsState] = useState<InitialPanelsState>(() => createInitialPanelsState());
+  const [initialThemeState] = useState<InitialThemeState>(() => createInitialThemeState());
   const [activeSourceDocument, setActiveSourceDocument] = useState<SourceDocumentId>('document');
   const [chromeDefinition, setChromeDefinition] = useState<DesignerChromeDefinition>(initialChromeState.definition);
   const [chromeSourceDraft, setChromeSourceDraft] = useState(initialChromeState.draft);
@@ -296,6 +356,10 @@ export function App() {
   const [panelsSourceDraft, setPanelsSourceDraft] = useState(initialPanelsState.draft);
   const [panelsSourceDirty, setPanelsSourceDirty] = useState(initialPanelsState.dirty);
   const [panelsSourceDiagnostic, setPanelsSourceDiagnostic] = useState<SourceDiagnostic | null>(initialPanelsState.diagnostic);
+  const [themeDefinition, setThemeDefinition] = useState<DesignerThemeDefinition>(initialThemeState.definition);
+  const [themeSourceDraft, setThemeSourceDraft] = useState(initialThemeState.draft);
+  const [themeSourceDirty, setThemeSourceDirty] = useState(initialThemeState.dirty);
+  const [themeSourceDiagnostic, setThemeSourceDiagnostic] = useState<SourceDiagnostic | null>(initialThemeState.diagnostic);
   const [treeDragSourceId, setTreeDragSourceId] = useState<string | null>(null);
   const [treeDropTargetId, setTreeDropTargetId] = useState<string | null>(null);
   const [treeDropIntent, setTreeDropIntent] = useState<TreeDropIntent | null>(null);
@@ -937,6 +1001,36 @@ export function App() {
     setStatus(`Applied ${PANELS_DOCUMENT_FILE_NAME} to the designer panels.`);
   };
 
+  const applyThemeSourceDraft = () => {
+    const nextSource = themeSourceDraft.trim();
+    if (!nextSource) {
+      const message = 'Designer theme XAML cannot be empty.';
+      setThemeSourceDiagnostic({ severity: 'error', message });
+      setStatus(message);
+      return;
+    }
+
+    const result = parseDesignerThemeDefinition(nextSource);
+    if (!result.definition) {
+      const diagnostic = result.diagnostic ?? {
+        severity: 'error' as const,
+        message: 'Invalid designer theme XAML.'
+      };
+      setThemeSourceDiagnostic(diagnostic);
+      setThemeSourceDirty(true);
+      setStatus(`Theme apply failed: ${inlineDiagnosticMessage(diagnostic.message)}`);
+      return;
+    }
+
+    setThemeDefinition(result.definition);
+    setThemeSourceDraft(result.definition.source);
+    setThemeSourceDirty(false);
+    setThemeSourceDiagnostic(result.diagnostic);
+    writeAppliedThemeXaml(result.definition.source);
+    writeThemeDraftXaml(result.definition.source);
+    setStatus(`Applied ${THEME_DOCUMENT_FILE_NAME} to the designer theme.`);
+  };
+
   const loadDocumentFromText = (
     xaml: string,
     options: {
@@ -1016,6 +1110,12 @@ export function App() {
     setPanelsSourceDiagnostic(null);
   };
 
+  const revertThemeSourceDraft = () => {
+    setThemeSourceDraft(themeDefinition.source);
+    setThemeSourceDirty(false);
+    setThemeSourceDiagnostic(null);
+  };
+
   const resetChromeSourceDraft = () => {
     clearChromeDraftXaml();
     clearAppliedChromeXaml();
@@ -1034,6 +1134,16 @@ export function App() {
     setPanelsSourceDirty(false);
     setPanelsSourceDiagnostic(null);
     setStatus(`Reset ${PANELS_DOCUMENT_FILE_NAME} to the bundled default.`);
+  };
+
+  const resetThemeSourceDraft = () => {
+    clearThemeDraftXaml();
+    clearAppliedThemeXaml();
+    setThemeDefinition(defaultDesignerThemeDefinition);
+    setThemeSourceDraft(DEFAULT_DESIGNER_THEME_XAML);
+    setThemeSourceDirty(false);
+    setThemeSourceDiagnostic(null);
+    setStatus(`Reset ${THEME_DOCUMENT_FILE_NAME} to the bundled default.`);
   };
 
   const saveDocumentToFile = async () => {
@@ -1598,6 +1708,10 @@ export function App() {
   useEffect(() => {
     writePanelsDraftXaml(panelsSourceDraft);
   }, [panelsSourceDraft]);
+
+  useEffect(() => {
+    writeThemeDraftXaml(themeSourceDraft);
+  }, [themeSourceDraft]);
 
   useEffect(() => {
     if (!sourceDirty) {
@@ -2168,40 +2282,66 @@ export function App() {
       isActive: false
     });
   }
+  if (!documentTabs.some((tab) => tab.id === 'theme')) {
+    documentTabs.push({
+      id: 'theme',
+      label: THEME_DOCUMENT_FILE_NAME,
+      isActive: false
+    });
+  }
 
   const isChromeSourceActive = activeSourceDocument === 'chrome';
   const isPanelsSourceActive = activeSourceDocument === 'panels';
+  const isThemeSourceActive = activeSourceDocument === 'theme';
   const activeSourceFileName = isChromeSourceActive
     ? CHROME_DOCUMENT_FILE_NAME
     : isPanelsSourceActive
       ? PANELS_DOCUMENT_FILE_NAME
-      : documentFileName;
+      : isThemeSourceActive
+        ? THEME_DOCUMENT_FILE_NAME
+        : documentFileName;
   const activeSourceDraft = isChromeSourceActive
     ? chromeSourceDraft
     : isPanelsSourceActive
       ? panelsSourceDraft
-      : sourceDraft;
+      : isThemeSourceActive
+        ? themeSourceDraft
+        : sourceDraft;
   const activeSourceDirty = isChromeSourceActive
     ? chromeSourceDirty
     : isPanelsSourceActive
       ? panelsSourceDirty
-      : sourceDirty;
+      : isThemeSourceActive
+        ? themeSourceDirty
+        : sourceDirty;
   const activeSourceDiagnostic = isChromeSourceActive
     ? chromeSourceDiagnostic
     : isPanelsSourceActive
       ? panelsSourceDiagnostic
-      : sourceDiagnostic;
+      : isThemeSourceActive
+        ? themeSourceDiagnostic
+        : sourceDiagnostic;
   const canApplyActiveSource = isChromeSourceActive
     ? chromeSourceDirty && chromeSourceDraft.trim().length > 0
     : isPanelsSourceActive
       ? panelsSourceDirty && panelsSourceDraft.trim().length > 0
-      : canApplySource;
-  const activeApplyLabel = isChromeSourceActive ? 'Apply Chrome' : isPanelsSourceActive ? 'Apply Panels' : 'Apply XAML';
+      : isThemeSourceActive
+        ? themeSourceDirty && themeSourceDraft.trim().length > 0
+        : canApplySource;
+  const activeApplyLabel = isChromeSourceActive
+    ? 'Apply Chrome'
+    : isPanelsSourceActive
+      ? 'Apply Panels'
+      : isThemeSourceActive
+        ? 'Apply Theme'
+        : 'Apply XAML';
   const activeSourceCaption = isChromeSourceActive
     ? 'Edit DesignerChrome.xaml, then apply it to update the designer shell without touching the current document.'
     : isPanelsSourceActive
       ? 'Edit DesignerPanels.xaml, then apply it to update panel titles, captions, and inspector groups.'
-      : 'Edit XAML source and apply it back into the live designer surface.';
+      : isThemeSourceActive
+        ? 'Edit DesignerTheme.xaml, then apply it to update the designer color system.'
+        : 'Edit XAML source and apply it back into the live designer surface.';
   const changeActiveSourceDraft = (value: string) => {
     if (isChromeSourceActive) {
       setChromeSourceDraft(value);
@@ -2217,6 +2357,13 @@ export function App() {
       return;
     }
 
+    if (isThemeSourceActive) {
+      setThemeSourceDraft(value);
+      setThemeSourceDirty(true);
+      setThemeSourceDiagnostic(null);
+      return;
+    }
+
     setSourceDraft(value);
     setSourceDirty(true);
     setSourceDiagnostic(null);
@@ -2225,21 +2372,36 @@ export function App() {
     ? applyChromeSourceDraft
     : isPanelsSourceActive
       ? applyPanelsSourceDraft
-      : applySourceDraft;
+      : isThemeSourceActive
+        ? applyThemeSourceDraft
+        : applySourceDraft;
   const revertActiveSource = isChromeSourceActive
     ? revertChromeSourceDraft
     : isPanelsSourceActive
       ? revertPanelsSourceDraft
-      : revertSourceDraft;
+      : isThemeSourceActive
+        ? revertThemeSourceDraft
+        : revertSourceDraft;
   const resetActiveSource = isChromeSourceActive
     ? resetChromeSourceDraft
     : isPanelsSourceActive
       ? resetPanelsSourceDraft
-      : undefined;
-  const activeResetLabel = isChromeSourceActive ? 'Reset Chrome' : isPanelsSourceActive ? 'Reset Panels' : undefined;
+      : isThemeSourceActive
+        ? resetThemeSourceDraft
+        : undefined;
+  const activeResetLabel = isChromeSourceActive
+    ? 'Reset Chrome'
+    : isPanelsSourceActive
+      ? 'Reset Panels'
+      : isThemeSourceActive
+        ? 'Reset Theme'
+        : undefined;
+  const designerThemeStyle = Object.fromEntries(
+    Object.entries(themeDefinition.tokens).map(([id, value]) => [`--designer-${id}`, value])
+  ) as JSX.CSSProperties;
 
   return (
-    <main className="designer-shell">
+    <main className="designer-shell" style={designerThemeStyle}>
       <input
         ref={documentFileInputRef}
         className="visually-hidden"
@@ -2376,7 +2538,7 @@ export function App() {
         <section className="document-area">
           <div className="document-tabs">
             {documentTabs.map((tab) => {
-              const isManagedDocument = tab.id === 'document' || tab.id === 'chrome' || tab.id === 'panels';
+              const isManagedDocument = tab.id === 'document' || tab.id === 'chrome' || tab.id === 'panels' || tab.id === 'theme';
               return (
                 <button
                   key={tab.id}

@@ -1,0 +1,27 @@
+<DesignerTheme xmlns="https://liquidboy.dev/ui-designer/designer-theme">
+  <Colors>
+    <Color Id="app-bg" Value="#1f1f23" />
+    <Color Id="shell-bg" Value="#1c1c20" />
+    <Color Id="workspace-bg" Value="#18181c" />
+    <Color Id="chrome-bg" Value="#2a2a2f" />
+    <Color Id="chrome-muted-bg" Value="#232328" />
+    <Color Id="panel-bg" Value="#252529" />
+    <Color Id="panel-section-bg" Value="#242428" />
+    <Color Id="panel-header-bg" Value="#2b2b31" />
+    <Color Id="card-bg" Value="#2b2b30" />
+    <Color Id="card-hover-bg" Value="#303037" />
+    <Color Id="editor-bg" Value="#18191d" />
+    <Color Id="editor-footer-bg" Value="#24252a" />
+    <Color Id="input-bg" Value="#1d1e23" />
+    <Color Id="border-strong" Value="#111216" />
+    <Color Id="border-subtle" Value="#303037" />
+    <Color Id="text-primary" Value="#e6e6e6" />
+    <Color Id="text-bright" Value="#ffffff" />
+    <Color Id="text-muted" Value="#a7a7ae" />
+    <Color Id="accent" Value="#0877c8" />
+    <Color Id="accent-line" Value="#159cdc" />
+    <Color Id="accent-soft" Value="#1d6f9f" />
+    <Color Id="error" Value="#ff9b9b" />
+    <Color Id="warning" Value="#f0cd80" />
+  </Colors>
+</DesignerTheme>
