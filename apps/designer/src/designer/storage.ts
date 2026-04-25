@@ -1,6 +1,8 @@
 import type { DesignerFontAsset, DesignerImageAsset } from './presets';
 
 const DRAFT_STORAGE_KEY = 'ui-designer:document-draft:v1';
+const CHROME_DRAFT_STORAGE_KEY = 'ui-designer:chrome-draft:v1';
+const CHROME_APPLIED_STORAGE_KEY = 'ui-designer:chrome-applied:v1';
 const CUSTOM_IMAGE_ASSET_STORAGE_KEY = 'ui-designer:custom-image-assets:v1';
 const CUSTOM_FONT_ASSET_STORAGE_KEY = 'ui-designer:custom-font-assets:v1';
 
@@ -122,6 +124,30 @@ export function writeDraftXaml(xaml: string): void {
 
 export function clearDraftXaml(): void {
   removeStorageValue(DRAFT_STORAGE_KEY);
+}
+
+export function readChromeDraftXaml(): string | null {
+  return readStorageValue(CHROME_DRAFT_STORAGE_KEY);
+}
+
+export function writeChromeDraftXaml(xaml: string): void {
+  writeStorageValue(CHROME_DRAFT_STORAGE_KEY, xaml);
+}
+
+export function clearChromeDraftXaml(): void {
+  removeStorageValue(CHROME_DRAFT_STORAGE_KEY);
+}
+
+export function readAppliedChromeXaml(): string | null {
+  return readStorageValue(CHROME_APPLIED_STORAGE_KEY);
+}
+
+export function writeAppliedChromeXaml(xaml: string): void {
+  writeStorageValue(CHROME_APPLIED_STORAGE_KEY, xaml);
+}
+
+export function clearAppliedChromeXaml(): void {
+  removeStorageValue(CHROME_APPLIED_STORAGE_KEY);
 }
 
 export function readCustomImageAssets(): DesignerImageAsset[] {

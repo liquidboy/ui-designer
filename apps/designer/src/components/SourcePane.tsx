@@ -15,9 +15,11 @@ interface SourcePaneProps {
   canApplySource: boolean;
   applyLabel: string;
   caption: string;
+  resetLabel?: string;
   onChangeSourceDraft: (value: string) => void;
   onApplySource: () => void;
   onRevertSourceDraft: () => void;
+  onResetSource?: () => void;
 }
 
 function runMouseAction(event: JSX.TargetedMouseEvent<HTMLButtonElement>, action: () => void): void {
@@ -41,9 +43,11 @@ export function SourcePane(props: SourcePaneProps) {
     canApplySource,
     applyLabel,
     caption,
+    resetLabel,
     onChangeSourceDraft,
     onApplySource,
-    onRevertSourceDraft
+    onRevertSourceDraft,
+    onResetSource
   } = props;
   const sourcePreviewClassName = [
     'source-preview',
@@ -101,6 +105,16 @@ export function SourcePane(props: SourcePaneProps) {
           >
             Revert
           </button>
+          {onResetSource ? (
+            <button
+              className="toolbar-btn"
+              type="button"
+              onMouseDown={(event) => runMouseAction(event, onResetSource)}
+              onClick={(event) => runKeyboardClick(event, onResetSource)}
+            >
+              {resetLabel ?? 'Reset'}
+            </button>
+          ) : null}
         </div>
       </div>
     </section>

@@ -87,10 +87,16 @@ import {
   resolveImageInsertionSize
 } from './designer/resources';
 import {
+  clearAppliedChromeXaml,
+  clearChromeDraftXaml,
   clearDraftXaml,
+  readAppliedChromeXaml,
+  readChromeDraftXaml,
   readCustomFontAssets,
   readCustomImageAssets,
   readDraftXaml,
+  writeChromeDraftXaml,
+  writeAppliedChromeXaml,
   writeCustomFontAssets,
   writeCustomImageAssets,
   writeDraftXaml
@@ -100,6 +106,13 @@ const MAX_VISIBLE_SOURCE_DIAGNOSTICS = 4;
 const CHROME_DOCUMENT_FILE_NAME = 'DesignerChrome.xaml';
 
 type SourceDocumentId = 'document' | 'chrome';
+
+interface InitialChromeState {
+  definition: DesignerChromeDefinition;
+  draft: string;
+  dirty: boolean;
+  diagnostic: SourceDiagnostic | null;
+}
 
 interface SourceDiagnostic {
   severity: DesignerDocumentDiagnostic['severity'];
@@ -146,6 +159,45 @@ function inlineDiagnosticMessage(message: string): string {
   return message.replace(/\s+/g, ' ').trim();
 }
 
+function createInitialChromeState(): InitialChromeState {
+  const storedDraft = readChromeDraftXaml();
+  const storedApplied = readAppliedChromeXaml();
+  const appliedSource = storedApplied ?? storedDraft;
+
+  if (!appliedSource) {
+    return {
+      definition: defaultDesignerChromeDefinition,
+      draft: DEFAULT_DESIGNER_CHROME_XAML,
+      dirty: false,
+      diagnostic: null
+    };
+  }
+
+  const parsedApplied = parseDesignerChromeDefinition(appliedSource);
+  const fallbackDefinition = parsedApplied.definition ?? defaultDesignerChromeDefinition;
+  const draftSource = storedDraft ?? fallbackDefinition.source;
+  const parsedDraft = parseDesignerChromeDefinition(draftSource);
+
+  if (parsedDraft.definition) {
+    return {
+      definition: parsedApplied.definition ?? parsedDraft.definition,
+      draft: parsedDraft.definition.source,
+      dirty: storedApplied != null && parsedDraft.definition.source !== fallbackDefinition.source,
+      diagnostic: parsedDraft.diagnostic
+    };
+  }
+
+  return {
+    definition: fallbackDefinition,
+    draft: draftSource,
+    dirty: true,
+    diagnostic: parsedDraft.diagnostic ?? {
+      severity: 'error',
+      message: 'Stored designer chrome XAML is invalid.'
+    }
+  };
+}
+
 export function App() {
   const [customImageAssets, setCustomImageAssets] = useState<DesignerImageAsset[]>(() => readCustomImageAssets());
   const [customFontAssets, setCustomFontAssets] = useState<DesignerFontAsset[]>(() => readCustomFontAssets());
@@ -174,11 +226,12 @@ export function App() {
   const [sourceDraft, setSourceDraft] = useState(sampleXaml);
   const [sourceDirty, setSourceDirty] = useState(false);
   const [sourceDiagnostic, setSourceDiagnostic] = useState<SourceDiagnostic | null>(null);
+  const [initialChromeState] = useState<InitialChromeState>(() => createInitialChromeState());
   const [activeSourceDocument, setActiveSourceDocument] = useState<SourceDocumentId>('document');
-  const [chromeDefinition, setChromeDefinition] = useState<DesignerChromeDefinition>(defaultDesignerChromeDefinition);
-  const [chromeSourceDraft, setChromeSourceDraft] = useState(DEFAULT_DESIGNER_CHROME_XAML);
-  const [chromeSourceDirty, setChromeSourceDirty] = useState(false);
-  const [chromeSourceDiagnostic, setChromeSourceDiagnostic] = useState<SourceDiagnostic | null>(null);
+  const [chromeDefinition, setChromeDefinition] = useState<DesignerChromeDefinition>(initialChromeState.definition);
+  const [chromeSourceDraft, setChromeSourceDraft] = useState(initialChromeState.draft);
+  const [chromeSourceDirty, setChromeSourceDirty] = useState(initialChromeState.dirty);
+  const [chromeSourceDiagnostic, setChromeSourceDiagnostic] = useState<SourceDiagnostic | null>(initialChromeState.diagnostic);
   const [treeDragSourceId, setTreeDragSourceId] = useState<string | null>(null);
   const [treeDropTargetId, setTreeDropTargetId] = useState<string | null>(null);
   const [treeDropIntent, setTreeDropIntent] = useState<TreeDropIntent | null>(null);
@@ -785,6 +838,8 @@ export function App() {
     setChromeSourceDraft(result.definition.source);
     setChromeSourceDirty(false);
     setChromeSourceDiagnostic(result.diagnostic);
+    writeAppliedChromeXaml(result.definition.source);
+    writeChromeDraftXaml(result.definition.source);
     setStatus(`Applied ${CHROME_DOCUMENT_FILE_NAME} to the designer shell.`);
   };
 
@@ -859,6 +914,16 @@ export function App() {
     setChromeSourceDraft(chromeDefinition.source);
     setChromeSourceDirty(false);
     setChromeSourceDiagnostic(null);
+  };
+
+  const resetChromeSourceDraft = () => {
+    clearChromeDraftXaml();
+    clearAppliedChromeXaml();
+    setChromeDefinition(defaultDesignerChromeDefinition);
+    setChromeSourceDraft(DEFAULT_DESIGNER_CHROME_XAML);
+    setChromeSourceDirty(false);
+    setChromeSourceDiagnostic(null);
+    setStatus(`Reset ${CHROME_DOCUMENT_FILE_NAME} to the bundled default.`);
   };
 
   const saveDocumentToFile = async () => {
@@ -1415,6 +1480,10 @@ export function App() {
   useEffect(() => {
     writeCustomFontAssets(customFontAssets);
   }, [customFontAssets]);
+
+  useEffect(() => {
+    writeChromeDraftXaml(chromeSourceDraft);
+  }, [chromeSourceDraft]);
 
   useEffect(() => {
     if (!sourceDirty) {
@@ -2005,6 +2074,8 @@ export function App() {
   };
   const applyActiveSource = isChromeSourceActive ? applyChromeSourceDraft : applySourceDraft;
   const revertActiveSource = isChromeSourceActive ? revertChromeSourceDraft : revertSourceDraft;
+  const resetActiveSource = isChromeSourceActive ? resetChromeSourceDraft : undefined;
+  const activeResetLabel = isChromeSourceActive ? 'Reset Chrome' : undefined;
 
   return (
     <main className="designer-shell">
@@ -2201,6 +2272,8 @@ export function App() {
             onChangeSourceDraft={changeActiveSourceDraft}
             onApplySource={applyActiveSource}
             onRevertSourceDraft={revertActiveSource}
+            onResetSource={resetActiveSource}
+            resetLabel={activeResetLabel}
           />
         </section>
 
