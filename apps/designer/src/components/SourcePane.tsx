@@ -1,3 +1,4 @@
+import type { JSX } from 'preact';
 import type { DesignerChromeItem } from '../designer/chrome';
 
 interface SourceDiagnostic {
@@ -12,9 +13,22 @@ interface SourcePaneProps {
   sourceDirty: boolean;
   sourceDiagnostic: SourceDiagnostic | null;
   canApplySource: boolean;
+  applyLabel: string;
+  caption: string;
   onChangeSourceDraft: (value: string) => void;
   onApplySource: () => void;
   onRevertSourceDraft: () => void;
+}
+
+function runMouseAction(event: JSX.TargetedMouseEvent<HTMLButtonElement>, action: () => void): void {
+  event.preventDefault();
+  action();
+}
+
+function runKeyboardClick(event: JSX.TargetedMouseEvent<HTMLButtonElement>, action: () => void): void {
+  if (event.detail === 0) {
+    action();
+  }
 }
 
 export function SourcePane(props: SourcePaneProps) {
@@ -25,6 +39,8 @@ export function SourcePane(props: SourcePaneProps) {
     sourceDirty,
     sourceDiagnostic,
     canApplySource,
+    applyLabel,
+    caption,
     onChangeSourceDraft,
     onApplySource,
     onRevertSourceDraft
@@ -64,13 +80,25 @@ export function SourcePane(props: SourcePaneProps) {
             {sourceDiagnosticLabel}: {sourceDiagnostic.message}
           </p>
         ) : (
-          <p className="source-caption">Edit XAML source and apply it back into the live designer surface.</p>
+          <p className="source-caption">{caption}</p>
         )}
         <div className="source-actions">
-          <button className="toolbar-btn" type="button" onClick={onApplySource} disabled={!canApplySource}>
-            Apply XAML
+          <button
+            className="toolbar-btn"
+            type="button"
+            onMouseDown={(event) => runMouseAction(event, onApplySource)}
+            onClick={(event) => runKeyboardClick(event, onApplySource)}
+            disabled={!canApplySource}
+          >
+            {applyLabel}
           </button>
-          <button className="toolbar-btn" type="button" onClick={onRevertSourceDraft} disabled={!sourceDirty}>
+          <button
+            className="toolbar-btn"
+            type="button"
+            onMouseDown={(event) => runMouseAction(event, onRevertSourceDraft)}
+            onClick={(event) => runKeyboardClick(event, onRevertSourceDraft)}
+            disabled={!sourceDirty}
+          >
             Revert
           </button>
         </div>

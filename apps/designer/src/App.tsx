@@ -29,7 +29,13 @@ import { Inspector } from './components/Inspector';
 import { LeftRail } from './components/LeftRail';
 import { SourcePane } from './components/SourcePane';
 import { Viewport } from './components/Viewport';
-import { designerChromeDefinition, type DesignerChromeItem } from './designer/chrome';
+import {
+  DEFAULT_DESIGNER_CHROME_XAML,
+  designerChromeDefinition as defaultDesignerChromeDefinition,
+  parseDesignerChromeDefinition,
+  type DesignerChromeDefinition,
+  type DesignerChromeItem
+} from './designer/chrome';
 import {
   asFiniteNumber,
   applyContainerPlacement,
@@ -91,6 +97,9 @@ import {
 } from './designer/storage';
 
 const MAX_VISIBLE_SOURCE_DIAGNOSTICS = 4;
+const CHROME_DOCUMENT_FILE_NAME = 'DesignerChrome.xaml';
+
+type SourceDocumentId = 'document' | 'chrome';
 
 interface SourceDiagnostic {
   severity: DesignerDocumentDiagnostic['severity'];
@@ -165,6 +174,11 @@ export function App() {
   const [sourceDraft, setSourceDraft] = useState(sampleXaml);
   const [sourceDirty, setSourceDirty] = useState(false);
   const [sourceDiagnostic, setSourceDiagnostic] = useState<SourceDiagnostic | null>(null);
+  const [activeSourceDocument, setActiveSourceDocument] = useState<SourceDocumentId>('document');
+  const [chromeDefinition, setChromeDefinition] = useState<DesignerChromeDefinition>(defaultDesignerChromeDefinition);
+  const [chromeSourceDraft, setChromeSourceDraft] = useState(DEFAULT_DESIGNER_CHROME_XAML);
+  const [chromeSourceDirty, setChromeSourceDirty] = useState(false);
+  const [chromeSourceDiagnostic, setChromeSourceDiagnostic] = useState<SourceDiagnostic | null>(null);
   const [treeDragSourceId, setTreeDragSourceId] = useState<string | null>(null);
   const [treeDropTargetId, setTreeDropTargetId] = useState<string | null>(null);
   const [treeDropIntent, setTreeDropIntent] = useState<TreeDropIntent | null>(null);
@@ -746,6 +760,34 @@ export function App() {
     });
   };
 
+  const applyChromeSourceDraft = () => {
+    const nextSource = chromeSourceDraft.trim();
+    if (!nextSource) {
+      const message = 'Designer chrome XAML cannot be empty.';
+      setChromeSourceDiagnostic({ severity: 'error', message });
+      setStatus(message);
+      return;
+    }
+
+    const result = parseDesignerChromeDefinition(nextSource);
+    if (!result.definition) {
+      const diagnostic = result.diagnostic ?? {
+        severity: 'error' as const,
+        message: 'Invalid designer chrome XAML.'
+      };
+      setChromeSourceDiagnostic(diagnostic);
+      setChromeSourceDirty(true);
+      setStatus(`Chrome apply failed: ${inlineDiagnosticMessage(diagnostic.message)}`);
+      return;
+    }
+
+    setChromeDefinition(result.definition);
+    setChromeSourceDraft(result.definition.source);
+    setChromeSourceDirty(false);
+    setChromeSourceDiagnostic(result.diagnostic);
+    setStatus(`Applied ${CHROME_DOCUMENT_FILE_NAME} to the designer shell.`);
+  };
+
   const loadDocumentFromText = (
     xaml: string,
     options: {
@@ -811,6 +853,12 @@ export function App() {
     setSourceDraft(documentXaml);
     setSourceDirty(false);
     setSourceDiagnostic(null);
+  };
+
+  const revertChromeSourceDraft = () => {
+    setChromeSourceDraft(chromeDefinition.source);
+    setChromeSourceDirty(false);
+    setChromeSourceDiagnostic(null);
   };
 
   const saveDocumentToFile = async () => {
@@ -1914,6 +1962,49 @@ export function App() {
     const value = item.valueBinding ? statusValues[item.valueBinding] : '';
     return item.label ? `${item.label} ${value}` : value;
   };
+  const documentTabs = [...chromeDefinition.documentTabs];
+  if (!documentTabs.some((tab) => tab.id === 'document')) {
+    documentTabs.unshift({
+      id: 'document',
+      label: '',
+      labelBinding: 'documentFileName',
+      isActive: false
+    });
+  }
+  if (!documentTabs.some((tab) => tab.id === 'chrome')) {
+    documentTabs.push({
+      id: 'chrome',
+      label: CHROME_DOCUMENT_FILE_NAME,
+      isActive: false
+    });
+  }
+
+  const isChromeSourceActive = activeSourceDocument === 'chrome';
+  const activeSourceFileName = isChromeSourceActive ? CHROME_DOCUMENT_FILE_NAME : documentFileName;
+  const activeSourceDraft = isChromeSourceActive ? chromeSourceDraft : sourceDraft;
+  const activeSourceDirty = isChromeSourceActive ? chromeSourceDirty : sourceDirty;
+  const activeSourceDiagnostic = isChromeSourceActive ? chromeSourceDiagnostic : sourceDiagnostic;
+  const canApplyActiveSource = isChromeSourceActive
+    ? chromeSourceDirty && chromeSourceDraft.trim().length > 0
+    : canApplySource;
+  const activeApplyLabel = isChromeSourceActive ? 'Apply Chrome' : 'Apply XAML';
+  const activeSourceCaption = isChromeSourceActive
+    ? 'Edit DesignerChrome.xaml, then apply it to update the designer shell without touching the current document.'
+    : 'Edit XAML source and apply it back into the live designer surface.';
+  const changeActiveSourceDraft = (value: string) => {
+    if (isChromeSourceActive) {
+      setChromeSourceDraft(value);
+      setChromeSourceDirty(true);
+      setChromeSourceDiagnostic(null);
+      return;
+    }
+
+    setSourceDraft(value);
+    setSourceDirty(true);
+    setSourceDiagnostic(null);
+  };
+  const applyActiveSource = isChromeSourceActive ? applyChromeSourceDraft : applySourceDraft;
+  const revertActiveSource = isChromeSourceActive ? revertChromeSourceDraft : revertSourceDraft;
 
   return (
     <main className="designer-shell">
@@ -1946,13 +2037,13 @@ export function App() {
           <div className="app-mark" aria-hidden="true">X</div>
           <div className="window-title">{documentFileName} - Liquid XAML Blend</div>
           <nav className="menu-strip" aria-label="Application menu">
-            {designerChromeDefinition.menuItems.map((item) => (
+            {chromeDefinition.menuItems.map((item) => (
               <button key={item.id} type="button">{resolveChromeLabel(item)}</button>
             ))}
           </nav>
         </div>
         <div className="command-strip">
-          {designerChromeDefinition.commandItems.map((item) => {
+          {chromeDefinition.commandItems.map((item) => {
             const handler = commandHandlers[item.id];
 
             return (
@@ -1973,7 +2064,7 @@ export function App() {
 
       <section className="blend-workspace">
         <LeftRail
-          dockTabs={designerChromeDefinition.leftDockTabs}
+          dockTabs={chromeDefinition.leftDockTabs}
           status={status}
           origin={origin}
           cameraView={cameraView}
@@ -2051,15 +2142,28 @@ export function App() {
 
         <section className="document-area">
           <div className="document-tabs">
-            {designerChromeDefinition.documentTabs.map((tab) => (
-              <button key={tab.id} className={`document-tab ${tab.isActive ? 'is-active' : ''}`} type="button">
-                {resolveChromeLabel(tab)}
-              </button>
-            ))}
+            {documentTabs.map((tab) => {
+              const isManagedDocument = tab.id === 'document' || tab.id === 'chrome';
+              return (
+                <button
+                  key={tab.id}
+                  className={`document-tab ${activeSourceDocument === tab.id ? 'is-active' : ''}`}
+                  type="button"
+                  onClick={() => {
+                    if (isManagedDocument) {
+                      setActiveSourceDocument(tab.id as SourceDocumentId);
+                    }
+                  }}
+                  disabled={!isManagedDocument}
+                >
+                  {resolveChromeLabel(tab)}
+                </button>
+              );
+            })}
           </div>
           <section className="artboard-region" aria-label="Designer artboard">
             <div className="tool-strip" aria-label="Tools">
-              {designerChromeDefinition.toolStrip.map((tool) => (
+              {chromeDefinition.toolStrip.map((tool) => (
                 <button
                   key={tool.id}
                   className={tool.isActive ? 'is-active' : ''}
@@ -2086,24 +2190,22 @@ export function App() {
             </div>
           </section>
           <SourcePane
-            tabs={designerChromeDefinition.sourceTabs}
-            documentFileName={documentFileName}
-            sourceDraft={sourceDraft}
-            sourceDirty={sourceDirty}
-            sourceDiagnostic={sourceDiagnostic}
-            canApplySource={canApplySource}
-            onChangeSourceDraft={(value) => {
-              setSourceDraft(value);
-              setSourceDirty(true);
-              setSourceDiagnostic(null);
-            }}
-            onApplySource={applySourceDraft}
-            onRevertSourceDraft={revertSourceDraft}
+            tabs={chromeDefinition.sourceTabs}
+            documentFileName={activeSourceFileName}
+            sourceDraft={activeSourceDraft}
+            sourceDirty={activeSourceDirty}
+            sourceDiagnostic={activeSourceDiagnostic}
+            canApplySource={canApplyActiveSource}
+            applyLabel={activeApplyLabel}
+            caption={activeSourceCaption}
+            onChangeSourceDraft={changeActiveSourceDraft}
+            onApplySource={applyActiveSource}
+            onRevertSourceDraft={revertActiveSource}
           />
         </section>
 
         <Inspector
-          dockTabs={designerChromeDefinition.inspectorTabs}
+          dockTabs={chromeDefinition.inspectorTabs}
           selectedId={selectedId}
           selectedElement={selectedElement}
           isSelectedImageNode={isSelectedImageNode}
@@ -2155,7 +2257,7 @@ export function App() {
       </section>
 
       <footer className="blend-statusbar">
-        {designerChromeDefinition.statusSegments.map((segment) => (
+        {chromeDefinition.statusSegments.map((segment) => (
           <span key={segment.id}>{resolveStatusText(segment)}</span>
         ))}
       </footer>

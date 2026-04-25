@@ -924,6 +924,8 @@ button {
 }
 
 .source-footer {
+  position: relative;
+  z-index: 1;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 12px;
@@ -934,6 +936,8 @@ button {
 }
 
 .source-actions {
+  position: relative;
+  z-index: 2;
   display: flex;
   gap: 6px;
 }

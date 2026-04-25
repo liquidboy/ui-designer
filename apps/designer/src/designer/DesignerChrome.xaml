@@ -1,0 +1,52 @@
+<DesignerChrome xmlns="https://liquidboy.dev/ui-designer/designer-chrome">
+  <TopMenu>
+    <MenuItem Id="file" Label="File" />
+    <MenuItem Id="edit" Label="Edit" />
+    <MenuItem Id="view" Label="View" />
+    <MenuItem Id="object" Label="Object" />
+    <MenuItem Id="project" Label="Project" />
+    <MenuItem Id="tools" Label="Tools" />
+    <MenuItem Id="window" Label="Window" />
+    <MenuItem Id="help" Label="Help" />
+  </TopMenu>
+  <CommandBar>
+    <Command Id="undo" Label="Undo" />
+    <Command Id="redo" Label="Redo" />
+    <Command Id="import" Label="Import" />
+    <Command Id="export" Label="Export" />
+  </CommandBar>
+  <DockTabs Slot="left">
+    <DockTab Id="project" Label="Project" Active="true" />
+    <DockTab Id="assets" Label="Assets" />
+    <DockTab Id="states" Label="States" />
+  </DockTabs>
+  <DockTabs Slot="inspector">
+    <DockTab Id="properties" Label="Properties" Active="true" />
+    <DockTab Id="resources" Label="Resources" />
+    <DockTab Id="data" Label="Data" />
+  </DockTabs>
+  <DocumentTabs>
+    <DocumentTab Id="document" LabelBinding="documentFileName" Active="true" />
+    <DocumentTab Id="chrome" Label="DesignerChrome.xaml" />
+  </DocumentTabs>
+  <ToolStrip>
+    <Tool Id="selection" Label="Selection" Glyph="V" Active="true" />
+    <Tool Id="pan" Label="Pan" Glyph="H" />
+    <Tool Id="zoom" Label="Zoom" Glyph="Z" />
+    <Tool Id="pen" Label="Pen" Glyph="P" />
+    <Tool Id="text" Label="Text" Glyph="T" />
+    <Tool Id="rectangle" Label="Rectangle" Glyph="R" />
+    <Tool Id="image" Label="Image" Glyph="I" />
+    <Tool Id="grid" Label="Grid" Glyph="G" />
+  </ToolStrip>
+  <SourceTabs>
+    <SourceTab Id="xaml" Label="XAML" Active="true" />
+    <SourceTab Id="design" Label="Design" />
+  </SourceTabs>
+  <StatusBar>
+    <StatusSegment Id="status" ValueBinding="status" />
+    <StatusSegment Id="zoom" Label="Zoom" ValueBinding="zoom" />
+    <StatusSegment Id="snap" Label="Snap" ValueBinding="snap" />
+    <StatusSegment Id="selection" Label="Selection" ValueBinding="selection" />
+  </StatusBar>
+</DesignerChrome>
