@@ -52,7 +52,7 @@ Default rule: parser support should be broader than runtime execution support. U
 | Collection members | Partial | Phase 3+ | Add list semantics to vocabulary metadata and lowering. | Known list containers now validate allowed item types; semantic collection lowering is still compatibility-shaped. |
 | Dictionary members | Partial | Phase 3+ | Add dictionary semantics, key validation, and lowering. | Designer theme `Colors` validates dictionary items with explicit `x:Key` or implicit `Color.Id`; runtime `ResourceDictionary` now lowers primitive resources and known control object resources for scoped `StaticResource` and `DynamicResource` lookup. |
 | Text syntax conversion | Partial | Phase 2 | Move primitive conversion into schema-defined text syntax. | Validation is schema-aware today, but legacy lowering still uses shared primitive coercion. |
-| Whitespace handling | Partial | Phase 3+ | Add schema-aware whitespace preservation/collapse rules. | Default lowering now collapses XML whitespace runs and trims text values, while `xml:space="preserve"` keeps exact text and `xml:space="default"` resets inherited preservation. Remaining gaps are edge-case whitespace rules around future intrinsic collections/templates. |
+| Whitespace handling | Partial | Phase 3+ | Add schema-aware whitespace preservation/collapse rules. | Default lowering now collapses XML whitespace runs and trims text values, while `xml:space="preserve"` keeps exact text and `xml:space="default"` resets inherited preservation. Remaining gaps are edge-case whitespace rules around future templates/object islands. |
 | Markup extension AST | Partial | Phase 5 | Parse brace syntax into structured expressions. | Attribute values and property-element text now parse into a structured AST; runtime lowering evaluates supported extensions while authoring lowering preserves raw text. |
 | Nested markup extensions | Partial | Phase 5 | Support nested extension arguments. | Nested attribute-value extensions now parse recursively; unsupported nested extensions still warn and preserve. |
 | Semantic serializer | Partial | Phase 7 | Serialize from infoset/semantic model, not string concatenation. | `serializeXamlDocumentNode` now canonicalizes namespace declarations, directives, markup extensions, property elements, and collection content; designer attribute edits and child insert/remove/move operations update the infoset when the lowered path maps safely. |
@@ -68,11 +68,11 @@ Default rule: parser support should be broader than runtime execution support. U
 | `x:Uid` | Current | Phase 4 | Parse and preserve with warning. | Preserved-only. | Useful for localization metadata, not rendering. |
 | `x:TypeArguments` | Current | Phase 4 | Parse and preserve with warning. | Preserved-only. | Generic type execution can remain unsupported. |
 | `x:Null` | Partial | Phase 5 | Parse as markup extension or intrinsic null expression. | Runtime lowering maps `{x:Null}` to semantic `null`; authoring lowering preserves raw text. | Serializer support for emitting `x:` namespace declarations from null values is still pending. |
-| `x:Array` | Deferred | Deferred | Preserve as unsupported intrinsic object/extension. | Not lowered. | Needs array/list semantics first. |
+| `x:Array` | Partial | Phase 5 | Parse and validate intrinsic `x:Array` object elements, required `Type`, direct content, and `x:Array.Items`. | Lowers structurally as an `Array` node with item children. | True array-valued runtime assignment, primitive CLR item types, and `{x:Type ...}` item-type expressions remain deferred. |
 | `x:Static` | Deferred | Deferred | Preserve as unsupported markup extension. | Not evaluated. | Requires a static member resolution model. |
 | `x:Reference` | Deferred | Deferred | Preserve as unsupported markup extension. | Not evaluated. | Requires namescope and object reference resolution. |
 | `xml:lang` | Current | Phase 4 | Parse, preserve, validate, and propagate as effective object metadata. | Compatibility lowering emits inherited `lang` metadata on descendants. | Runtime text/layout consumers can now read inherited language metadata from lowered attributes. |
-| `xml:space` | Partial | Phase 4 | Parse, preserve, validate, and apply scoped whitespace preservation/reset. | Preserved whitespace-only text lowers into text-capable content; default text lowering collapses and trims XML whitespace. | Edge-case whitespace behavior around deferred intrinsic object forms is still pending. |
+| `xml:space` | Partial | Phase 4 | Parse, preserve, validate, and apply scoped whitespace preservation/reset. | Preserved whitespace-only text lowers into text-capable content; default text lowering collapses and trims XML whitespace. | Edge-case whitespace behavior around future templates/object islands is still pending. |
 
 ## `ui-designer` Vocabulary Matrix
 
@@ -123,8 +123,8 @@ Default rule: parser support should be broader than runtime execution support. U
 Current limitation:
 
 1. Namescope validation currently treats the document root as the only namescope. Nested namescopes for templates, resources, or future object islands are still deferred.
-2. Markup extension parsing currently covers attribute values and property-element text; object-element intrinsic forms such as `x:Array` remain deferred.
-3. Runtime resource lookup supports primitive resources, known control object resources, and dynamic resource overrides; object-element intrinsic forms such as `x:Array` remain deferred.
+2. Markup extension parsing currently covers attribute values and property-element text; `x:Array` object elements are now structural, while remaining object-element intrinsic forms are still deferred.
+3. Runtime resource lookup supports primitive resources, known control object resources, dynamic resource overrides, and structural object resources; true array-valued resource execution remains deferred.
 4. Runtime `Binding` evaluation is v1-only: one-way path lookup against a supplied data context, without converters or multi-binding.
 5. Designer infoset edit propagation currently covers mapped object paths, attribute/property-element values, and child insert/remove/move operations. If a future edit targets a lowered compatibility shape that cannot be mapped back to an infoset node safely, serialization still falls back to the lowered shape rather than saving stale semantic source.
 
@@ -145,8 +145,9 @@ Completed foundation work:
 11. Runtime resource lowering now supports scoped object-valued resources for known controls, including object resources that depend on earlier primitive resources in the same dictionary.
 12. `DynamicResource` now evaluates from scoped resources by default and from runtime override maps when present; `RuntimeHost` can update and clear dynamic resource overrides without changing XAML source.
 13. Default text lowering now applies XML whitespace normalization, while `xml:space` preserve/default controls opt-in exact whitespace preservation.
+14. Intrinsic `x:Array` object elements now parse, validate required `Type`, validate simple object item types, serialize, and lower as structural `Array` compatibility nodes.
 
 Next slice:
 
-1. Continue deferred intrinsic coverage such as `x:Array`, `x:Static`, and `x:Reference`.
+1. Continue deferred intrinsic coverage such as `x:Static` and `x:Reference`.
 2. Expand namescope support beyond the current document-wide namescope.

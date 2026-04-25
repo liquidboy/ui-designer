@@ -629,6 +629,10 @@ function isDirectiveName(name: XamlQualifiedName): boolean {
   );
 }
 
+function isDirectiveMemberName(name: XamlQualifiedName, dotted: XamlDottedMember | undefined): boolean {
+  return !dotted && isDirectiveName(name);
+}
+
 function findXmlAttribute(element: Element, localName: string): Attr | undefined {
   return Array.from(element.attributes).find((attr) => {
     return (
@@ -868,7 +872,7 @@ function createAttributeMember(
     name,
     syntax: 'attribute',
     values: [valueNode],
-    isDirective: isDirectiveName(name),
+    isDirective: isDirectiveMemberName(name, dotted),
     isAttached: Boolean(dotted),
     dotted,
     span
@@ -952,7 +956,7 @@ function propertyElementToMember(element: Element, context: ParseContext, parent
     name,
     syntax: 'propertyElement',
     values,
-    isDirective: isDirectiveName(name),
+    isDirective: isDirectiveMemberName(name, dotted),
     isAttached: Boolean(dotted),
     dotted,
     span

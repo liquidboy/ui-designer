@@ -397,6 +397,20 @@ export const xamlIntrinsicDirectives = [
   })
 ] as const;
 
+export const xamlIntrinsicTypes = [
+  typeDefinition('Array', {
+    namespaceUri: XAML_LANGUAGE_NAMESPACE,
+    members: [
+      member('Type', 'string'),
+      member('Items', 'object', { isContent: true, isCollection: true })
+    ],
+    contentProperty: 'Items',
+    collectionKind: 'list',
+    allowsText: false,
+    allowsChildren: true
+  })
+] as const;
+
 export const uiDesignerTypes = [
   typeDefinition('ResourceDictionary', {
     members: [],
@@ -726,7 +740,7 @@ export const uiDesignerVocabularyRegistry: XamlVocabularyRegistry = {
       description: 'Designer panel configuration vocabulary.'
     }
   ],
-  types: [...uiDesignerTypes, ...designerThemeTypes, ...designerChromeTypes, ...designerPanelsTypes],
+  types: [...xamlIntrinsicTypes, ...uiDesignerTypes, ...designerThemeTypes, ...designerChromeTypes, ...designerPanelsTypes],
   attachedMembers: uiDesignerAttachedMembers,
   directives: xamlIntrinsicDirectives
 };
@@ -1108,6 +1122,84 @@ function findResolvedPropertyMember(
   });
 }
 
+function simpleTypeNameFromTextSyntax(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.startsWith('{')) {
+    return null;
+  }
+
+  const separator = trimmed.lastIndexOf(':');
+  return separator >= 0 ? trimmed.slice(separator + 1) : trimmed;
+}
+
+function objectValuesForResolvedMember(
+  object: XamlObjectNode,
+  type: XamlTypeDefinition,
+  memberName: string,
+  registry: XamlVocabularyRegistry
+): XamlObjectNode[] {
+  return object.members.flatMap((memberNode) => {
+    if (memberNode.syntax === 'attribute' || memberNode.isDirective) {
+      return [];
+    }
+
+    const isContentMember = memberNode.syntax === 'content' && type.contentProperty === memberName;
+    const isNamedMember = memberNode.dotted
+      ? memberNode.dotted.owner.localName === type.name &&
+        resolveXamlMember(type, memberNode.dotted.member, registry)?.name === memberName
+      : resolveXamlMember(type, memberNode.name, registry)?.name === memberName;
+
+    if (!isContentMember && !isNamedMember) {
+      return [];
+    }
+
+    return memberNode.values.filter((value): value is XamlObjectNode => value.kind === 'object');
+  });
+}
+
+function validateXamlArraySemantics(
+  object: XamlObjectNode,
+  type: XamlTypeDefinition,
+  diagnostics: XamlDiagnostic[],
+  registry: XamlVocabularyRegistry
+): void {
+  if (type.namespaceUri !== XAML_LANGUAGE_NAMESPACE || type.name !== 'Array') {
+    return;
+  }
+
+  const typeMember = findResolvedPropertyMember(object, type, 'Type', registry);
+  const typeText = typeMember ? scalarTextFromValues(typeMember.values).trim() : '';
+
+  if (!typeText) {
+    diagnostics.push(validationDiagnostic(
+      'error',
+      'missing-required-member',
+      'Intrinsic "x:Array" requires a Type member.',
+      object
+    ));
+    return;
+  }
+
+  const itemTypeName = simpleTypeNameFromTextSyntax(typeText);
+  if (!itemTypeName) {
+    return;
+  }
+
+  for (const item of objectValuesForResolvedMember(object, type, 'Items', registry)) {
+    const resolvedItemType = resolveXamlType(item.type, registry);
+    if (!resolvedItemType || resolvedItemType.name === itemTypeName) {
+      continue;
+    }
+
+    diagnostics.push(validationDiagnostic(
+      'error',
+      'invalid-array-item-type',
+      `x:Array Type="${typeText}" does not allow "${formatQualifiedName(item.type)}" items.`,
+      item
+    ));
+  }
+}
+
 function isAllowedCollectionItemType(
   collectionType: XamlTypeDefinition,
   item: XamlObjectNode,
@@ -1354,6 +1446,8 @@ function validateObjectNode(
       }
     }
   }
+
+  validateXamlArraySemantics(object, type, diagnostics, registry);
 }
 
 export function validateXamlDocument(

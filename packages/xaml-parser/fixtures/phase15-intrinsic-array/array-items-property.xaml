@@ -1,0 +1,8 @@
+<x:Array
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:ui="https://liquidboy.dev/ui-designer"
+  Type="ui:Button">
+  <x:Array.Items>
+    <ui:Button Content="One" />
+  </x:Array.Items>
+</x:Array>

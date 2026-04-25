@@ -49,21 +49,22 @@ The repo now has the core compliance foundation in place:
 11. Object-valued runtime resources now support scoped known control resources, key validation, and object resources that depend on earlier primitive resources in the same dictionary.
 12. `DynamicResource` runtime lowering now supports primitive/object fallback to scoped resources and runtime override maps for update semantics without changing XAML source.
 13. Default text lowering now collapses XML whitespace runs and trims text values, while `xml:space="preserve"` keeps exact scoped text and `xml:space="default"` resets back to normalized behavior.
-14. The validator currently covers known namespaces/types/members, duplicate scalar members, content rules, enum/primitive checks, namescope collisions for `x:Name`, root-only placement for `x:Class`, collection item-type constraints, dictionary key validation, and warning-only preservation for unsupported markup extensions.
+14. Intrinsic `x:Array` object elements now parse, validate required `Type`, validate simple object item types, serialize, and lower as structural `Array` compatibility nodes.
+15. The validator currently covers known namespaces/types/members, duplicate scalar members, content rules, enum/primitive checks, namescope collisions for `x:Name`, root-only placement for `x:Class`, collection item-type constraints, dictionary key validation, and warning-only preservation for unsupported markup extensions.
 
 The main remaining gaps are now:
 
-1. Deferred intrinsic forms such as `x:Array`, `x:Static`, and `x:Reference`.
+1. Deferred intrinsic forms such as `x:Static` and `x:Reference`.
 2. Richer namescope boundaries for future templates, resources, and object islands.
-3. Full schema-driven text conversion and whitespace edge cases for deferred intrinsic object forms.
+3. True array-valued runtime assignment, primitive CLR item types, `{x:Type ...}` item-type expressions, and full schema-driven text conversion.
 
 Current limitation:
 
-1. Structured markup extension parsing currently applies to attribute values and property-element text. Object-element intrinsic forms such as `x:Array` remain deferred.
+1. Structured markup extension parsing currently applies to attribute values and property-element text; `x:Array` is supported as a structural object element, but remaining object-element intrinsic forms are still deferred.
 2. Runtime resource lookup supports primitive and known control object resources plus dynamic resource overrides; full WPF-style resource invalidation and dependency tracking are still outside the current target.
 3. Runtime `Binding` support is intentionally v1-only: one-way path lookup, no converters, and no multi-binding.
 4. Designer infoset edit propagation is intentionally conservative: if a lowered compatibility path cannot be mapped safely back to the infoset, the designer falls back to lowered serialization instead of risking stale or corrupt semantic output.
-5. `xml:space` handling and default text normalization are implemented for current scalar/content lowering, but whitespace behavior around deferred intrinsic collections/templates is still partial.
+5. `xml:space` handling and default text normalization are implemented for current scalar/content lowering, but whitespace behavior around future templates/object islands is still partial.
 
 This document remains the long-term roadmap. The current implementation status now lives in [XAML Compliance Matrix](./xaml-compliance-matrix.md).
 
@@ -128,7 +129,8 @@ Deliverables:
 2. Decide which intrinsic directives are in scope for v1:
    - required: `x:Name`, `x:Key`, `x:Class`, `x:Uid`, `x:TypeArguments`
    - optional early: `xml:lang`, `xml:space`
-   - optional later: `x:Reference`, `x:Array`, `x:Null`, `x:Static`
+   - implemented incrementally: `x:Null`, `x:Array`
+   - optional later: `x:Reference`, `x:Static`
 3. Decide whether unsupported but well-formed constructs should:
    - fail validation
    - parse and round-trip with warnings

@@ -1143,6 +1143,54 @@ async function runPhase14WhitespaceNormalizationFixtures() {
   return files.length;
 }
 
+async function runPhase15IntrinsicArrayFixtures() {
+  const expectations = {
+    'array-content.xaml': { errors: [], warnings: [] },
+    'array-items-property.xaml': { errors: [], warnings: [] },
+    'array-invalid-item.xaml': { errors: ['invalid-array-item-type'], warnings: [] },
+    'array-missing-type.xaml': { errors: ['missing-required-member'], warnings: [] }
+  };
+  const files = await listFixtureFiles('phase15-intrinsic-array');
+
+  for (const fileName of files) {
+    const input = await readFixture('phase15-intrinsic-array', fileName);
+    const result = parseAndValidateXaml(input);
+    const expected = expectations[fileName];
+    assert.ok(expected, `Missing intrinsic array expectation for ${fileName}`);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'error'), expected.errors, `${fileName} validation errors`);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'warning'), expected.warnings, `${fileName} validation warnings`);
+
+    if (expected.errors.length > 0) {
+      continue;
+    }
+
+    assert.equal(result.document.root.type.localName, 'Array');
+    assert.equal(result.document.root.type.namespaceUri, XAML_LANGUAGE_NAMESPACE);
+
+    const lowered = lowerXamlDocument(result.document);
+    assert.equal(lowered.root.type, 'Array');
+
+    if (fileName === 'array-content.xaml') {
+      assert.equal(lowered.root.attributes.Type, 'TextBlock');
+      assert.equal(lowered.root.children.length, 2);
+      assert.equal(lowered.root.children[0]?.type, 'TextBlock');
+      assert.equal(lowered.root.children[0]?.attributes.Text, 'First');
+      assert.match(serializeXamlDocumentNode(result.document), /<x:Array/);
+    }
+
+    if (fileName === 'array-items-property.xaml') {
+      const itemsMember = findDottedMember(result.document.root, 'Items', 'propertyElement');
+      assert.equal(itemsMember?.isDirective, false);
+      assert.equal(lowered.root.attributes.Type, 'ui:Button');
+      assert.equal(lowered.root.children.length, 1);
+      assert.equal(lowered.root.children[0]?.type, 'Button');
+      assert.equal(lowered.root.children[0]?.attributes.Content, 'One');
+    }
+  }
+
+  return files.length;
+}
+
 async function runPhase6CollectionFixtures() {
   const expectations = {
     'theme-dictionary-xkey.xaml': { errors: [], warnings: [] },
@@ -1196,7 +1244,8 @@ const phase11Count = await runPhase11XmlScopeFixtures();
 const phase12Count = await runPhase12ObjectResourceFixtures();
 const phase13Count = await runPhase13DynamicResourceFixtures();
 const phase14Count = await runPhase14WhitespaceNormalizationFixtures();
+const phase15Count = await runPhase15IntrinsicArrayFixtures();
 
 console.log(
-  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources, ${phase9Count} serializer, ${phase10Count} designer serializer, ${phase11Count} XML scope, ${phase12Count} object resources, ${phase13Count} dynamic resources, ${phase14Count} whitespace normalization).`
+  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources, ${phase9Count} serializer, ${phase10Count} designer serializer, ${phase11Count} XML scope, ${phase12Count} object resources, ${phase13Count} dynamic resources, ${phase14Count} whitespace normalization, ${phase15Count} intrinsic arrays).`
 );

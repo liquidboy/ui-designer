@@ -124,6 +124,25 @@ Supported dynamic-resource form:
 </Canvas>
 ```
 
+## Intrinsic Arrays
+
+Current status:
+
+1. `x:Array` object elements validate as intrinsic XAML language objects.
+2. `Type` is required and simple object item types are checked against direct content or `x:Array.Items`.
+3. Authoring serialization preserves `x:Array` namespace prefixes and property-element form.
+4. Compatibility lowering emits a structural `Array` node with item children.
+5. True array-valued runtime assignment, primitive CLR item types, and `{x:Type ...}` item-type expressions remain outside v1.
+
+Supported structural form:
+
+```xaml
+<x:Array xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Type="TextBlock">
+  <TextBlock Text="First" />
+  <TextBlock Text="Second" />
+</x:Array>
+```
+
 ## Binding v1
 
 Supported runtime form:
@@ -166,7 +185,7 @@ Current status:
 2. `xml:space="default"` resets inherited whitespace preservation for descendants.
 3. Default scalar/content lowering collapses XML whitespace runs and trims text values when `xml:space` is not preserving the text.
 4. `xml:lang` is inherited by descendant object nodes and lowers to compatibility `lang` metadata.
-5. Whitespace edge cases around deferred intrinsic collections/templates remain outside the v1 subset.
+5. Whitespace edge cases around future templates/object islands remain outside the v1 subset.
 
 ## Example Document
 
