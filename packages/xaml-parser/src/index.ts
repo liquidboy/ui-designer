@@ -1449,6 +1449,16 @@ function primitiveValueFromValues(values: readonly XamlValueNode[], options: Xam
   return parseAttributeValue(text);
 }
 
+function primitiveValueFromMember(member: XamlMemberNode, options: XamlLoweringContext): XamlPrimitive | undefined {
+  const primitiveValue = primitiveValueFromValues(member.values, options);
+  if (member.syntax === 'attribute' || primitiveValue == null || typeof primitiveValue !== 'string') {
+    return primitiveValue;
+  }
+
+  const textValue = textValueFromValues(member.values, options);
+  return textValue ? parseAttributeValue(textValue) : undefined;
+}
+
 function textValueFromMember(member: XamlMemberNode, options: XamlLoweringContext): string {
   return member.values.map((value) => scalarTextFromValue(value, options)).join('');
 }
@@ -1465,9 +1475,13 @@ function valuesPreserveXmlSpace(values: readonly XamlValueNode[]): boolean {
   return values.some((value) => value.kind === 'text' && value.preservesXmlSpace);
 }
 
+function normalizeDefaultXmlWhitespace(value: string): string {
+  return value.replace(/[\t\r\n ]+/g, ' ').trim();
+}
+
 function textValueFromValues(values: readonly XamlValueNode[], options: XamlLoweringContext): string {
   const text = values.map((value) => scalarTextFromValue(value, options)).join('');
-  return valuesPreserveXmlSpace(values) ? text : text.trim();
+  return valuesPreserveXmlSpace(values) ? text : normalizeDefaultXmlWhitespace(text);
 }
 
 function lowerDirectiveName(member: XamlMemberNode, registry: XamlVocabularyRegistry): string {
@@ -1674,7 +1688,7 @@ function lowerPropertyMember(
     return;
   }
 
-  const primitiveValue = primitiveValueFromValues(member.values, options);
+  const primitiveValue = primitiveValueFromMember(member, options);
   if (primitiveValue === undefined) {
     return;
   }
@@ -1712,7 +1726,7 @@ function lowerContentMember(
   const textValue = textValueFromValues(member.values, options);
   node.children.push(...valueObjects);
 
-  const primitiveValue = primitiveValueFromValues(member.values, options);
+  const primitiveValue = primitiveValueFromMember(member, options);
   if (primitiveValue === undefined) {
     return;
   }

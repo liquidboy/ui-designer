@@ -43,7 +43,7 @@ Default rule: parser support should be broader than runtime execution support. U
 | XAML document node | Current | Current | Add document root containing namespace table, root object, diagnostics. | Legacy `XamlDocument.root` still exists behind lowering adapters. |
 | Object nodes | Current | Current | Model object elements separately from members and text. | Legacy `XamlNode.type` is now the lowered compatibility shape. |
 | Member nodes | Current | Current | Model attribute members and property elements as members. | Includes directives and attached-member forms. |
-| Text nodes | Current | Current | Preserve text as ordered text nodes. | Whitespace semantics are still deferred. |
+| Text nodes | Current | Current | Preserve text as ordered text nodes. | Infoset preserves authoring text; compatibility lowering applies default whitespace normalization unless `xml:space` preserves it. |
 | Object element syntax | Current | Current | Convert XML elements to object nodes when schema says they are types. | Active vocabularies now cover runtime and designer config types. |
 | Attribute member syntax | Current | Current | Convert XML attributes to member nodes. | Lowering still uses legacy primitive coercion for compatibility. |
 | Property element syntax | Current | Current | Convert dotted child elements to member nodes. | Attribute/property-element equivalence is covered by lowering fixtures. |
@@ -52,7 +52,7 @@ Default rule: parser support should be broader than runtime execution support. U
 | Collection members | Partial | Phase 3+ | Add list semantics to vocabulary metadata and lowering. | Known list containers now validate allowed item types; semantic collection lowering is still compatibility-shaped. |
 | Dictionary members | Partial | Phase 3+ | Add dictionary semantics, key validation, and lowering. | Designer theme `Colors` validates dictionary items with explicit `x:Key` or implicit `Color.Id`; runtime `ResourceDictionary` now lowers primitive resources and known control object resources for scoped `StaticResource` and `DynamicResource` lookup. |
 | Text syntax conversion | Partial | Phase 2 | Move primitive conversion into schema-defined text syntax. | Validation is schema-aware today, but legacy lowering still uses shared primitive coercion. |
-| Whitespace handling | Partial | Phase 3+ | Add schema-aware whitespace preservation/collapse rules. | `xml:space="preserve"` now preserves whitespace-only text in scope and `xml:space="default"` resets inherited preservation; full schema-aware whitespace normalization is still pending. |
+| Whitespace handling | Partial | Phase 3+ | Add schema-aware whitespace preservation/collapse rules. | Default lowering now collapses XML whitespace runs and trims text values, while `xml:space="preserve"` keeps exact text and `xml:space="default"` resets inherited preservation. Remaining gaps are edge-case whitespace rules around future intrinsic collections/templates. |
 | Markup extension AST | Partial | Phase 5 | Parse brace syntax into structured expressions. | Attribute values and property-element text now parse into a structured AST; runtime lowering evaluates supported extensions while authoring lowering preserves raw text. |
 | Nested markup extensions | Partial | Phase 5 | Support nested extension arguments. | Nested attribute-value extensions now parse recursively; unsupported nested extensions still warn and preserve. |
 | Semantic serializer | Partial | Phase 7 | Serialize from infoset/semantic model, not string concatenation. | `serializeXamlDocumentNode` now canonicalizes namespace declarations, directives, markup extensions, property elements, and collection content; designer attribute edits and child insert/remove/move operations update the infoset when the lowered path maps safely. |
@@ -72,7 +72,7 @@ Default rule: parser support should be broader than runtime execution support. U
 | `x:Static` | Deferred | Deferred | Preserve as unsupported markup extension. | Not evaluated. | Requires a static member resolution model. |
 | `x:Reference` | Deferred | Deferred | Preserve as unsupported markup extension. | Not evaluated. | Requires namescope and object reference resolution. |
 | `xml:lang` | Current | Phase 4 | Parse, preserve, validate, and propagate as effective object metadata. | Compatibility lowering emits inherited `lang` metadata on descendants. | Runtime text/layout consumers can now read inherited language metadata from lowered attributes. |
-| `xml:space` | Partial | Phase 4 | Parse, preserve, validate, and apply scoped whitespace preservation/reset. | Preserved whitespace-only text lowers into text-capable content. | Full schema-aware whitespace-collapse behavior is still pending. |
+| `xml:space` | Partial | Phase 4 | Parse, preserve, validate, and apply scoped whitespace preservation/reset. | Preserved whitespace-only text lowers into text-capable content; default text lowering collapses and trims XML whitespace. | Edge-case whitespace behavior around deferred intrinsic object forms is still pending. |
 
 ## `ui-designer` Vocabulary Matrix
 
@@ -144,8 +144,9 @@ Completed foundation work:
 10. XML scope handling now applies `xml:space` preserve/default behavior to text parsing and propagates `xml:lang` through object metadata and compatibility lowering.
 11. Runtime resource lowering now supports scoped object-valued resources for known controls, including object resources that depend on earlier primitive resources in the same dictionary.
 12. `DynamicResource` now evaluates from scoped resources by default and from runtime override maps when present; `RuntimeHost` can update and clear dynamic resource overrides without changing XAML source.
+13. Default text lowering now applies XML whitespace normalization, while `xml:space` preserve/default controls opt-in exact whitespace preservation.
 
 Next slice:
 
-1. Add schema-aware whitespace collapse/trim rules beyond scoped `xml:space` preservation.
-2. Continue deferred intrinsic coverage such as `x:Array`, `x:Static`, and `x:Reference`.
+1. Continue deferred intrinsic coverage such as `x:Array`, `x:Static`, and `x:Reference`.
+2. Expand namescope support beyond the current document-wide namescope.

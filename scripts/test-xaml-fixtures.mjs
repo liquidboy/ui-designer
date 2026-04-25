@@ -1108,6 +1108,41 @@ async function runPhase13DynamicResourceFixtures() {
   return files.length;
 }
 
+async function runPhase14WhitespaceNormalizationFixtures() {
+  const files = await listFixtureFiles('phase14-whitespace-normalization');
+
+  for (const fileName of files) {
+    const input = await readFixture('phase14-whitespace-normalization', fileName);
+    const result = parseAndValidateXaml(input);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'error'), [], `${fileName} validation errors`);
+
+    const lowered = lowerXamlDocument(result.document);
+
+    if (fileName === 'text-content-collapse.xaml') {
+      assert.equal(lowered.root.attributes.Text, 'Hello XAML World');
+      assert.equal(lowered.root.text, 'Hello XAML World');
+      assert.match(serializeXamlDocumentNode(result.document), /\n    XAML\tWorld\n/);
+    }
+
+    if (fileName === 'property-element-collapse.xaml') {
+      assert.equal(lowered.root.attributes.Text, 'Hello property world');
+      assert.equal(lowered.root.text, 'Hello property world');
+    }
+
+    if (fileName === 'xml-space-preserve-text.xaml') {
+      assert.equal(lowered.root.attributes.Text, '\n  Hello\n    preserved\tworld\n');
+      assert.equal(lowered.root.text, '\n  Hello\n    preserved\tworld\n');
+    }
+
+    if (fileName === 'xml-space-default-collapse.xaml') {
+      assert.equal(lowered.root.children[0]?.attributes.Text, 'Hello default world');
+      assert.equal(lowered.root.children[0]?.text, 'Hello default world');
+    }
+  }
+
+  return files.length;
+}
+
 async function runPhase6CollectionFixtures() {
   const expectations = {
     'theme-dictionary-xkey.xaml': { errors: [], warnings: [] },
@@ -1160,7 +1195,8 @@ const phase10Count = await runPhase10DesignerSerializerFixtures();
 const phase11Count = await runPhase11XmlScopeFixtures();
 const phase12Count = await runPhase12ObjectResourceFixtures();
 const phase13Count = await runPhase13DynamicResourceFixtures();
+const phase14Count = await runPhase14WhitespaceNormalizationFixtures();
 
 console.log(
-  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources, ${phase9Count} serializer, ${phase10Count} designer serializer, ${phase11Count} XML scope, ${phase12Count} object resources, ${phase13Count} dynamic resources).`
+  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources, ${phase9Count} serializer, ${phase10Count} designer serializer, ${phase11Count} XML scope, ${phase12Count} object resources, ${phase13Count} dynamic resources, ${phase14Count} whitespace normalization).`
 );

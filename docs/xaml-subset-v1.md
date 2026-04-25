@@ -164,8 +164,9 @@ Current status:
 
 1. `xml:space="preserve"` preserves whitespace-only text nodes within its scope.
 2. `xml:space="default"` resets inherited whitespace preservation for descendants.
-3. `xml:lang` is inherited by descendant object nodes and lowers to compatibility `lang` metadata.
-4. Full schema-aware whitespace collapse/trim rules remain outside the v1 subset.
+3. Default scalar/content lowering collapses XML whitespace runs and trims text values when `xml:space` is not preserving the text.
+4. `xml:lang` is inherited by descendant object nodes and lowers to compatibility `lang` metadata.
+5. Whitespace edge cases around deferred intrinsic collections/templates remain outside the v1 subset.
 
 ## Example Document
 

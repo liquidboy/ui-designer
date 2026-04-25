@@ -1,0 +1,6 @@
+<TextBlock>
+  <TextBlock.Text>
+    Hello
+      property	world
+  </TextBlock.Text>
+</TextBlock>

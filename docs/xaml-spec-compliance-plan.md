@@ -48,12 +48,14 @@ The repo now has the core compliance foundation in place:
 10. XML scope handling now preserves whitespace-only text under `xml:space="preserve"`, resets that behavior with `xml:space="default"`, and propagates `xml:lang` through infoset objects and lowered compatibility nodes.
 11. Object-valued runtime resources now support scoped known control resources, key validation, and object resources that depend on earlier primitive resources in the same dictionary.
 12. `DynamicResource` runtime lowering now supports primitive/object fallback to scoped resources and runtime override maps for update semantics without changing XAML source.
-13. The validator currently covers known namespaces/types/members, duplicate scalar members, content rules, enum/primitive checks, namescope collisions for `x:Name`, root-only placement for `x:Class`, collection item-type constraints, dictionary key validation, and warning-only preservation for unsupported markup extensions.
+13. Default text lowering now collapses XML whitespace runs and trims text values, while `xml:space="preserve"` keeps exact scoped text and `xml:space="default"` resets back to normalized behavior.
+14. The validator currently covers known namespaces/types/members, duplicate scalar members, content rules, enum/primitive checks, namescope collisions for `x:Name`, root-only placement for `x:Class`, collection item-type constraints, dictionary key validation, and warning-only preservation for unsupported markup extensions.
 
 The main remaining gaps are now:
 
-1. Schema-aware whitespace collapse/trim rules beyond scoped `xml:space` preservation.
-2. Deferred intrinsic forms such as `x:Array`, `x:Static`, and `x:Reference`.
+1. Deferred intrinsic forms such as `x:Array`, `x:Static`, and `x:Reference`.
+2. Richer namescope boundaries for future templates, resources, and object islands.
+3. Full schema-driven text conversion and whitespace edge cases for deferred intrinsic object forms.
 
 Current limitation:
 
@@ -61,7 +63,7 @@ Current limitation:
 2. Runtime resource lookup supports primitive and known control object resources plus dynamic resource overrides; full WPF-style resource invalidation and dependency tracking are still outside the current target.
 3. Runtime `Binding` support is intentionally v1-only: one-way path lookup, no converters, and no multi-binding.
 4. Designer infoset edit propagation is intentionally conservative: if a lowered compatibility path cannot be mapped safely back to the infoset, the designer falls back to lowered serialization instead of risking stale or corrupt semantic output.
-5. `xml:space` handling preserves scoped whitespace, but broader schema-aware whitespace normalization rules are still partial.
+5. `xml:space` handling and default text normalization are implemented for current scalar/content lowering, but whitespace behavior around deferred intrinsic collections/templates is still partial.
 
 This document remains the long-term roadmap. The current implementation status now lives in [XAML Compliance Matrix](./xaml-compliance-matrix.md).
 

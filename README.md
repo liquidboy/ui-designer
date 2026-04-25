@@ -19,7 +19,7 @@ XAML-inspired UI framework targeting WebGPU, with an infinite-canvas visual desi
 
 - Registry-backed XAML infoset parsing, validation, and lowering through compatibility adapters
 - Intrinsic directive validation for namescopes, root-only `x:Class`, dictionary `x:Key`, attribute/property-element `Binding`/`x:Null`, and scoped primitive/object `StaticResource` plus `DynamicResource` lookup
-- Scoped `xml:space` whitespace preservation and `xml:lang` inheritance through infoset parsing and compatibility lowering
+- Scoped `xml:space` whitespace preservation/default normalization and `xml:lang` inheritance through infoset parsing and compatibility lowering
 - Infoset-based semantic serialization with round-trip fixtures for namespaces, directives, markup extensions, collections, and designer edits
 - WebGPU-backed rectangle rendering in the browser runtime
 - Infinite-canvas designer with pan, zoom, selection, snapping, drag-move, and resize handles
