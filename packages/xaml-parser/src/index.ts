@@ -85,6 +85,12 @@ const CONTENT_MEMBER_NAME = 'Content';
 const RESOURCES_MEMBER_NAME = 'Resources';
 const RESOURCE_DICTIONARY_TYPE_NAME = 'ResourceDictionary';
 const PRIMITIVE_RESOURCE_TYPE_NAMES = new Set(['Color', 'Number', 'String']);
+const XAML_PROPERTY_ELEMENT_DIRECTIVES = new Set([
+  'Arguments',
+  'ConstructorArgs',
+  'FactoryMethod',
+  'InitializationText'
+]);
 
 interface SourceLocator {
   span(startOffset: number, endOffset: number): XamlSourceSpan;
@@ -890,8 +896,16 @@ function createAttributeMember(
   };
 }
 
+function isXamlPropertyElementDirective(element: Element): boolean {
+  const namespaceUri = element.namespaceURI ?? element.lookupNamespaceURI(element.prefix);
+  return (
+    XAML_PROPERTY_ELEMENT_DIRECTIVES.has(element.localName) &&
+    (namespaceUri === XAML_LANGUAGE_NAMESPACE || element.prefix === 'x')
+  );
+}
+
 function isPropertyElement(element: Element): boolean {
-  return element.localName.includes('.');
+  return element.localName.includes('.') || isXamlPropertyElementDirective(element);
 }
 
 function flushContentValues(members: XamlMemberNode[], values: XamlValueNode[]): void {

@@ -1,0 +1,6 @@
+<Button xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:FactoryMethod="Create">
+  <x:Arguments>
+    <x:String>Primary action</x:String>
+    <x:Int32>3</x:Int32>
+  </x:Arguments>
+</Button>

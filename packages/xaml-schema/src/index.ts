@@ -469,6 +469,26 @@ export const xamlIntrinsicDirectives = [
     kind: 'directive',
     isRuntimeSupported: false
   }),
+  member('FactoryMethod', 'string', {
+    namespaceUri: XAML_LANGUAGE_NAMESPACE,
+    kind: 'directive',
+    isRuntimeSupported: false
+  }),
+  member('Arguments', 'object', {
+    namespaceUri: XAML_LANGUAGE_NAMESPACE,
+    kind: 'directive',
+    isRuntimeSupported: false
+  }),
+  member('ConstructorArgs', 'object', {
+    namespaceUri: XAML_LANGUAGE_NAMESPACE,
+    kind: 'directive',
+    isRuntimeSupported: false
+  }),
+  member('InitializationText', 'string', {
+    namespaceUri: XAML_LANGUAGE_NAMESPACE,
+    kind: 'directive',
+    isRuntimeSupported: false
+  }),
   member('lang', 'string', {
     namespaceUri: XML_NAMESPACE,
     kind: 'directive',
@@ -2071,6 +2091,15 @@ function validateDirectiveSemantics(
     return;
   }
 
+  if (
+    definition.name === 'FactoryMethod' ||
+    definition.name === 'Arguments' ||
+    definition.name === 'ConstructorArgs'
+  ) {
+    validateXamlConstructionDirective(object, member, definition, diagnostics);
+    return;
+  }
+
   if (definition.name === 'Class' && object !== context.rootObject) {
     diagnostics.push(validationDiagnostic(
       'error',
@@ -2140,6 +2169,83 @@ function isXamlNameDirective(member: XamlMemberNode): boolean {
     member.name.namespaceUri === XAML_LANGUAGE_NAMESPACE &&
     member.name.localName === 'Name'
   );
+}
+
+const constructionArgumentDirectiveNames = new Set(['Arguments', 'ConstructorArgs']);
+
+function isConstructionArgumentsDirective(member: XamlMemberNode): boolean {
+  return (
+    member.isDirective &&
+    member.name.namespaceUri === XAML_LANGUAGE_NAMESPACE &&
+    constructionArgumentDirectiveNames.has(member.name.localName)
+  );
+}
+
+function validateXamlConstructionDirective(
+  object: XamlObjectNode,
+  member: XamlMemberNode,
+  definition: XamlMemberDefinition,
+  diagnostics: XamlDiagnostic[]
+): void {
+  if (definition.name === 'FactoryMethod') {
+    if (!textFromValues(member.values).trim()) {
+      diagnostics.push(validationDiagnostic(
+        'error',
+        'missing-construction-directive-value',
+        'Directive "x:FactoryMethod" requires a factory method name.',
+        member
+      ));
+    }
+    return;
+  }
+
+  if (definition.name !== 'Arguments' && definition.name !== 'ConstructorArgs') {
+    return;
+  }
+
+  if (member.syntax !== 'propertyElement') {
+    diagnostics.push(validationDiagnostic(
+      'error',
+      'invalid-directive-placement',
+      `Directive "x:${definition.name}" is only valid as a property element.`,
+      member
+    ));
+    return;
+  }
+
+  const argumentDirectives = object.members.filter(isConstructionArgumentsDirective);
+  if (argumentDirectives.length > 1 && argumentDirectives[0] !== member) {
+    diagnostics.push(validationDiagnostic(
+      'error',
+      'duplicate-construction-arguments',
+      'An object can define only one construction argument directive.',
+      member
+    ));
+    return;
+  }
+
+  const hasArgumentValue = member.values.some((value) => value.kind !== 'text' || value.text.trim());
+  if (!hasArgumentValue) {
+    diagnostics.push(validationDiagnostic(
+      'error',
+      'missing-construction-arguments',
+      `Directive "x:${definition.name}" requires one or more argument values.`,
+      member
+    ));
+    return;
+  }
+
+  const textArgument = member.values.find((value): value is XamlTextNode => {
+    return value.kind === 'text' && Boolean(value.text.trim());
+  });
+  if (textArgument) {
+    diagnostics.push(validationDiagnostic(
+      'error',
+      'invalid-construction-argument-value',
+      `Directive "x:${definition.name}" expects object or markup-extension argument values.`,
+      textArgument
+    ));
+  }
 }
 
 function createsNamescopeBoundary(

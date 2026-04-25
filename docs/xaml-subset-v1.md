@@ -179,6 +179,27 @@ Supported preserved form:
   x:TypeArguments="sys:Int32, ui:TextBlock, x:Decimal" />
 ```
 
+## Construction Directives
+
+Current status:
+
+1. `x:FactoryMethod`, `x:Arguments`, `x:ConstructorArgs`, and `x:InitializationText` parse as intrinsic XAML directives.
+2. `x:Arguments` and `x:ConstructorArgs` parse as directive property elements rather than object elements.
+3. Construction argument directives must use property-element syntax and provide at least one object or markup-extension argument value.
+4. Text-only argument lists, empty argument lists, and duplicate `x:Arguments`/`x:ConstructorArgs` forms produce validation errors.
+5. Construction directives are preserved and serialized with unsupported-directive warnings; constructors and factory methods are not executed in v1.
+
+Supported preserved form:
+
+```xaml
+<Button xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:FactoryMethod="Create">
+  <x:Arguments>
+    <x:String>Primary action</x:String>
+    <x:Int32>3</x:Int32>
+  </x:Arguments>
+</Button>
+```
+
 ## Intrinsic Arrays
 
 Current status:

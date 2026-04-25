@@ -1,0 +1,6 @@
+<Button xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <x:Arguments>
+    <x:String>Save</x:String>
+    <x:Boolean>true</x:Boolean>
+  </x:Arguments>
+</Button>
