@@ -422,6 +422,13 @@ async function runPhase2ValidationFixtures() {
   const expectations = {
     'valid-basic.xaml': { errors: [], warnings: [] },
     'valid-directive-preserved.xaml': { errors: [], warnings: ['unsupported-directive'] },
+    'valid-class-root.xaml': { errors: [], warnings: ['unsupported-directive'] },
+    'valid-metadata-directives.xaml': {
+      errors: [],
+      warnings: ['unsupported-directive', 'unsupported-directive', 'unsupported-directive', 'unsupported-directive']
+    },
+    'duplicate-namescope.xaml': { errors: ['namescope-collision'], warnings: ['unsupported-directive'] },
+    'invalid-class-child.xaml': { errors: ['invalid-directive-placement'], warnings: [] },
     'unknown-type.xaml': { errors: ['unknown-type'], warnings: [] },
     'unknown-member.xaml': { errors: ['unknown-member'], warnings: [] },
     'duplicate-member.xaml': { errors: ['duplicate-member'], warnings: [] },

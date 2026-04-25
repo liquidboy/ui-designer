@@ -70,13 +70,18 @@ Runtime notes:
 
 ## Binding v1
 
-Supported expression:
+Design target, not yet implemented:
 
 ```xaml
 <TextBlock Text="{Binding path=Title}" />
 ```
 
-Constraints:
+Current status:
+
+1. Markup extension parsing is not implemented yet, so binding expressions are still treated as plain text.
+2. Runtime binding evaluation is not available yet.
+
+Planned constraints once binding lands:
 
 1. One-way binding only.
 2. Path lookup on a supplied data context object.

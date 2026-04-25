@@ -731,6 +731,15 @@ function hasObjectValue(values: readonly XamlValueNode[]): boolean {
   return values.some((value) => value.kind === 'object');
 }
 
+interface XamlValidationContext {
+  rootObject: XamlObjectNode;
+  documentNamescope: Map<string, XamlMemberNode>;
+}
+
+function errorCount(diagnostics: readonly XamlDiagnostic[]): number {
+  return diagnostics.filter((diagnostic) => diagnostic.severity === 'error').length;
+}
+
 function validateTextSyntax(member: XamlMemberNode, definition: XamlMemberDefinition, diagnostics: XamlDiagnostic[]): void {
   if (definition.valueSyntax === 'any') {
     return;
@@ -802,6 +811,65 @@ function validateResolvedMember(
   warnUnsupportedMember(member, definition, diagnostics);
 }
 
+function validateDirectiveSemantics(
+  object: XamlObjectNode,
+  member: XamlMemberNode,
+  definition: XamlMemberDefinition,
+  diagnostics: XamlDiagnostic[],
+  context: XamlValidationContext
+): void {
+  const textValue = textFromValues(member.values).trim();
+
+  if (definition.namespaceUri !== XAML_LANGUAGE_NAMESPACE && definition.namespaceUri !== XML_NAMESPACE) {
+    return;
+  }
+
+  if (definition.name === 'Name') {
+    if (!textValue) {
+      return;
+    }
+
+    const existing = context.documentNamescope.get(textValue);
+    if (existing && existing !== member) {
+      diagnostics.push(validationDiagnostic(
+        'error',
+        'namescope-collision',
+        `x:Name "${textValue}" is already defined within the current namescope.`,
+        member
+      ));
+      return;
+    }
+
+    context.documentNamescope.set(textValue, member);
+    return;
+  }
+
+  if (definition.name === 'Class' && object !== context.rootObject) {
+    diagnostics.push(validationDiagnostic(
+      'error',
+      'invalid-directive-placement',
+      'Directive "x:Class" is only valid on the document root object.',
+      member
+    ));
+  }
+}
+
+function validateResolvedDirective(
+  object: XamlObjectNode,
+  member: XamlMemberNode,
+  definition: XamlMemberDefinition,
+  diagnostics: XamlDiagnostic[],
+  context: XamlValidationContext
+): void {
+  const startingErrors = errorCount(diagnostics);
+  validateTextSyntax(member, definition, diagnostics);
+  validateDirectiveSemantics(object, member, definition, diagnostics, context);
+
+  if (errorCount(diagnostics) === startingErrors) {
+    warnUnsupportedMember(member, definition, diagnostics);
+  }
+}
+
 function memberDuplicateKey(member: XamlMemberNode, definition: XamlMemberDefinition): string | null {
   if (definition.isCollection || member.syntax === 'content') {
     return null;
@@ -819,7 +887,8 @@ function validateContentMember(
   type: XamlTypeDefinition,
   member: XamlMemberNode,
   diagnostics: XamlDiagnostic[],
-  registry: XamlVocabularyRegistry
+  registry: XamlVocabularyRegistry,
+  context: XamlValidationContext
 ): void {
   let hasInvalidContent = false;
 
@@ -835,7 +904,7 @@ function validateContentMember(
         ));
       }
 
-      validateObjectNode(value, diagnostics, registry);
+      validateObjectNode(value, diagnostics, registry, context);
       continue;
     }
 
@@ -863,7 +932,8 @@ function validateContentMember(
 function validateObjectNode(
   object: XamlObjectNode,
   diagnostics: XamlDiagnostic[],
-  registry: XamlVocabularyRegistry
+  registry: XamlVocabularyRegistry,
+  context: XamlValidationContext
 ): void {
   if (!registryHasNamespace(object.type.namespaceUri, registry)) {
     diagnostics.push(validationDiagnostic(
@@ -890,7 +960,7 @@ function validateObjectNode(
 
   for (const memberNode of object.members) {
     if (memberNode.syntax === 'content') {
-      validateContentMember(object, type, memberNode, diagnostics, registry);
+      validateContentMember(object, type, memberNode, diagnostics, registry, context);
       continue;
     }
 
@@ -951,11 +1021,15 @@ function validateObjectNode(
       assignedMembers.add(duplicateKey);
     }
 
-    validateResolvedMember(memberNode, definition, diagnostics);
+    if (definition.kind === 'directive') {
+      validateResolvedDirective(object, memberNode, definition, diagnostics, context);
+    } else {
+      validateResolvedMember(memberNode, definition, diagnostics);
+    }
 
     for (const value of memberNode.values) {
       if (value.kind === 'object') {
-        validateObjectNode(value, diagnostics, registry);
+        validateObjectNode(value, diagnostics, registry, context);
       }
     }
   }
@@ -974,7 +1048,11 @@ export function validateXamlDocument(
       message: 'XAML document is missing a root object.'
     });
   } else {
-    validateObjectNode(document.root, diagnostics, registry);
+    const context: XamlValidationContext = {
+      rootObject: document.root,
+      documentNamescope: new Map()
+    };
+    validateObjectNode(document.root, diagnostics, registry, context);
   }
 
   return {

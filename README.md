@@ -17,7 +17,8 @@ XAML-inspired UI framework targeting WebGPU, with an infinite-canvas visual desi
 
 ## Current MVP
 
-- XAML parsing into a shared schema and scene graph
+- Registry-backed XAML infoset parsing, validation, and lowering through compatibility adapters
+- Intrinsic directive validation for namescopes and root-only `x:Class`, plus strict designer config vocabularies
 - WebGPU-backed rectangle rendering in the browser runtime
 - Infinite-canvas designer with pan, zoom, selection, snapping, drag-move, and resize handles
 - Inspector-driven editing for position, size, and color with undo/redo

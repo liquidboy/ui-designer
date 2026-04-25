@@ -1,0 +1,3 @@
+<Canvas xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Width="320" Height="240">
+  <TextBlock x:Class="UiDesigner.ChildText" Text="Hello" />
+</Canvas>

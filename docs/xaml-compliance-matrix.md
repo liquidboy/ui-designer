@@ -10,7 +10,7 @@ The target is core `MS-XAML-2017` language/object-mapping behavior plus a custom
 
 | Status | Meaning |
 | --- | --- |
-| Current | Supported by the repo today through the legacy flat AST. |
+| Current | Supported by the repo today through the active parser/validator/lowering stack. |
 | Phase 1 | Required for the first infoset/schema parser slice. |
 | Phase 2 | Required after infoset support, usually because it needs vocabulary metadata. |
 | Phase 3+ | Required for later compliance phases. |
@@ -35,21 +35,21 @@ Default rule: parser support should be broader than runtime execution support. U
 | Feature | Current status | Target status | First implementation slice | Notes |
 | --- | --- | --- | --- | --- |
 | XML well-formedness | Current | Current | Keep `DOMParser` error handling until parser replacement. | Existing parser fails on malformed XML. |
-| Source spans | Missing | Phase 1 | Add span fields to infoset nodes and diagnostics. | Needed for editor highlighting and golden diagnostics. |
-| Namespace declarations | Missing | Phase 1 | Preserve prefix, namespace URI, and declaration scope. | Do not flatten prefixed names into raw strings. |
-| Qualified names | Missing | Phase 1 | Add `XamlQualifiedName` with `prefix`, `localName`, and `namespaceUri`. | Applies to object types, members, directives, and attached members. |
-| XAML document node | Missing | Phase 1 | Add document root containing namespace table, root object, diagnostics. | Replaces `XamlDocument.root` as the long-term parser contract. |
-| Object nodes | Partial | Phase 1 | Model object elements separately from members and text. | Legacy `XamlNode.type` maps to object type today. |
-| Member nodes | Missing | Phase 1 | Model attribute members and property elements as members. | Required for `<Grid.RowDefinitions>`. |
-| Text nodes | Partial | Phase 1 | Preserve text as ordered text nodes. | Current parser only stores text for single-text-child elements. |
-| Object element syntax | Partial | Phase 1 | Convert XML elements to object nodes when schema says they are types. | Current parser treats every element as a node type. |
-| Attribute member syntax | Partial | Phase 1 | Convert XML attributes to member nodes. | Current parser stores attributes as primitive map entries. |
-| Property element syntax | Missing | Phase 1 | Convert dotted child elements to member nodes. | Enables semantic equivalence with attributes where allowed. |
-| Content property inference | Missing | Phase 2 | Use vocabulary metadata to route child objects/text into content members. | Needed for `Border`, `Button`, panels, and future collections. |
-| Attached member syntax | String-only | Phase 2 | Represent attached owner/member names structurally. | Current `Grid.Row` survives only as an attribute key. |
+| Source spans | Current | Current | Add span fields to infoset nodes and diagnostics. | Used by diagnostics and editor-facing parse results. |
+| Namespace declarations | Current | Current | Preserve prefix, namespace URI, and declaration scope. | Known namespaces now validate against active registries. |
+| Qualified names | Current | Current | Add `XamlQualifiedName` with `prefix`, `localName`, and `namespaceUri`. | Applies to object types, members, directives, and attached members. |
+| XAML document node | Current | Current | Add document root containing namespace table, root object, diagnostics. | Legacy `XamlDocument.root` still exists behind lowering adapters. |
+| Object nodes | Current | Current | Model object elements separately from members and text. | Legacy `XamlNode.type` is now the lowered compatibility shape. |
+| Member nodes | Current | Current | Model attribute members and property elements as members. | Includes directives and attached-member forms. |
+| Text nodes | Current | Current | Preserve text as ordered text nodes. | Whitespace semantics are still deferred. |
+| Object element syntax | Current | Current | Convert XML elements to object nodes when schema says they are types. | Active vocabularies now cover runtime and designer config types. |
+| Attribute member syntax | Current | Current | Convert XML attributes to member nodes. | Lowering still uses legacy primitive coercion for compatibility. |
+| Property element syntax | Current | Current | Convert dotted child elements to member nodes. | Attribute/property-element equivalence is covered by lowering fixtures. |
+| Content property inference | Current | Current | Use vocabulary metadata to route child objects/text into content members. | Implemented for the current runtime and designer vocabularies. |
+| Attached member syntax | Current | Current | Represent attached owner/member names structurally. | Lowered to canonical `Owner.Member` attribute names for compatibility. |
 | Collection members | Missing | Phase 3+ | Add list semantics to vocabulary metadata and lowering. | Needed for richer grid definitions and resource collections. |
 | Dictionary members | Missing | Phase 3+ | Add dictionary semantics, key validation, and lowering. | Needed for resource dictionaries and `x:Key`. |
-| Text syntax conversion | Partial | Phase 2 | Move primitive conversion into schema-defined text syntax. | Current parser eagerly converts numbers/booleans for every attribute. |
+| Text syntax conversion | Partial | Phase 2 | Move primitive conversion into schema-defined text syntax. | Validation is schema-aware today, but legacy lowering still uses shared primitive coercion. |
 | Whitespace handling | Missing | Phase 3+ | Add schema-aware whitespace preservation/collapse rules. | Include `xml:space` once directive propagation exists. |
 | Markup extension AST | Missing | Phase 5 | Parse brace syntax into structured expressions. | Do not treat `{Binding path=Title}` as plain text long-term. |
 | Nested markup extensions | Missing | Phase 5 | Support nested extension arguments. | Not required for Phase 1. |
@@ -58,19 +58,19 @@ Default rule: parser support should be broader than runtime execution support. U
 
 ## Intrinsic Namespace Matrix
 
-| Directive or namespace feature | Target | First behavior | Runtime behavior | Notes |
-| --- | --- | --- | --- | --- |
-| `x:Name` | Phase 4 | Parse and preserve in Phase 1; validate namescope uniqueness in Phase 4. | Lower to element identity/name metadata when supported. | Also decide whether bare `Name` aliases it in our vocabulary. |
-| `x:Key` | Phase 4 | Parse and preserve in Phase 1. | Runtime ignores until dictionaries/resources exist. | Validation becomes meaningful with dictionary members. |
-| `x:Class` | Phase 4 | Parse and preserve in Phase 1. | Preserved-only; no markup compilation. | Validate root-only placement later. |
-| `x:Uid` | Phase 4 | Parse and preserve in Phase 1. | Preserved-only. | Useful for localization metadata, not rendering. |
-| `x:TypeArguments` | Phase 4 | Parse and preserve in Phase 1. | Preserved-only. | Generic type execution can remain unsupported. |
-| `x:Null` | Phase 5 | Parse as markup extension or intrinsic null expression. | Lower to null where member schema allows nullable values. | Optional early once markup extensions land. |
-| `x:Array` | Deferred | Preserve as unsupported intrinsic object/extension. | Not lowered. | Needs array/list semantics first. |
-| `x:Static` | Deferred | Preserve as unsupported markup extension. | Not evaluated. | Requires a static member resolution model. |
-| `x:Reference` | Deferred | Preserve as unsupported markup extension. | Not evaluated. | Requires namescope and object reference resolution. |
-| `xml:lang` | Phase 4 | Parse and preserve in Phase 1. | May lower to text/layout metadata later. | Treat as propagated metadata once schema supports it. |
-| `xml:space` | Phase 4 | Parse and preserve in Phase 1. | Affects text node whitespace handling later. | Keep separate from custom vocabulary members. |
+| Directive or namespace feature | Current status | Target | Current behavior | Runtime behavior | Notes |
+| --- | --- | --- | --- | --- | --- |
+| `x:Name` | Current | Phase 4 | Parse, preserve, and validate uniqueness within the current document namescope. | Lowered to `Name` in the legacy adapter; runtime still does not resolve object references by name. | Bare `Name` is still not a schema alias. |
+| `x:Key` | Partial | Phase 4 | Parse and preserve with warning only. | Runtime ignores until dictionaries/resources exist. | Validation becomes meaningful with dictionary members. |
+| `x:Class` | Current | Phase 4 | Parse, preserve, and enforce root-only placement. | Preserved-only; no markup compilation. | Non-root usage now raises `invalid-directive-placement`. |
+| `x:Uid` | Current | Phase 4 | Parse and preserve with warning. | Preserved-only. | Useful for localization metadata, not rendering. |
+| `x:TypeArguments` | Current | Phase 4 | Parse and preserve with warning. | Preserved-only. | Generic type execution can remain unsupported. |
+| `x:Null` | Missing | Phase 5 | Parse as markup extension or intrinsic null expression. | Lower to null where member schema allows nullable values. | Optional early once markup extensions land. |
+| `x:Array` | Deferred | Deferred | Preserve as unsupported intrinsic object/extension. | Not lowered. | Needs array/list semantics first. |
+| `x:Static` | Deferred | Deferred | Preserve as unsupported markup extension. | Not evaluated. | Requires a static member resolution model. |
+| `x:Reference` | Deferred | Deferred | Preserve as unsupported markup extension. | Not evaluated. | Requires namescope and object reference resolution. |
+| `xml:lang` | Current | Phase 4 | Parse and preserve with warning. | May lower to text/layout metadata later. | Propagation semantics are still pending. |
+| `xml:space` | Current | Phase 4 | Parse and preserve; enum value validation works. | Affects text node whitespace handling later. | Propagation and whitespace-collapse behavior are still pending. |
 
 ## `ui-designer` Vocabulary Matrix
 
@@ -95,8 +95,8 @@ Default rule: parser support should be broader than runtime execution support. U
 | Visual color: `Background`, `BorderBrush`, `Fill`, `Foreground` | Current | Phase 2 schema metadata | Preserve color parsing in runtime for now. |
 | Text: `Text`, `Content`, `FontSize`, `FontWeight`, `FontFamily`, `FontStyle`, `LineHeight`, `TextAlignment`, `TextWrapping`, `TextOverflow`, `TextTrimming`, `FlowDirection`, `Direction` | Current | Phase 2 schema metadata | `Direction` should remain a compatibility alias for `FlowDirection`. |
 | Image: `Source`, `Stretch`, `Opacity` | Current | Phase 2 schema metadata | Validate `Stretch` enum values later. |
-| Panel placement: `Grid.Row`, `Grid.Column`, `Grid.RowSpan`, `Grid.ColumnSpan` | Partial | Phase 2 attached member metadata | Current parser preserves dotted attributes only as strings. |
-| Canvas placement: `Canvas.Left`, `Canvas.Top` | Missing | Phase 2 attached member metadata | Current documents mostly use direct `X`, `Y`, or designer offsets. |
+| Panel placement: `Grid.Row`, `Grid.Column`, `Grid.RowSpan`, `Grid.ColumnSpan` | Current | Phase 2 attached member metadata | Attached member metadata and canonical lowering are now in place. |
+| Canvas placement: `Canvas.Left`, `Canvas.Top` | Current | Phase 2 attached member metadata | Attached member metadata exists even though most current documents still use `X`, `Y`, or designer offsets. |
 | Designer metadata: `Designer.OffsetX`, `Designer.OffsetY` | Current | Custom attached metadata namespace | Keep as authoring metadata, not core XAML language. |
 | Events: `PointerDown`, `PointerMove`, `PointerUp`, `Click` | Declared in subset | Deferred | Parse as members; execution/routing is outside Phase 1. |
 
@@ -115,42 +115,20 @@ Default rule: parser support should be broader than runtime execution support. U
 | Namescope collision | Error | Required once `x:Name` validation exists. |
 | Unrenderable but schema-valid member | Warning | Valid source should not disappear silently at runtime. |
 
-## Phase 1 Implementation Target
+Current limitation:
 
-The next implementation slice should add the new model behind compatibility adapters. Existing apps should keep calling `parseXaml` while the compliance parser is introduced.
+1. Namescope validation currently treats the document root as the only namescope. Nested namescopes for templates, resources, or future object islands are still deferred.
 
-Deliverables:
+## Current Implementation Checkpoint
 
-1. Add these schema primitives in `packages/xaml-schema`:
-   - `XamlQualifiedName`
-   - `XamlNamespaceDeclaration`
-   - `XamlSourceSpan`
-   - `XamlDocumentNode`
-   - `XamlObjectNode`
-   - `XamlMemberNode`
-   - `XamlTextNode`
-   - `XamlDiagnostic`
-2. Add parser result types:
-   - `XamlParseResult`
-   - `XamlParseDiagnostic`
-   - `XamlParseOptions`
-3. Update `packages/xaml-parser` to expose a new parse entry point that preserves:
-   - namespace declarations
-   - qualified names
-   - ordered object/member/text nodes
-   - parser diagnostics
-4. Keep a legacy adapter that lowers the new object tree back into the existing `XamlDocument` shape for `designer-core` and `ui-core`.
-5. Add fixture coverage for:
-   - plain object elements
-   - namespaced root elements
-   - attribute members
-   - property elements
-   - mixed text/content preservation
-   - invalid XML diagnostics
+Completed foundation work:
 
-Exit criteria:
+1. Infoset/schema primitives, vocabulary registries, and compatibility lowering are in place.
+2. Strict parse/validate/lower paths now back the runtime, `designer-core`, and the designer config vocabularies.
+3. Validation fixtures cover parser structure, registry-backed validation, lowering behavior, and designer config namespaces.
+4. Intrinsic directive validation now includes `x:Name` document-namescope checks and root-only `x:Class` placement.
 
-1. Existing designer/runtime behavior still works through the compatibility adapter.
-2. New parser output can represent object nodes, member nodes, text nodes, namespaces, and source spans without relying on flat `type/attributes/children/text`.
-3. The Phase 2 vocabulary registry can be built without changing the Phase 1 node model.
+Next slice:
 
+1. Add markup extension AST parsing so expressions like `{Binding path=Title}` stop being treated as plain text.
+2. Keep whitespace and semantic serializer work after markup extensions unless a specific user-facing need pulls them earlier.

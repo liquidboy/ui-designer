@@ -32,25 +32,24 @@ That keeps the scope sane:
 2. Our existing controls can remain custom types as long as they are modeled through a valid XAML schema/vocabulary.
 3. WPF compatibility becomes an explicit follow-on track instead of an implicit rewrite goal.
 
-## Current Baseline
+## Current Checkpoint
 
-Today the repo uses a simplified XML AST, not a spec-shaped XAML infoset:
+The repo now has the core compliance foundation in place:
 
-1. `packages/xaml-parser` converts DOM elements directly into `{ type, attributes, children, text }`.
-2. `packages/xaml-schema` only models a flat node tree with primitive attributes.
-3. `packages/designer-core` serializes back to XML by printing element names, attributes, child nodes, and raw text.
-4. `packages/ui-core` consumes the simplified tree directly and assumes that properties arrive as a flat attribute map.
+1. `packages/xaml-schema` models qualified names, infoset nodes, source spans, vocabulary metadata, and validation diagnostics.
+2. `packages/xaml-parser` parses XML into the spec-shaped infoset, validates against active vocabularies, and lowers back into the legacy `XamlDocument` shape through compatibility adapters.
+3. `packages/ui-runtime-web` uses the strict parse/validate/lower path for app runtime documents.
+4. `packages/designer-core` and the designer config loaders use the registry-backed strict parser for authoring documents and designer vocabularies.
+5. The validator currently covers known namespaces/types/members, duplicate scalar members, content rules, enum/primitive checks, namescope collisions for `x:Name`, and root-only placement for `x:Class`.
 
-That is enough for the current MVP, but it is not sufficient for spec compliance because it does not model:
+The main remaining gaps are now:
 
-1. XAML object/member/text nodes.
-2. Namespace and prefix mappings.
-3. Content properties and property-element syntax.
-4. Attached members and dotted member names.
-5. Directives such as `x:Name`, `x:Key`, `x:Class`, `x:Uid`, and `x:TypeArguments`.
-6. Markup extensions.
-7. Namescopes, whitespace rules, dictionary/list semantics, or schema validation.
-8. Canonical round-tripping of semantically equivalent XAML.
+1. Markup extension AST parsing and evaluation, including `{Binding ...}`.
+2. Dictionary/list semantics and meaningful `x:Key` validation.
+3. `xml:space` whitespace behavior and `xml:lang` propagation semantics.
+4. Semantic serialization and round-trip guarantees from the infoset model.
+
+This document remains the long-term roadmap. The current implementation status now lives in [XAML Compliance Matrix](./xaml-compliance-matrix.md).
 
 ## Recommended Architecture
 

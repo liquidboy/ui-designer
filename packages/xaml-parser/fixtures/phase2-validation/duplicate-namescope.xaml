@@ -1,0 +1,3 @@
+<Canvas xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Name="SharedName" Width="320" Height="240">
+  <Rectangle x:Name="SharedName" Width="80" Height="40" Fill="#ff8157" />
+</Canvas>
