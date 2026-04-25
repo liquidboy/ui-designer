@@ -1,0 +1,9 @@
+<ui:Canvas
+  xmlns:ui="https://liquidboy.dev/ui-designer"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  x:Name="RootCanvas"
+  Width="320"
+  Height="240">
+  <ui:TextBlock Text="Namespaced lower" />
+</ui:Canvas>
+

@@ -1,0 +1,6 @@
+<Border Background="#18222e">
+  <Border.Child>
+    <TextBlock Text="Inside border" />
+  </Border.Child>
+</Border>
+

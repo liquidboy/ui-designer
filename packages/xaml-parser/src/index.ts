@@ -2,6 +2,11 @@ import {
   XAML_LANGUAGE_NAMESPACE,
   XML_NAMESPACE,
   XMLNS_NAMESPACE,
+  resolveXamlAttachedMember,
+  resolveXamlDirective,
+  resolveXamlMember,
+  resolveXamlType,
+  uiDesignerVocabularyRegistry,
   validateXamlDocument,
   type XamlAttributeMap,
   type XamlDiagnostic,
@@ -19,6 +24,7 @@ import {
   type XamlSourcePosition,
   type XamlSourceSpan,
   type XamlTextNode,
+  type XamlTypeDefinition,
   type XamlValidationResult,
   type XamlVocabularyRegistry,
   type XamlValueNode
@@ -547,76 +553,181 @@ function namespaceAttributeName(declaration: XamlNamespaceDeclaration): string {
   return declaration.prefix ? `xmlns:${declaration.prefix}` : 'xmlns';
 }
 
-function memberElementToLegacyNode(member: XamlMemberNode): XamlNode {
-  const children: XamlNode[] = [];
-  const textParts: string[] = [];
-
-  for (const value of member.values) {
-    if (value.kind === 'object') {
-      children.push(objectToLegacyNode(value));
-    } else {
-      textParts.push(value.text);
-    }
-  }
-
-  const text = children.length === 0 ? textParts.join('').trim() : '';
-
-  return {
-    type: qualifiedNameToString(member.name),
-    attributes: {},
-    children,
-    text: text || undefined
-  };
+function lowerTypeName(object: XamlObjectNode, registry: XamlVocabularyRegistry): string {
+  return resolveXamlType(object.type, registry)?.name ?? qualifiedNameToString(object.type);
 }
 
-function objectToLegacyNode(object: XamlObjectNode): XamlNode {
+function textValueFromValues(values: readonly XamlValueNode[]): string {
+  return values
+    .filter((value): value is XamlTextNode => value.kind === 'text')
+    .map((value) => value.text)
+    .join('')
+    .trim();
+}
+
+function lowerDirectiveName(member: XamlMemberNode, registry: XamlVocabularyRegistry): string {
+  return resolveXamlDirective(member.name, registry)?.name ?? qualifiedNameToString(member.name);
+}
+
+function lowerMemberName(
+  member: XamlMemberNode,
+  ownerType: XamlTypeDefinition | null,
+  registry: XamlVocabularyRegistry
+): string {
+  if (member.isDirective) {
+    return lowerDirectiveName(member, registry);
+  }
+
+  if (member.dotted) {
+    if (ownerType && member.dotted.owner.localName === ownerType.name) {
+      return resolveXamlMember(ownerType.name, member.dotted.member, registry)?.name ?? member.dotted.member;
+    }
+
+    const attached = resolveXamlAttachedMember(member.dotted.owner.localName, member.dotted.member, registry);
+    return attached ? `${attached.attachedOwner}.${attached.name}` : `${member.dotted.owner.localName}.${member.dotted.member}`;
+  }
+
+  return ownerType
+    ? resolveXamlMember(ownerType.name, member.name, registry)?.name ?? qualifiedNameToString(member.name)
+    : qualifiedNameToString(member.name);
+}
+
+function lowerValueObjects(values: readonly XamlValueNode[], registry: XamlVocabularyRegistry): XamlNode[] {
+  return values
+    .filter((value): value is XamlObjectNode => value.kind === 'object')
+    .map((value) => lowerObjectNode(value, registry));
+}
+
+function lowerPropertyMember(
+  node: XamlNode,
+  ownerType: XamlTypeDefinition | null,
+  member: XamlMemberNode,
+  registry: XamlVocabularyRegistry
+): void {
+  const memberName = lowerMemberName(member, ownerType, registry);
+  const valueObjects = lowerValueObjects(member.values, registry);
+  const textValue = textValueFromValues(member.values);
+
+  if (valueObjects.length > 0) {
+    if (ownerType?.contentProperty === memberName) {
+      node.children.push(...valueObjects);
+      if (textValue && node.children.length === 0) {
+        node.text = textValue;
+      }
+      return;
+    }
+
+    node.children.push({
+      type: lowerMemberName(member, ownerType, registry),
+      attributes: {},
+      children: valueObjects,
+      text: textValue || undefined
+    });
+    return;
+  }
+
+  if (!textValue) {
+    return;
+  }
+
+  if (ownerType?.contentProperty === memberName && ownerType.allowsText) {
+    if (memberName === 'Text') {
+      node.attributes.Text = parseAttributeValue(textValue);
+      node.text = textValue;
+      return;
+    }
+
+    node.attributes[memberName] = parseAttributeValue(textValue);
+    return;
+  }
+
+  node.attributes[memberName] = parseAttributeValue(textValue);
+}
+
+function lowerContentMember(
+  node: XamlNode,
+  ownerType: XamlTypeDefinition | null,
+  member: XamlMemberNode,
+  registry: XamlVocabularyRegistry
+): void {
+  const valueObjects = lowerValueObjects(member.values, registry);
+  const textValue = textValueFromValues(member.values);
+  node.children.push(...valueObjects);
+
+  if (!textValue) {
+    return;
+  }
+
+  if (ownerType?.contentProperty === 'Text') {
+    node.attributes.Text = parseAttributeValue(textValue);
+    node.text = textValue;
+    return;
+  }
+
+  if (ownerType?.contentProperty === 'Content') {
+    node.attributes.Content = parseAttributeValue(textValue);
+    node.text = textValue;
+    return;
+  }
+
+  if (node.children.length === 0) {
+    node.text = textValue;
+  }
+}
+
+function lowerObjectNode(object: XamlObjectNode, registry: XamlVocabularyRegistry): XamlNode {
+  const ownerType = resolveXamlType(object.type, registry);
   const attributes: XamlAttributeMap = {};
-  const children: XamlNode[] = [];
-  const textParts: string[] = [];
+  const node: XamlNode = {
+    type: lowerTypeName(object, registry),
+    attributes,
+    children: []
+  };
 
   for (const declaration of object.namespaceDeclarations) {
-    attributes[namespaceAttributeName(declaration)] = declaration.namespaceUri;
+    if (!resolveXamlType(object.type, registry)) {
+      attributes[namespaceAttributeName(declaration)] = declaration.namespaceUri;
+    }
   }
 
   for (const member of object.members) {
     if (member.syntax === 'attribute') {
-      attributes[qualifiedNameToString(member.name)] = parseAttributeValue(textValueFromMember(member));
+      const memberName = lowerMemberName(member, ownerType, registry);
+      const textValue = textValueFromMember(member);
+      attributes[memberName] = parseAttributeValue(textValue);
+
+      if ((memberName === 'Text' || memberName === 'Content') && ownerType?.contentProperty === memberName) {
+        node.text = textValue;
+      }
+
       continue;
     }
 
     if (member.syntax === 'propertyElement') {
-      children.push(memberElementToLegacyNode(member));
+      lowerPropertyMember(node, ownerType, member, registry);
       continue;
     }
 
-    for (const value of member.values) {
-      if (value.kind === 'object') {
-        children.push(objectToLegacyNode(value));
-      } else {
-        textParts.push(value.text);
-      }
-    }
+    lowerContentMember(node, ownerType, member, registry);
   }
 
-  const text = children.length === 0 ? textParts.join('').trim() : '';
-
-  return {
-    type: qualifiedNameToString(object.type),
-    attributes,
-    children,
-    text: text || undefined
-  };
+  return node;
 }
 
-export function toLegacyXamlDocument(document: XamlDocumentNode): XamlDocument {
+export function lowerXamlDocument(
+  document: XamlDocumentNode,
+  registry: XamlVocabularyRegistry = uiDesignerVocabularyRegistry
+): XamlDocument {
   if (!document.root) {
     throw new Error('Invalid XAML: missing root element.');
   }
 
   return {
-    root: objectToLegacyNode(document.root)
+    root: lowerObjectNode(document.root, registry)
   };
 }
+
+export const toLegacyXamlDocument = lowerXamlDocument;
 
 export function parseXaml(input: string): XamlDocument {
   const result = parseXamlToInfoset(input);
@@ -630,5 +741,5 @@ export function parseXaml(input: string): XamlDocument {
     throw new Error('Invalid XAML: missing root element.');
   }
 
-  return toLegacyXamlDocument(result.document);
+  return lowerXamlDocument(result.document);
 }

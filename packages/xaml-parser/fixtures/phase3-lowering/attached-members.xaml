@@ -1,0 +1,4 @@
+<Grid Width="320" Height="240">
+  <Rectangle Grid.Row="1" Grid.Column="2" Width="80" Height="48" Fill="#3472ff" />
+</Grid>
+

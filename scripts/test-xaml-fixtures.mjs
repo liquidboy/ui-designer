@@ -79,7 +79,7 @@ globalThis.Node = {
 };
 globalThis.DOMParser = FixtureDOMParser;
 
-const { parseAndValidateXaml, parseXamlToInfoset } = await import('../packages/xaml-parser/dist/index.js');
+const { lowerXamlDocument, parseAndValidateXaml, parseXamlToInfoset } = await import('../packages/xaml-parser/dist/index.js');
 
 function splitQualifiedName(rawName) {
   const separator = rawName.indexOf(':');
@@ -443,8 +443,47 @@ async function runPhase2ValidationFixtures() {
   return files.length;
 }
 
+async function runPhase3LoweringFixtures() {
+  const files = await listFixtureFiles('phase3-lowering');
+
+  const lowerFixture = async (fileName) => {
+    const input = await readFixture('phase3-lowering', fileName);
+    const result = parseAndValidateXaml(input);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'error'), [], `${fileName} should validate without errors`);
+    return lowerXamlDocument(result.document);
+  };
+
+  const textAttribute = await lowerFixture('text-attribute.xaml');
+  const textProperty = await lowerFixture('text-property-element.xaml');
+  assert.deepEqual(textProperty, textAttribute, 'TextBlock attribute and property-element syntax should lower identically');
+  assert.equal(textAttribute.root.type, 'TextBlock');
+  assert.equal(textAttribute.root.attributes.Text, 'Hello');
+  assert.equal(textAttribute.root.text, 'Hello');
+
+  const borderChild = await lowerFixture('border-child-property.xaml');
+  assert.equal(borderChild.root.type, 'Border');
+  assert.equal(borderChild.root.children.length, 1);
+  assert.equal(borderChild.root.children[0].type, 'TextBlock');
+  assert.equal(borderChild.root.children[0].attributes.Text, 'Inside border');
+
+  const namespaced = await lowerFixture('namespaced-ui.xaml');
+  assert.equal(namespaced.root.type, 'Canvas');
+  assert.equal(namespaced.root.attributes.Name, 'RootCanvas');
+  assert.equal(namespaced.root.attributes.Width, 320);
+  assert.equal(namespaced.root.children[0].type, 'TextBlock');
+  assert.equal(namespaced.root.children[0].attributes.Text, 'Namespaced lower');
+  assert.equal('xmlns:ui' in namespaced.root.attributes, false);
+
+  const attached = await lowerFixture('attached-members.xaml');
+  const rectangle = attached.root.children[0];
+  assert.equal(rectangle.attributes['Grid.Row'], 1);
+  assert.equal(rectangle.attributes['Grid.Column'], 2);
+
+  return files.length;
+}
+
 const phase1Count = await runPhase1Fixtures();
 const phase2Count = await runPhase2ValidationFixtures();
+const phase3Count = await runPhase3LoweringFixtures();
 
-console.log(`XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation).`);
-
+console.log(`XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering).`);
