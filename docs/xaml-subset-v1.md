@@ -144,8 +144,9 @@ Current status:
 3. `{x:Type ...}` item-type expressions validate known simple object type names and runtime-lower to type-name strings.
 4. `<x:Type TypeName="..." />` object elements validate and runtime-lower to type-name strings in scalar member positions.
 5. Authoring serialization preserves `x:Array` namespace prefixes, property-element form, and raw/object `x:Type` source.
-6. Compatibility lowering emits a structural `Array` node with item children.
-7. True array-valued runtime assignment, primitive CLR item types, CLR type resolution, and generic type execution remain outside v1.
+6. Authoring compatibility lowering emits a structural `Array` node with item children so source round-tripping remains stable.
+7. Runtime lowering evaluates single `x:Array` member values and keyed `ResourceDictionary` entries to JavaScript arrays of supported runtime values.
+8. Primitive CLR item type coercion, CLR type resolution, and generic type execution remain outside v1.
 
 Supported structural form:
 
@@ -162,6 +163,22 @@ Supported `x:Type` form:
 <x:Array xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Type="{x:Type TextBlock}">
   <TextBlock Text="Typed" />
 </x:Array>
+```
+
+Supported runtime member/resource form:
+
+```xaml
+<Canvas xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Canvas.Resources>
+    <ResourceDictionary>
+      <x:Array x:Key="Labels" Type="TextBlock">
+        <TextBlock Text="First resource item" />
+        <TextBlock Text="Second resource item" />
+      </x:Array>
+    </ResourceDictionary>
+  </Canvas.Resources>
+  <Button Content="{StaticResource Labels}" />
+</Canvas>
 ```
 
 ## Intrinsic Static Members

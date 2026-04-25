@@ -366,6 +366,10 @@ function textValueNode(value: XamlPrimitive): XamlValueNode {
   };
 }
 
+function isXamlPrimitiveValue(value: unknown): value is XamlPrimitive {
+  return value == null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean';
+}
+
 function semanticLowerDirectiveName(member: XamlMemberNode): string {
   return resolveXamlDirective(member.name, uiDesignerVocabularyRegistry)?.name ?? qualifiedNameToString(member.name);
 }
@@ -753,7 +757,7 @@ function xamlNodeToSemanticObject(
   };
 
   for (const [key, value] of Object.entries(node.attributes)) {
-    if (value != null) {
+    if (value != null && isXamlPrimitiveValue(value)) {
       object.members.push(createSemanticMemberForLegacyKey(key, value, document, object));
     }
   }
@@ -1120,10 +1124,22 @@ function formatPrimitive(value: XamlPrimitive): string {
   return String(value);
 }
 
+function formatAttributeValue(value: unknown): string {
+  if (Array.isArray(value)) {
+    return value.map(formatAttributeValue).join(',');
+  }
+
+  if (value && typeof value === 'object' && 'type' in value) {
+    return `[${String((value as XamlNode).type)}]`;
+  }
+
+  return isXamlPrimitiveValue(value) ? formatPrimitive(value) : String(value);
+}
+
 function serializeNode(node: XamlNode, depth: number): string {
   const indent = '  '.repeat(depth);
   const attributes = Object.entries(node.attributes)
-    .map(([key, value]) => `${key}="${formatPrimitive(value)}"`)
+    .map(([key, value]) => `${key}="${formatAttributeValue(value)}"`)
     .join(' ');
   const tagOpen = attributes ? `<${node.type} ${attributes}` : `<${node.type}`;
 

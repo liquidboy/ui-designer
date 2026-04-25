@@ -1149,6 +1149,8 @@ async function runPhase15IntrinsicArrayFixtures() {
     'array-items-property.xaml': { errors: [], warnings: [] },
     'array-invalid-item.xaml': { errors: ['invalid-array-item-type'], warnings: [] },
     'array-missing-type.xaml': { errors: ['missing-required-member'], warnings: [] },
+    'array-property-runtime.xaml': { errors: [], warnings: [] },
+    'array-resource-static-runtime.xaml': { errors: [], warnings: [] },
     'array-type-extension.xaml': { errors: [], warnings: [] },
     'array-type-object-element.xaml': { errors: [], warnings: [] },
     'array-type-extension-missing.xaml': { errors: ['missing-markup-extension-argument'], warnings: [] }
@@ -1167,11 +1169,13 @@ async function runPhase15IntrinsicArrayFixtures() {
       continue;
     }
 
-    assert.equal(result.document.root.type.localName, 'Array');
-    assert.equal(result.document.root.type.namespaceUri, XAML_LANGUAGE_NAMESPACE);
-
     const lowered = lowerXamlDocument(result.document);
-    assert.equal(lowered.root.type, 'Array');
+
+    if (!['array-property-runtime.xaml', 'array-resource-static-runtime.xaml'].includes(fileName)) {
+      assert.equal(result.document.root.type.localName, 'Array');
+      assert.equal(result.document.root.type.namespaceUri, XAML_LANGUAGE_NAMESPACE);
+      assert.equal(lowered.root.type, 'Array');
+    }
 
     if (fileName === 'array-content.xaml') {
       assert.equal(lowered.root.attributes.Type, 'TextBlock');
@@ -1188,6 +1192,33 @@ async function runPhase15IntrinsicArrayFixtures() {
       assert.equal(lowered.root.children.length, 1);
       assert.equal(lowered.root.children[0]?.type, 'Button');
       assert.equal(lowered.root.children[0]?.attributes.Content, 'One');
+    }
+
+    if (fileName === 'array-property-runtime.xaml') {
+      const runtime = parseRuntimeXaml(input);
+      const content = runtime.root.attributes.Content;
+      assert.ok(Array.isArray(content));
+      assert.equal(content.length, 2);
+      assert.equal(content[0]?.type, 'TextBlock');
+      assert.equal(content[0]?.attributes.Text, 'First runtime item');
+      assert.equal(content[1]?.attributes.Text, 'Second runtime item');
+      assert.equal(runtime.root.children.length, 0);
+      assert.equal(lowered.root.children[0]?.type, 'Array');
+    }
+
+    if (fileName === 'array-resource-static-runtime.xaml') {
+      const runtime = parseRuntimeXaml(input);
+      const firstContent = runtime.root.children[0]?.attributes.Content;
+      const secondContent = runtime.root.children[1]?.attributes.Content;
+      assert.ok(Array.isArray(firstContent));
+      assert.ok(Array.isArray(secondContent));
+      assert.equal(firstContent.length, 2);
+      assert.equal(secondContent.length, 2);
+      assert.equal(firstContent[0]?.attributes.Text, 'First resource item');
+      assert.equal(secondContent[1]?.attributes.Text, 'Second resource item');
+      assert.notStrictEqual(firstContent, secondContent);
+      assert.notStrictEqual(firstContent[0], secondContent[0]);
+      assert.equal(runtime.root.children.length, 2);
     }
 
     if (fileName === 'array-type-extension.xaml') {

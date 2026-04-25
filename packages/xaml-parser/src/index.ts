@@ -10,6 +10,7 @@ import {
   uiDesignerVocabularyRegistry,
   validateXamlDocument,
   type XamlAttributeMap,
+  type XamlAttributeValue,
   type XamlDiagnostic,
   type XamlDocument,
   type XamlDocumentNode,
@@ -25,6 +26,8 @@ import {
   type XamlParseResult,
   type XamlPrimitive,
   type XamlQualifiedName,
+  type XamlRuntimeArrayValue,
+  type XamlRuntimeValue,
   type XamlSourcePosition,
   type XamlSourceSpan,
   type XamlTextNode,
@@ -51,7 +54,7 @@ export interface XamlLoweredParseResult extends XamlParseAndValidateResult {
   hasErrors: boolean;
 }
 
-export type XamlRuntimeResourceValue = XamlPrimitive | XamlNode;
+export type XamlRuntimeResourceValue = XamlRuntimeValue;
 
 export type XamlRuntimeResourceMap =
   | ReadonlyMap<string, XamlRuntimeResourceValue>
@@ -1314,6 +1317,10 @@ function isIntrinsicObject(object: XamlObjectNode, names: readonly string[]): bo
   return object.type.namespaceUri === XAML_LANGUAGE_NAMESPACE && names.includes(object.type.localName);
 }
 
+function isXamlArrayObject(object: XamlObjectNode): boolean {
+  return isIntrinsicObject(object, ['Array', 'ArrayExtension']);
+}
+
 function coerceRuntimePrimitive(value: unknown): XamlPrimitive {
   if (value == null) {
     return null;
@@ -1324,6 +1331,14 @@ function coerceRuntimePrimitive(value: unknown): XamlPrimitive {
   }
 
   return String(value);
+}
+
+function isRuntimePrimitiveValue(value: XamlRuntimeResourceValue | undefined): value is XamlPrimitive {
+  return value == null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean';
+}
+
+function isRuntimeArrayValue(value: XamlRuntimeResourceValue | undefined): value is XamlRuntimeArrayValue {
+  return Array.isArray(value);
 }
 
 function markupExtensionArgumentToText(value: XamlMarkupExtensionValue): string {
@@ -1401,35 +1416,6 @@ function referenceNameFromExtension(extension: XamlMarkupExtensionNode): string 
   return positionalReference ? markupExtensionArgumentToText(positionalReference.value).trim() : '';
 }
 
-function intrinsicObjectMemberText(
-  object: XamlObjectNode,
-  memberName: string,
-  registry: XamlVocabularyRegistry,
-  options: XamlLoweringContext
-): string {
-  const type = resolveXamlType(object.type, registry);
-  if (!type) {
-    return '';
-  }
-
-  const member = object.members.find((memberNode) => {
-    if (memberNode.syntax === 'content' || memberNode.isDirective) {
-      return false;
-    }
-
-    if (memberNode.dotted) {
-      return (
-        memberNode.dotted.owner.localName === type.name &&
-        resolveXamlMember(type, memberNode.dotted.member, registry)?.name === memberName
-      );
-    }
-
-    return resolveXamlMember(type, memberNode.name, registry)?.name === memberName;
-  });
-
-  return member ? textValueFromValues(member.values, options).trim() : '';
-}
-
 function readBindingPathSegment(value: unknown, segment: string): unknown {
   if (value == null || !segment) {
     return undefined;
@@ -1463,7 +1449,9 @@ function cloneLoweredXamlNode(node: XamlNode, clones = new WeakMap<XamlNode, Xam
 
   const clone: XamlNode = {
     type: node.type,
-    attributes: { ...node.attributes },
+    attributes: Object.fromEntries(
+      Object.entries(node.attributes).map(([key, value]) => [key, cloneRuntimeAttributeValue(value, clones)])
+    ),
     children: [],
     text: node.text
   };
@@ -1473,11 +1461,34 @@ function cloneLoweredXamlNode(node: XamlNode, clones = new WeakMap<XamlNode, Xam
 }
 
 function isLoweredXamlNode(value: unknown): value is XamlNode {
-  return typeof value === 'object' && value != null && 'type' in value && 'attributes' in value && 'children' in value;
+  return (
+    typeof value === 'object' &&
+    value != null &&
+    !Array.isArray(value) &&
+    'type' in value &&
+    'attributes' in value &&
+    'children' in value
+  );
 }
 
-function cloneRuntimeResourceValue(value: XamlRuntimeResourceValue): XamlRuntimeResourceValue {
-  return isLoweredXamlNode(value) ? cloneLoweredXamlNode(value) : value;
+function cloneRuntimeResourceValue(
+  value: XamlRuntimeResourceValue,
+  clones = new WeakMap<XamlNode, XamlNode>()
+): XamlRuntimeResourceValue {
+  if (Array.isArray(value)) {
+    return value.map((item) => cloneRuntimeResourceValue(item, clones));
+  }
+
+  return isLoweredXamlNode(value) ? cloneLoweredXamlNode(value, clones) : value;
+}
+
+function cloneRuntimeAttributeValue(
+  value: XamlAttributeValue,
+  clones = new WeakMap<XamlNode, XamlNode>()
+): XamlAttributeValue {
+  return Array.isArray(value)
+    ? value.map((item) => cloneRuntimeResourceValue(item, clones))
+    : value;
 }
 
 function resolveRuntimeResource(
@@ -1566,9 +1577,41 @@ function evaluateMarkupExtension(extension: XamlMarkupExtensionNode, options: Xa
   return extension.raw;
 }
 
+function evaluateXamlArrayItem(value: XamlValueNode, options: XamlLoweringContext): XamlRuntimeResourceValue | undefined {
+  if (value.kind === 'object') {
+    const evaluated = evaluateIntrinsicObject(value, options);
+    return evaluated !== undefined ? evaluated : lowerObjectNode(value, options.registry, options);
+  }
+
+  if (value.kind === 'markupExtension') {
+    return evaluateMarkupExtension(value, options);
+  }
+
+  const text = value.preservesXmlSpace ? value.text : normalizeDefaultXmlWhitespace(value.text);
+  return text ? text : undefined;
+}
+
+function evaluateXamlArrayObject(object: XamlObjectNode, options: XamlLoweringContext): XamlRuntimeArrayValue {
+  const values = intrinsicObjectMemberValues(object, 'Items', options.registry);
+  const items: XamlRuntimeArrayValue = [];
+
+  for (const value of values) {
+    const evaluated = evaluateXamlArrayItem(value, options);
+    if (evaluated !== undefined) {
+      items.push(evaluated);
+    }
+  }
+
+  return items;
+}
+
 function evaluateIntrinsicObject(object: XamlObjectNode, options: XamlLoweringContext): XamlRuntimeResourceValue | undefined {
   if (isIntrinsicObject(object, ['Null', 'NullExtension'])) {
     return null;
+  }
+
+  if (isXamlArrayObject(object)) {
+    return evaluateXamlArrayObject(object, options);
   }
 
   if (isIntrinsicObject(object, ['Type', 'TypeExtension'])) {
@@ -1615,22 +1658,25 @@ function coerceTextValueForMember(value: string, definition: XamlMemberDefinitio
   return definition ? coerceXamlTextValue(value, definition.valueSyntax) : coerceLegacyTextValue(value);
 }
 
-function primitiveValueFromNode(value: XamlValueNode, options: XamlLoweringContext): XamlPrimitive | undefined {
+function runtimeValueFromNode(value: XamlValueNode, options: XamlLoweringContext): XamlRuntimeResourceValue | undefined {
   if (value.kind === 'text') {
     return value.text;
   }
 
   if (value.kind === 'markupExtension') {
-    const evaluated = options.evaluateMarkupExtensions ? evaluateMarkupExtension(value, options) : value.raw;
-    return isLoweredXamlNode(evaluated) ? undefined : evaluated;
+    return options.evaluateMarkupExtensions ? evaluateMarkupExtension(value, options) : value.raw;
   }
 
   if (value.kind === 'object' && options.evaluateMarkupExtensions) {
-    const evaluated = evaluateIntrinsicObject(value, options);
-    return isLoweredXamlNode(evaluated) ? undefined : evaluated;
+    return evaluateIntrinsicObject(value, options);
   }
 
   return undefined;
+}
+
+function primitiveValueFromNode(value: XamlValueNode, options: XamlLoweringContext): XamlPrimitive | undefined {
+  const runtimeValue = runtimeValueFromNode(value, options);
+  return isRuntimePrimitiveValue(runtimeValue) ? runtimeValue : undefined;
 }
 
 function textFromPrimitive(value: XamlPrimitive | undefined): string {
@@ -1661,6 +1707,13 @@ function primitiveValueFromValues(
   }
 
   return coerceTextValueForMember(text, definition);
+}
+
+function runtimeValueFromValues(
+  values: readonly XamlValueNode[],
+  options: XamlLoweringContext
+): XamlRuntimeResourceValue | undefined {
+  return values.length === 1 ? runtimeValueFromNode(values[0], options) : undefined;
 }
 
 function primitiveValueFromMember(
@@ -1702,6 +1755,52 @@ function normalizeDefaultXmlWhitespace(value: string): string {
 function textValueFromValues(values: readonly XamlValueNode[], options: XamlLoweringContext): string {
   const text = values.map((value) => scalarTextFromValue(value, options)).join('');
   return valuesPreserveXmlSpace(values) ? text : normalizeDefaultXmlWhitespace(text);
+}
+
+function resolvedObjectMemberName(
+  member: XamlMemberNode,
+  type: XamlTypeDefinition,
+  registry: XamlVocabularyRegistry
+): string | null {
+  if (member.syntax === 'content') {
+    return type.contentProperty ?? null;
+  }
+
+  if (member.isDirective) {
+    return null;
+  }
+
+  if (member.dotted) {
+    return member.dotted.owner.localName === type.name
+      ? resolveXamlMember(type, member.dotted.member, registry)?.name ?? null
+      : null;
+  }
+
+  return resolveXamlMember(type, member.name, registry)?.name ?? null;
+}
+
+function intrinsicObjectMemberValues(
+  object: XamlObjectNode,
+  memberName: string,
+  registry: XamlVocabularyRegistry
+): XamlValueNode[] {
+  const type = resolveXamlType(object.type, registry);
+  if (!type) {
+    return [];
+  }
+
+  return object.members.flatMap((member) => {
+    return resolvedObjectMemberName(member, type, registry) === memberName ? member.values : [];
+  });
+}
+
+function intrinsicObjectMemberText(
+  object: XamlObjectNode,
+  memberName: string,
+  registry: XamlVocabularyRegistry,
+  options: XamlLoweringContext
+): string {
+  return textValueFromValues(intrinsicObjectMemberValues(object, memberName, registry), options).trim();
 }
 
 function lowerDirectiveName(member: XamlMemberNode, registry: XamlVocabularyRegistry): string {
@@ -1779,7 +1878,8 @@ function primitiveResourceValueFromNode(node: XamlNode): XamlPrimitive | undefin
   }
 
   if (Object.prototype.hasOwnProperty.call(node.attributes, 'Value')) {
-    return node.attributes.Value;
+    const value = node.attributes.Value;
+    return isRuntimePrimitiveValue(value) ? value : undefined;
   }
 
   if (node.text != null) {
@@ -1819,6 +1919,12 @@ function collectResourceObject(
   const loweringContext = entry.scopeObject && resolveXamlType(entry.scopeObject.type, registry)?.createsNamescope
     ? lowerContextWithNamescope(context, entry.scopeObject)
     : context;
+
+  if (isXamlArrayObject(object)) {
+    context.resources.set(key, evaluateXamlArrayObject(object, loweringContext));
+    return;
+  }
+
   const lowered = lowerObjectNode(object, registry, loweringContext);
   const value = runtimeResourceValueFromNode(lowered);
   if (value !== undefined) {
@@ -1912,6 +2018,12 @@ function lowerPropertyMember(
   options: XamlLoweringContext
 ): void {
   const memberName = lowerMemberName(member, ownerType, registry);
+  const runtimeValue = runtimeValueFromValues(member.values, options);
+  if (isRuntimeArrayValue(runtimeValue)) {
+    node.attributes[memberName] = runtimeValue;
+    return;
+  }
+
   const valueObjects = lowerValueObjects(member.values, registry, options);
   const textValue = textValueFromValues(member.values, options);
 
@@ -1967,6 +2079,12 @@ function lowerContentMember(
   registry: XamlVocabularyRegistry,
   options: XamlLoweringContext
 ): void {
+  const runtimeValue = runtimeValueFromValues(member.values, options);
+  if (isRuntimeArrayValue(runtimeValue) && ownerType?.contentProperty) {
+    node.attributes[ownerType.contentProperty] = runtimeValue;
+    return;
+  }
+
   const valueObjects = lowerValueObjects(member.values, registry, options);
   const textValue = textValueFromValues(member.values, options);
   node.children.push(...valueObjects);
@@ -2048,6 +2166,12 @@ function lowerObjectNode(
         const memberName = lowerMemberName(member, ownerType, registry);
         const textValue = textValueFromMember(member, localOptions);
         const memberDefinition = resolveMemberDefinitionForLowering(member, ownerType, registry);
+        const runtimeValue = runtimeValueFromValues(member.values, localOptions);
+        if (isRuntimeArrayValue(runtimeValue)) {
+          attributes[memberName] = runtimeValue;
+          continue;
+        }
+
         const primitiveValue = primitiveValueFromValues(member.values, localOptions, memberDefinition);
         if (primitiveValue !== undefined) {
           attributes[memberName] = primitiveValue;

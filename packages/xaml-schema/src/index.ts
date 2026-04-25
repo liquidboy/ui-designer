@@ -1,7 +1,13 @@
 export type XamlPrimitive = string | number | boolean | null;
 
+export type XamlRuntimeArrayValue = XamlRuntimeValue[];
+
+export type XamlRuntimeValue = XamlPrimitive | XamlNode | XamlRuntimeArrayValue;
+
+export type XamlAttributeValue = XamlPrimitive | XamlRuntimeArrayValue;
+
 export interface XamlAttributeMap {
-  [key: string]: XamlPrimitive;
+  [key: string]: XamlAttributeValue;
 }
 
 export interface XamlNode {
@@ -524,7 +530,7 @@ export const uiDesignerTypes = [
     members: [],
     contentProperty: 'Children',
     collectionKind: 'dictionary',
-    allowedContentTypes: ['Color', 'Number', 'String', ...runtimeControlContentTypes],
+    allowedContentTypes: ['Color', 'Number', 'String', 'Array', ...runtimeControlContentTypes],
     createsNamescope: true,
     allowsText: false,
     allowsChildren: true
