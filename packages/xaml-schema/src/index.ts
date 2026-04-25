@@ -388,6 +388,17 @@ const resourceMembers = [
   member('Resources', 'object')
 ] as const;
 
+const templateHostMembers = [
+  member('Template', 'object', { isRuntimeSupported: false }),
+  member('ContentTemplate', 'object', { isRuntimeSupported: false })
+] as const;
+
+const templateVisualTreeMembers = [
+  member('VisualTree', 'object', { isContent: true, isRuntimeSupported: false })
+] as const;
+
+const templateVocabularyTypes = ['ControlTemplate', 'DataTemplate', 'ObjectIsland'] as const;
+
 type TypeDefinitionOptions = Pick<XamlTypeDefinition, 'members' | 'contentProperty' | 'allowsText' | 'allowsChildren'> & {
   namespaceUri?: string | null;
   collectionKind?: XamlCollectionKind;
@@ -614,7 +625,7 @@ export const uiDesignerTypes = [
     members: [],
     contentProperty: 'Children',
     collectionKind: 'dictionary',
-    allowedContentTypes: ['Color', 'Number', 'String', 'Array', ...runtimeControlContentTypes],
+    allowedContentTypes: ['Color', 'Number', 'String', 'Array', ...runtimeControlContentTypes, ...templateVocabularyTypes],
     createsNamescope: true,
     allowsText: false,
     allowsChildren: true
@@ -636,6 +647,38 @@ export const uiDesignerTypes = [
     contentProperty: 'Value',
     allowsText: true,
     allowsChildren: false
+  }),
+  typeDefinition('ControlTemplate', {
+    members: [
+      member('TargetType', 'string', { isRuntimeSupported: false }),
+      ...templateVisualTreeMembers
+    ],
+    contentProperty: 'VisualTree',
+    createsNamescope: true,
+    allowsText: false,
+    allowsChildren: true,
+    isRuntimeSupported: false
+  }),
+  typeDefinition('DataTemplate', {
+    members: [
+      member('DataType', 'string', { isRuntimeSupported: false }),
+      ...templateVisualTreeMembers
+    ],
+    contentProperty: 'VisualTree',
+    createsNamescope: true,
+    allowsText: false,
+    allowsChildren: true,
+    isRuntimeSupported: false
+  }),
+  typeDefinition('ObjectIsland', {
+    members: [
+      member('Content', 'object', { isContent: true, isRuntimeSupported: false })
+    ],
+    contentProperty: 'Content',
+    createsNamescope: true,
+    allowsText: false,
+    allowsChildren: true,
+    isRuntimeSupported: false
   }),
   typeDefinition('Canvas', {
     members: [...commonLayoutMembers, ...resourceMembers, ...eventMembers],
@@ -687,7 +730,14 @@ export const uiDesignerTypes = [
     allowsChildren: false
   }),
   typeDefinition('Button', {
-    members: [...commonLayoutMembers, ...resourceMembers, ...visualMembers, ...textMembers, ...eventMembers],
+    members: [
+      ...commonLayoutMembers,
+      ...resourceMembers,
+      ...visualMembers,
+      ...textMembers,
+      ...templateHostMembers,
+      ...eventMembers
+    ],
     contentProperty: 'Content',
     allowsText: true,
     allowsChildren: true
@@ -1945,6 +1995,19 @@ function warnUnsupportedMember(member: XamlMemberNode, definition: XamlMemberDef
   ));
 }
 
+function warnUnsupportedType(object: XamlObjectNode, type: XamlTypeDefinition, diagnostics: XamlDiagnostic[]): void {
+  if (type.isRuntimeSupported) {
+    return;
+  }
+
+  diagnostics.push(validationDiagnostic(
+    'warning',
+    'unrenderable-type',
+    `Type "${formatQualifiedName(object.type)}" is schema-valid but not runtime-supported yet.`,
+    object
+  ));
+}
+
 function validateResolvedMember(
   member: XamlMemberNode,
   definition: XamlMemberDefinition,
@@ -2609,6 +2672,8 @@ function validateObjectNode(
     ));
     return;
   }
+
+  warnUnsupportedType(object, type, diagnostics);
 
   const namespaceContext = withObjectNamespaceScope(context, object);
   const localContext = object !== context.rootObject && type.createsNamescope

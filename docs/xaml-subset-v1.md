@@ -135,6 +135,31 @@ Supported dynamic-resource form:
 </Canvas>
 ```
 
+## Template and Object-Island Namescopes
+
+Current status:
+
+1. `ControlTemplate`, `DataTemplate`, and `ObjectIsland` are validation-only vocabulary shapes.
+2. Each shape creates a local namescope for `x:Name` and `{x:Reference ...}` validation.
+3. Duplicate names inside the same template or object island still fail, while identical names in separate boundaries are allowed.
+4. Boundary-local names cannot be referenced from the outer visual tree.
+5. `Button.Template` and `Button.ContentTemplate` are schema-valid host members, but they emit unrenderable warnings until template/style runtime support exists.
+
+Supported validation-only form:
+
+```xaml
+<Canvas xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <TextBlock x:Name="SharedName" Text="Outer label" />
+  <Button>
+    <Button.Template>
+      <ControlTemplate TargetType="{x:Type Button}">
+        <TextBlock x:Name="SharedName" Text="Template label" />
+      </ControlTemplate>
+    </Button.Template>
+  </Button>
+</Canvas>
+```
+
 ## Generic Metadata
 
 Current status:
@@ -303,9 +328,9 @@ Current status:
 3. Reference names must resolve to an `x:Name` in the active namescope, including forward references.
 4. Authoring serialization preserves the original extension or object-element source structure.
 5. Runtime lowering emits the same lowered object instance for supported object-valued reference members.
-6. `ResourceDictionary` is a local namescope boundary: dictionary-local references can see dictionary-local names, while outer visual-tree references cannot see names hidden inside the dictionary.
+6. `ResourceDictionary`, `ControlTemplate`, `DataTemplate`, and `ObjectIsland` are local namescope boundaries: boundary-local references can see boundary-local names, while outer visual-tree references cannot see names hidden inside the boundary.
 7. Circular reference chains fail during runtime lowering.
-8. Template/object-island namescope boundaries remain outside v1.
+8. Template/object-island namescope validation is schema-only; rendering and style application remain outside v1.
 
 Supported form:
 

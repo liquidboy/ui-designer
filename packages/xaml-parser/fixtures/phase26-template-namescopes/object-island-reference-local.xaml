@@ -1,0 +1,13 @@
+<Canvas xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <TextBlock x:Name="IslandLabel" Text="Outer label" />
+  <Button>
+    <Button.Content>
+      <ObjectIsland>
+        <TextBlock x:Name="IslandLabel" Text="Island label" />
+        <Border>
+          <Border.Child>{x:Reference IslandLabel}</Border.Child>
+        </Border>
+      </ObjectIsland>
+    </Button.Content>
+  </Button>
+</Canvas>

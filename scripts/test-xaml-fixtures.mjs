@@ -1768,6 +1768,92 @@ async function runPhase25TypeArgumentFixtures() {
   return files.length;
 }
 
+async function runPhase26TemplateNamescopeFixtures() {
+  const expectations = {
+    'data-template-reference-local.xaml': {
+      errors: [],
+      warnings: ['unrenderable-member', 'unrenderable-type', 'unrenderable-member', 'unsupported-directive']
+    },
+    'object-island-reference-local.xaml': {
+      errors: [],
+      warnings: ['unsupported-directive', 'unrenderable-type', 'unsupported-directive']
+    },
+    'template-boundary-duplicate-name.xaml': {
+      errors: [],
+      warnings: [
+        'unsupported-directive',
+        'unrenderable-member',
+        'unrenderable-type',
+        'unrenderable-member',
+        'unsupported-directive'
+      ]
+    },
+    'template-local-duplicate-name.xaml': {
+      errors: ['namescope-collision'],
+      warnings: ['unrenderable-member', 'unrenderable-type', 'unsupported-directive']
+    },
+    'template-reference-hidden.xaml': {
+      errors: ['unknown-reference-name'],
+      warnings: ['unrenderable-member', 'unrenderable-type', 'unsupported-directive']
+    },
+    'template-reference-local.xaml': {
+      errors: [],
+      warnings: ['unrenderable-member', 'unrenderable-type', 'unsupported-directive']
+    },
+    'template-sibling-scopes.xaml': {
+      errors: [],
+      warnings: [
+        'unrenderable-member',
+        'unrenderable-type',
+        'unsupported-directive',
+        'unrenderable-member',
+        'unrenderable-type',
+        'unsupported-directive'
+      ]
+    }
+  };
+  const files = await listFixtureFiles('phase26-template-namescopes');
+
+  for (const fileName of files) {
+    const input = await readFixture('phase26-template-namescopes', fileName);
+    const result = parseAndValidateXaml(input);
+    const expected = expectations[fileName];
+    assert.ok(expected, `Missing template namescope expectation for ${fileName}`);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'error'), expected.errors, `${fileName} validation errors`);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'warning'), expected.warnings, `${fileName} validation warnings`);
+
+    if (expected.errors.length > 0) {
+      continue;
+    }
+
+    const lowered = lowerXamlDocument(result.document);
+    const serialized = serializeXamlDocumentNode(result.document);
+
+    if (fileName === 'template-boundary-duplicate-name.xaml') {
+      assert.match(serialized, /<ControlTemplate TargetType="\{x:Type Button\}">/);
+      assert.equal(lowered.root.children[1]?.children[0]?.type, 'Template');
+      assert.equal(lowered.root.children[1]?.children[0]?.children[0]?.type, 'ControlTemplate');
+    }
+
+    if (fileName === 'template-reference-local.xaml') {
+      assert.equal(lowered.root.children[0]?.children[0]?.children[0]?.type, 'ControlTemplate');
+      assert.match(serialized, /\{x:Reference TemplateLabel\}/);
+    }
+
+    if (fileName === 'data-template-reference-local.xaml') {
+      assert.equal(lowered.root.children[0]?.children[0]?.children[0]?.type, 'DataTemplate');
+      assert.match(serialized, /<DataTemplate DataType="\{x:Type TextBlock\}">/);
+    }
+
+    if (fileName === 'object-island-reference-local.xaml') {
+      assert.equal(lowered.root.children[1]?.children[0]?.type, 'ObjectIsland');
+      assert.match(serialized, /\{x:Reference IslandLabel\}/);
+    }
+  }
+
+  return files.length;
+}
+
 async function runPhase6CollectionFixtures() {
   const expectations = {
     'theme-dictionary-xkey.xaml': { errors: [], warnings: [] },
@@ -1832,7 +1918,8 @@ const phase22Count = await runPhase22ClrTypeResolutionFixtures();
 const phase23Count = await runPhase23PrimitiveDecimalFixtures();
 const phase24Count = await runPhase24StaticResolutionFixtures();
 const phase25Count = await runPhase25TypeArgumentFixtures();
+const phase26Count = await runPhase26TemplateNamescopeFixtures();
 
 console.log(
-  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources, ${phase9Count} serializer, ${phase10Count} designer serializer, ${phase11Count} XML scope, ${phase12Count} object resources, ${phase13Count} dynamic resources, ${phase14Count} whitespace normalization, ${phase15Count} intrinsic arrays, ${phase16Count} intrinsic static references, ${phase17Count} intrinsic references, ${phase18Count} namescope boundaries, ${phase19Count} reference identity, ${phase20Count} schema text syntax, ${phase21Count} intrinsic object elements, ${phase22Count} CLR type resolution, ${phase23Count} primitive decimals, ${phase24Count} static resolution, ${phase25Count} type arguments).`
+  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources, ${phase9Count} serializer, ${phase10Count} designer serializer, ${phase11Count} XML scope, ${phase12Count} object resources, ${phase13Count} dynamic resources, ${phase14Count} whitespace normalization, ${phase15Count} intrinsic arrays, ${phase16Count} intrinsic static references, ${phase17Count} intrinsic references, ${phase18Count} namescope boundaries, ${phase19Count} reference identity, ${phase20Count} schema text syntax, ${phase21Count} intrinsic object elements, ${phase22Count} CLR type resolution, ${phase23Count} primitive decimals, ${phase24Count} static resolution, ${phase25Count} type arguments, ${phase26Count} template namescopes).`
 );

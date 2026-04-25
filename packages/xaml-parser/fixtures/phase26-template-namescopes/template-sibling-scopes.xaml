@@ -1,0 +1,16 @@
+<Canvas xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Button>
+    <Button.Template>
+      <ControlTemplate>
+        <TextBlock x:Name="RepeatedTemplateName" Text="First template label" />
+      </ControlTemplate>
+    </Button.Template>
+  </Button>
+  <Button>
+    <Button.Template>
+      <ControlTemplate>
+        <TextBlock x:Name="RepeatedTemplateName" Text="Second template label" />
+      </ControlTemplate>
+    </Button.Template>
+  </Button>
+</Canvas>

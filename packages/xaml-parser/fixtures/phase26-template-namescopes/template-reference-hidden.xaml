@@ -1,0 +1,12 @@
+<Canvas xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Button>
+    <Button.Template>
+      <ControlTemplate>
+        <TextBlock x:Name="TemplateLabel" Text="Hidden template label" />
+      </ControlTemplate>
+    </Button.Template>
+  </Button>
+  <Border>
+    <Border.Child>{x:Reference TemplateLabel}</Border.Child>
+  </Border>
+</Canvas>

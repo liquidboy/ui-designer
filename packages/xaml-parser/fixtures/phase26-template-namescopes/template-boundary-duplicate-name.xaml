@@ -1,0 +1,10 @@
+<Canvas xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <TextBlock x:Name="SharedName" Text="Outer visual label" />
+  <Button>
+    <Button.Template>
+      <ControlTemplate TargetType="{x:Type Button}">
+        <TextBlock x:Name="SharedName" Text="Template label" />
+      </ControlTemplate>
+    </Button.Template>
+  </Button>
+</Canvas>

@@ -50,7 +50,7 @@ Default rule: parser support should be broader than runtime execution support. U
 | Content property inference | Current | Current | Use vocabulary metadata to route child objects/text into content members. | Implemented for the current runtime and designer vocabularies. |
 | Attached member syntax | Current | Current | Represent attached owner/member names structurally. | Lowered to canonical `Owner.Member` attribute names for compatibility. |
 | Collection members | Partial | Phase 3+ | Add list semantics to vocabulary metadata and lowering. | Known list containers now validate allowed item types; semantic collection lowering is still compatibility-shaped. |
-| Dictionary members | Partial | Phase 3+ | Add dictionary semantics, key validation, and lowering. | Designer theme `Colors` validates dictionary items with explicit `x:Key` or implicit `Color.Id`; runtime `ResourceDictionary` now lowers primitive resources and known control object resources for scoped `StaticResource` and `DynamicResource` lookup, and `ResourceDictionary` is the first schema-marked nested namescope boundary. |
+| Dictionary members | Partial | Phase 3+ | Add dictionary semantics, key validation, and lowering. | Designer theme `Colors` validates dictionary items with explicit `x:Key` or implicit `Color.Id`; runtime `ResourceDictionary` now lowers primitive resources and known control object resources for scoped `StaticResource` and `DynamicResource` lookup, and `ResourceDictionary` remains a schema-marked nested namescope boundary. |
 | Text syntax conversion | Current | Current | Move primitive conversion into schema-defined text syntax. | Known members validate and lower through `XamlMemberDefinition.valueSyntax` for string, number, decimal, boolean, enum, color, URI, object, and any-valued members; unknown preserved shapes keep a legacy fallback. |
 | Whitespace handling | Partial | Phase 3+ | Add schema-aware whitespace preservation/collapse rules. | Default lowering now collapses XML whitespace runs and trims text values, while `xml:space="preserve"` keeps exact text and `xml:space="default"` resets inherited preservation. Remaining gaps are edge-case whitespace rules around future templates/object islands. |
 | Markup extension AST | Partial | Phase 5 | Parse brace syntax into structured expressions. | Attribute values and property-element text now parse into a structured AST; runtime lowering evaluates supported extensions while authoring lowering preserves raw text. |
@@ -62,7 +62,7 @@ Default rule: parser support should be broader than runtime execution support. U
 
 | Directive or namespace feature | Current status | Target | Current behavior | Runtime behavior | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `x:Name` | Current | Phase 4 | Parse, preserve, and validate uniqueness within the active namescope, including root scope and `ResourceDictionary` boundaries. | Lowered to `Name` in the legacy adapter; runtime `x:Reference` uses scoped named-object maps for supported object-valued references. | Bare `Name` is still not a schema alias. |
+| `x:Name` | Current | Phase 4 | Parse, preserve, and validate uniqueness within the active namescope, including root scope, `ResourceDictionary`, `ControlTemplate`, `DataTemplate`, and `ObjectIsland` boundaries. | Lowered to `Name` in the legacy adapter; runtime `x:Reference` uses scoped named-object maps for supported object-valued references. | Bare `Name` is still not a schema alias. Template/object-island vocabulary is validation-only until rendering support exists. |
 | `x:Key` | Partial | Phase 4 | Parse and validate as a dictionary item key. | Valid dictionary keys are accepted without preserved-only warnings; runtime resource lookup uses them for primitive and known control object `ResourceDictionary` entries. | Misplaced `x:Key`, missing dictionary keys, duplicate dictionary keys, and invalid dictionary item types now produce deterministic errors. |
 | `x:Class` | Current | Phase 4 | Parse, preserve, and enforce root-only placement. | Preserved-only; no markup compilation. | Non-root usage now raises `invalid-directive-placement`. |
 | `x:Uid` | Current | Phase 4 | Parse and preserve with warning. | Preserved-only. | Useful for localization metadata, not rendering. |
@@ -71,7 +71,7 @@ Default rule: parser support should be broader than runtime execution support. U
 | `x:Null` | Partial | Phase 5 | Parse as markup extension or intrinsic object element. | Runtime lowering maps `{x:Null}` and `<x:Null />` member values to semantic `null`; authoring serialization preserves source structure. | Serializer support for emitting `x:` namespace declarations from synthesized null values is still pending. |
 | `x:Array` | Partial | Phase 5 | Parse and validate intrinsic `x:Array` object elements, required `Type`, direct content, `x:Array.Items`, namespace-qualified `{x:Type ...}` item-type expressions, and supported primitive item types such as `x:String`, `x:Int32`, `x:Boolean`, `x:Decimal`, `System.Int32`, and `sys:Int32` when `sys` maps to `clr-namespace:System`. | Authoring lowering preserves structural `Array` compatibility nodes; runtime lowering evaluates single member values and keyed resources to JavaScript arrays, coercing supported primitive item objects/text to JS primitives with range-aware integer, `Single`, and 96-bit decimal checks. Decimal runtime values lower as strings to avoid JavaScript number precision loss. | Arbitrary CLR array type execution and generic array type execution remain deferred. |
 | `x:Static` / `x:StaticExtension` | Partial | Phase 5 | Parse structured static markup extensions and object elements, validate required type-qualified member references, resolve known schema owner/member tokens, and accept supported `clr-namespace:System` primitive constants. | Runtime lowering evaluates supported `{x:Static ...}` and `<x:Static Member="..." />` forms to stable member-token strings; authoring serialization preserves source structure. | CLR/static value execution remains deferred. |
-| `x:Reference` / `x:ReferenceExtension` | Partial | Phase 5 | Parse structured reference markup extensions and object elements, validate required `Name`, and resolve against the active namescope including forward references; `ResourceDictionary` creates a local namescope boundary. | Runtime lowering preserves object identity for supported object-valued references from both extension and object-element forms; authoring serialization preserves source structure. | Template namescopes and future object-island namescopes remain deferred. |
+| `x:Reference` / `x:ReferenceExtension` | Partial | Phase 5 | Parse structured reference markup extensions and object elements, validate required `Name`, and resolve against the active namescope including forward references; `ResourceDictionary`, `ControlTemplate`, `DataTemplate`, and `ObjectIsland` create local namescope boundaries. | Runtime lowering preserves object identity for supported object-valued references from both extension and object-element forms; authoring serialization preserves source structure. | Template/object-island rendering semantics remain deferred; their namescope validation is current. |
 | `xml:lang` | Current | Phase 4 | Parse, preserve, validate, and propagate as effective object metadata. | Compatibility lowering emits inherited `lang` metadata on descendants. | Runtime text/layout consumers can now read inherited language metadata from lowered attributes. |
 | `xml:space` | Partial | Phase 4 | Parse, preserve, validate, and apply scoped whitespace preservation/reset. | Preserved whitespace-only text lowers into text-capable content; default text lowering collapses and trims XML whitespace. | Edge-case whitespace behavior around future templates/object islands is still pending. |
 
@@ -87,6 +87,9 @@ Default rule: parser support should be broader than runtime execution support. U
 | `TextBlock` | Current | Leaf text type with text syntax members. | Text | `Text` attribute remains the primary v1 text member. |
 | `Image` | Current | Leaf image type with source/stretch metadata. | None | Preserve natural-size runtime behavior outside schema. |
 | `Button` | Current | Content control with button label/content members. | Content | Event members stay declared but not executed until routing expands. |
+| `ControlTemplate` | Partial | Validation-only template namescope boundary. | VisualTree | Schema-valid for `Button.Template` and resource dictionary entries; emits unrenderable warnings until template runtime support exists. |
+| `DataTemplate` | Partial | Validation-only data-template namescope boundary. | VisualTree | Schema-valid for `Button.ContentTemplate` and resource dictionary entries; emits unrenderable warnings until data templating exists. |
+| `ObjectIsland` | Partial | Validation-only object-island namescope boundary. | Content | Provides a future object-island shape for namescope validation without claiming runtime rendering support. |
 
 ## Member Matrix
 
@@ -97,6 +100,7 @@ Default rule: parser support should be broader than runtime execution support. U
 | Alignment: `HorizontalAlignment`, `VerticalAlignment` | Partial | Phase 2 schema metadata | Declared enum values validate through schema text syntax; runtime layout support can remain incremental. |
 | Visual color: `Background`, `BorderBrush`, `Fill`, `Foreground` | Current | Phase 2 schema metadata | Hex color values validate through schema text syntax and remain string values for runtime color parsing. |
 | Text: `Text`, `Content`, `FontSize`, `FontWeight`, `FontFamily`, `FontStyle`, `LineHeight`, `TextAlignment`, `TextWrapping`, `TextOverflow`, `TextTrimming`, `FlowDirection`, `Direction` | Current | Phase 2 schema metadata | `Direction` should remain a compatibility alias for `FlowDirection`. |
+| Templates: `Button.Template`, `Button.ContentTemplate` | Partial | Template/style compatibility metadata | Schema-valid and namescope-aware, but unrenderable until the style/template runtime exists. |
 | Image: `Source`, `Stretch`, `Opacity` | Current | Phase 2 schema metadata | `Stretch` enum and numeric opacity values validate through schema text syntax. |
 | Panel placement: `Grid.Row`, `Grid.Column`, `Grid.RowSpan`, `Grid.ColumnSpan` | Current | Phase 2 attached member metadata | Attached member metadata and canonical lowering are now in place. |
 | Canvas placement: `Canvas.Left`, `Canvas.Top` | Current | Phase 2 attached member metadata | Attached member metadata exists even though most current documents still use `X`, `Y`, or designer offsets. |
@@ -121,10 +125,11 @@ Default rule: parser support should be broader than runtime execution support. U
 | Invalid collection item type | Error | Collection metadata controls which known item types can appear in a list or dictionary. |
 | Missing or duplicate dictionary key | Error | Dictionary items require a stable key, either explicit `x:Key` or a type-level implicit key property. |
 | Unrenderable but schema-valid member | Warning | Valid source should not disappear silently at runtime. |
+| Unrenderable but schema-valid type | Warning | Validation-only vocabulary shapes such as templates should be round-trippable without pretending runtime support exists. |
 
 Current limitation:
 
-1. Namescope validation and `x:Reference` resolution now support the document root plus `ResourceDictionary` boundaries; richer template namescopes and future object islands are still deferred.
+1. Namescope validation and `x:Reference` resolution now support the document root, `ResourceDictionary`, validation-only template types, and validation-only object islands; full template/style runtime behavior is still deferred.
 2. Markup extension parsing currently covers attribute values and property-element text; supported intrinsic object elements now cover `x:Array`, `x:Null`, `x:Type`, `x:Static`, and `x:Reference`, while unsupported object-element extension forms remain deferred.
 3. Runtime resource lookup supports primitive resources, known control object resources, dynamic resource overrides, structural object resources, and keyed `x:Array` resources with range-aware primitive item coercion; resource object retrieval still creates resource instances, while arbitrary CLR type loading and CLR static value resolution remain deferred.
 4. Runtime `Binding` evaluation is v1-only: one-way path lookup against a supplied data context, without converters or multi-binding.
@@ -159,10 +164,11 @@ Completed foundation work:
 23. `x:Decimal` now has decimal-specific lexical validation, 28-scale and 96-bit range checks, boundary fixtures, overflow fixtures, and runtime lowering that keeps decimal text exact instead of coercing through JavaScript `number`.
 24. Validation-only `x:Static` member resolution now catches unknown owners and unknown members for known schema types and supports scoped CLR primitive constants such as `sys:Double.NaN`, `sys:Int32.MaxValue`, and `sys:Decimal.MaxValue`.
 25. Validation-only `x:TypeArguments` support now parses comma-separated and nested type-name lists, validates namespace-qualified UI types and scoped CLR primitive aliases, preserves valid generic metadata, and rejects malformed or unknown type arguments.
+26. Validation-only `ControlTemplate`, `DataTemplate`, and `ObjectIsland` types now create schema-marked namescope boundaries, so duplicate names are isolated across boundaries, local `x:Reference` values resolve inside the boundary, and outside references cannot see boundary-local names.
 
-Approximate targeted core `MS-XAML-2017` support: **91%**. This estimate covers the scoped language/object-mapping target in this matrix, not full WPF vocabulary parity.
+Approximate targeted core `MS-XAML-2017` support: **92%**. This estimate covers the scoped language/object-mapping target in this matrix, not full WPF vocabulary parity.
 
 Next slice:
 
-1. Expand schema-marked namescope boundaries to templates and future object islands when those vocabulary types are introduced.
-2. Decide whether the next compliance track should tackle preserved-only construction directives such as `x:FactoryMethod`/`x:Arguments` or deeper CLR execution.
+1. Tackle preserved-only construction directives such as `x:FactoryMethod` and `x:Arguments`.
+2. Defer deeper CLR execution until after construction directives can at least parse, validate placement, warn, and round-trip.

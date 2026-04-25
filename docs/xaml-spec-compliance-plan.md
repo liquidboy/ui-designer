@@ -62,14 +62,15 @@ The repo now has the core compliance foundation in place:
 24. `x:Decimal` now validates decimal text separately from generic JavaScript numbers, enforces 28-scale and 96-bit range limits, and lowers runtime decimal values as strings to preserve exact source value fidelity.
 25. Validation-only `x:Static` member resolution now catches unknown static owners and members for known schema types and accepts scoped CLR primitive constants such as `sys:Double.NaN`, `sys:Int32.MaxValue`, and `sys:Decimal.MaxValue`.
 26. `x:TypeArguments` now validates comma-separated and nested type-name lists against in-scope namespaces, including namespace-qualified UI types and validation-only `clr-namespace:System` primitive aliases, while preserving valid generic metadata as source.
+27. Validation-only `ControlTemplate`, `DataTemplate`, and `ObjectIsland` vocabulary shapes now create local namescope boundaries, so boundary-local `x:Name` values are isolated and `x:Reference` validation resolves against the active schema scope.
 
-Approximate targeted core `MS-XAML-2017` support: **91%**. This is a progress estimate for the scoped language/object-mapping work, not a claim of complete XAML or WPF vocabulary parity.
+Approximate targeted core `MS-XAML-2017` support: **92%**. This is a progress estimate for the scoped language/object-mapping work, not a claim of complete XAML or WPF vocabulary parity.
 
 The main remaining gaps are now:
 
-1. Richer namescope boundaries for future templates and object islands.
-2. Preserved-only construction directives such as `x:FactoryMethod`/`x:Arguments`.
-3. Arbitrary CLR type loading, generic execution, and CLR static value execution.
+1. Preserved-only construction directives such as `x:FactoryMethod`/`x:Arguments`.
+2. Arbitrary CLR type loading, generic execution, and CLR static value execution.
+3. Full template/style runtime behavior beyond validation-only namescope boundaries.
 
 Current limitation:
 
@@ -77,8 +78,8 @@ Current limitation:
 2. Runtime resource lookup supports primitive resources, known control object resources, keyed `x:Array` resources with range-aware primitive item coercion, and dynamic resource overrides; resource object retrieval still creates resource instances, and full WPF-style resource invalidation and dependency tracking are still outside the current target.
 3. Runtime `Binding` support is intentionally v1-only: one-way path lookup, no converters, and no multi-binding.
 4. Designer infoset edit propagation is intentionally conservative: if a lowered compatibility path cannot be mapped safely back to the infoset, the designer falls back to lowered serialization instead of risking stale or corrupt semantic output.
-5. `ResourceDictionary` is the first nested namescope boundary; template/object-island namescopes remain deferred until those vocabularies exist.
-6. `xml:space` handling and default text normalization are implemented for current scalar/content lowering, but whitespace behavior around future templates/object islands is still partial.
+5. `ResourceDictionary`, `ControlTemplate`, `DataTemplate`, and `ObjectIsland` are schema-marked nested namescope boundaries; the template/object-island forms are validation-only and emit unrenderable warnings until runtime support exists.
+6. `xml:space` handling and default text normalization are implemented for current scalar/content lowering, but whitespace behavior around validation-only template/object-island shapes is still partial.
 
 This document remains the long-term roadmap. The current implementation status now lives in [XAML Compliance Matrix](./xaml-compliance-matrix.md).
 
@@ -383,8 +384,8 @@ We should call this initiative complete only when all of the following are true:
 
 The next concrete work item should be:
 
-1. expand schema-marked namescope boundaries to template/future object-island vocabulary shapes
-2. add fixtures proving boundary-local `x:Name` and `x:Reference` behavior for those shapes
-3. keep runtime lowering stable until those vocabularies have rendering semantics
+1. add preserved-only schema support for construction directives such as `x:FactoryMethod` and `x:Arguments`
+2. validate placement and required argument/member shape without executing arbitrary constructors
+3. preserve and serialize those directives with warnings so valid source can round-trip
 
-That closes the main remaining namescope semantics gap before we choose between construction directives and deeper CLR execution.
+That keeps us on the safer parser/validator side of the spec before we consider deeper CLR execution.

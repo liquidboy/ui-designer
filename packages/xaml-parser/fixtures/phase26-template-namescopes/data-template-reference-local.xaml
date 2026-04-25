@@ -1,0 +1,14 @@
+<Canvas xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Button>
+    <Button.ContentTemplate>
+      <DataTemplate DataType="{x:Type TextBlock}">
+        <Grid>
+          <TextBlock x:Name="DataLabel" Text="Data label" />
+          <Border>
+            <Border.Child>{x:Reference DataLabel}</Border.Child>
+          </Border>
+        </Grid>
+      </DataTemplate>
+    </Button.ContentTemplate>
+  </Button>
+</Canvas>

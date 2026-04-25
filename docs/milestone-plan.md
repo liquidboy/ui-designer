@@ -32,6 +32,6 @@
 
 ## M5 Advanced Runtime
 
-1. Templates and style system.
+1. Templates and style system. Validation-only template/object-island namescope support is in place; rendering and style application remain pending.
 2. Data binding expansion (two-way, converters).
 3. Virtualized lists and performance instrumentation.
