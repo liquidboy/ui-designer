@@ -27,6 +27,7 @@ import { RuntimeHost } from '@ui-designer/ui-runtime-web';
 import { ensureImageNaturalSize, getImageNaturalSize, type Point, type UiElement } from '@ui-designer/ui-core';
 import { Inspector } from './components/Inspector';
 import { LeftRail } from './components/LeftRail';
+import { SourcePane } from './components/SourcePane';
 import { Viewport } from './components/Viewport';
 import {
   asFiniteNumber,
@@ -1916,153 +1917,216 @@ export function App() {
         onChange={handleFontAssetFileChange}
       />
 
-      <LeftRail
-        status={status}
-        origin={origin}
-        cameraView={cameraView}
-        snapEnabled={snapEnabled}
-        documentFileName={documentFileName}
-        canUndo={canUndo}
-        canRedo={canRedo}
-        onUndo={performUndo}
-        onRedo={performRedo}
-        onSaveDraft={saveDraftToStorage}
-        onLoadDraft={loadDraftFromStorage}
-        onImportFile={openDocumentFilePicker}
-        onExportFile={() => void saveDocumentToFile()}
-        onClearDraftStorage={clearDraftStorage}
-        paletteTemplates={PALETTE_TEMPLATES}
-        selectedTemplateId={selectedTemplateId}
-        selectedTemplateTitle={selectedTemplate.title}
-        canUseTemplateAsChild={(template) => canInsertTemplateIntoParent(template, selectedOrRootNode)}
-        canUseTemplateAsSibling={(template) => !!selectedTreeItem?.parentId && canInsertTemplateIntoParent(template, siblingParentNode)}
-        onSelectTemplate={(id) => setSelectedTemplateId(id as PaletteTemplateId)}
-        selectedTreeNodeLabel={selectedTreeNode ? selectedTreeNode.type : 'Root canvas'}
-        selectedTreeItemId={selectedTreeItem?.id ?? null}
-        childTargetLabel={childTargetLabel}
-        siblingTargetLabel={siblingTargetLabel}
-        canAddChild={canAddChild}
-        canAddSibling={canAddSibling}
-        canDeleteSelected={canDeleteSelected}
-        canReparentIn={canReparentIn}
-        canReparentOut={canReparentOut}
-        onAddChild={createChildElement}
-        onAddSibling={createSiblingElement}
-        onDeleteSelected={deleteSelectedElement}
-        onNestIn={reparentSelectedIn}
-        onMoveOut={reparentSelectedOut}
-        treeItems={treeItems}
-        selectedId={selectedId}
-        treeDragSourceId={treeDragSourceId}
-        treeDropTargetId={treeDropTargetId}
-        treeDropIntent={treeDropIntent}
-        onSelectElement={setSelection}
-        onTreeDragStart={handleTreeDragStart}
-        onTreeDragOver={handleTreeDragOver}
-        onTreeDrop={handleTreeDrop}
-        onTreeDragEnd={clearTreeDragState}
-        imageAssets={imageAssets}
-        selectedAssetId={selectedAssetId}
-        onSelectAsset={setSelectedAssetId}
-        onApplySelectedAsset={applySelectedAssetToSelection}
-        onInsertSelectedAsset={insertSelectedAssetImage}
-        onImportImageAsset={openImageAssetFilePicker}
-        onRemoveSelectedImageAsset={removeSelectedImageAsset}
-        canRemoveSelectedImageAsset={selectedAsset.kind === 'imported'}
-        documentImageSources={documentImageSources}
-        resolveImageTokenLabel={resolveImageTokenLabel}
-        fontAssets={fontAssets}
-        selectedFontId={selectedFontId}
-        onSelectFont={(id) => {
-          const font = findFontAsset(fontAssets, id);
-          setSelectedFontId(id);
-          setFontFamilyInput(font.family);
-        }}
-        onApplySelectedFont={applySelectedFontToSelection}
-        onImportFontAsset={openFontAssetFilePicker}
-        onRemoveSelectedFont={removeSelectedFont}
-        canRemoveSelectedFont={selectedFont.kind === 'imported'}
-        documentFontFamilies={documentFontFamilies}
-        selectedAssetTitle={selectedAsset.title}
-        selectedFontTitle={selectedFont.title}
-        hoveredId={hoveredId}
-        overlaySettings={overlaySettings}
-        onOverlaySettingChange={updateOverlaySetting}
-        isSelectedImageNode={isSelectedImageNode}
-        isSelectedTextNode={isSelectedTextNode}
-      />
+      <header className="blend-top-chrome">
+        <div className="title-strip">
+          <div className="app-mark" aria-hidden="true">X</div>
+          <div className="window-title">{documentFileName} - Liquid XAML Blend</div>
+          <nav className="menu-strip" aria-label="Application menu">
+            {['File', 'Edit', 'View', 'Object', 'Project', 'Tools', 'Window', 'Help'].map((item) => (
+              <button key={item} type="button">{item}</button>
+            ))}
+          </nav>
+        </div>
+        <div className="command-strip">
+          <button className="toolbar-btn" type="button" onClick={performUndo} disabled={!canUndo}>
+            Undo
+          </button>
+          <button className="toolbar-btn" type="button" onClick={performRedo} disabled={!canRedo}>
+            Redo
+          </button>
+          <button className="toolbar-btn" type="button" onClick={openDocumentFilePicker}>
+            Import
+          </button>
+          <button className="toolbar-btn" type="button" onClick={() => void saveDocumentToFile()}>
+            Export
+          </button>
+          <span className="quick-launch">Quick Launch (Ctrl+Q)</span>
+        </div>
+      </header>
 
-      <Viewport
-        canvasRef={canvasRef}
-        snapEnabled={snapEnabled}
-        gridStep={gridStep}
-        gridOffsetX={gridOffsetX}
-        gridOffsetY={gridOffsetY}
-        overlaySettings={overlaySettings}
-        overlayState={overlayState}
-        onResizeHandlePointerDown={onResizeHandlePointerDown}
-      />
+      <section className="blend-workspace">
+        <LeftRail
+          status={status}
+          origin={origin}
+          cameraView={cameraView}
+          snapEnabled={snapEnabled}
+          documentFileName={documentFileName}
+          canUndo={canUndo}
+          canRedo={canRedo}
+          onUndo={performUndo}
+          onRedo={performRedo}
+          onSaveDraft={saveDraftToStorage}
+          onLoadDraft={loadDraftFromStorage}
+          onImportFile={openDocumentFilePicker}
+          onExportFile={() => void saveDocumentToFile()}
+          onClearDraftStorage={clearDraftStorage}
+          paletteTemplates={PALETTE_TEMPLATES}
+          selectedTemplateId={selectedTemplateId}
+          selectedTemplateTitle={selectedTemplate.title}
+          canUseTemplateAsChild={(template) => canInsertTemplateIntoParent(template, selectedOrRootNode)}
+          canUseTemplateAsSibling={(template) => !!selectedTreeItem?.parentId && canInsertTemplateIntoParent(template, siblingParentNode)}
+          onSelectTemplate={(id) => setSelectedTemplateId(id as PaletteTemplateId)}
+          selectedTreeNodeLabel={selectedTreeNode ? selectedTreeNode.type : 'Root canvas'}
+          selectedTreeItemId={selectedTreeItem?.id ?? null}
+          childTargetLabel={childTargetLabel}
+          siblingTargetLabel={siblingTargetLabel}
+          canAddChild={canAddChild}
+          canAddSibling={canAddSibling}
+          canDeleteSelected={canDeleteSelected}
+          canReparentIn={canReparentIn}
+          canReparentOut={canReparentOut}
+          onAddChild={createChildElement}
+          onAddSibling={createSiblingElement}
+          onDeleteSelected={deleteSelectedElement}
+          onNestIn={reparentSelectedIn}
+          onMoveOut={reparentSelectedOut}
+          treeItems={treeItems}
+          selectedId={selectedId}
+          treeDragSourceId={treeDragSourceId}
+          treeDropTargetId={treeDropTargetId}
+          treeDropIntent={treeDropIntent}
+          onSelectElement={setSelection}
+          onTreeDragStart={handleTreeDragStart}
+          onTreeDragOver={handleTreeDragOver}
+          onTreeDrop={handleTreeDrop}
+          onTreeDragEnd={clearTreeDragState}
+          imageAssets={imageAssets}
+          selectedAssetId={selectedAssetId}
+          onSelectAsset={setSelectedAssetId}
+          onApplySelectedAsset={applySelectedAssetToSelection}
+          onInsertSelectedAsset={insertSelectedAssetImage}
+          onImportImageAsset={openImageAssetFilePicker}
+          onRemoveSelectedImageAsset={removeSelectedImageAsset}
+          canRemoveSelectedImageAsset={selectedAsset.kind === 'imported'}
+          documentImageSources={documentImageSources}
+          resolveImageTokenLabel={resolveImageTokenLabel}
+          fontAssets={fontAssets}
+          selectedFontId={selectedFontId}
+          onSelectFont={(id) => {
+            const font = findFontAsset(fontAssets, id);
+            setSelectedFontId(id);
+            setFontFamilyInput(font.family);
+          }}
+          onApplySelectedFont={applySelectedFontToSelection}
+          onImportFontAsset={openFontAssetFilePicker}
+          onRemoveSelectedFont={removeSelectedFont}
+          canRemoveSelectedFont={selectedFont.kind === 'imported'}
+          documentFontFamilies={documentFontFamilies}
+          selectedAssetTitle={selectedAsset.title}
+          selectedFontTitle={selectedFont.title}
+          hoveredId={hoveredId}
+          overlaySettings={overlaySettings}
+          onOverlaySettingChange={updateOverlaySetting}
+          isSelectedImageNode={isSelectedImageNode}
+          isSelectedTextNode={isSelectedTextNode}
+        />
 
-      <Inspector
-        selectedId={selectedId}
-        selectedElement={selectedElement}
-        isSelectedImageNode={isSelectedImageNode}
-        isSelectedTextNode={isSelectedTextNode}
-        xInput={xInput}
-        yInput={yInput}
-        widthInput={widthInput}
-        heightInput={heightInput}
-        colorInput={colorInput}
-        onChangeX={setXInput}
-        onChangeY={setYInput}
-        onChangeWidth={setWidthInput}
-        onChangeHeight={setHeightInput}
-        onChangeColor={setColorInput}
-        onCommitPosition={commitInspectorPosition}
-        onCommitSize={commitInspectorSize}
-        onCommitColor={commitInspectorColor}
-        onResetElement={() => {
-          const id = selectedIdRef.current;
-          if (id) {
-            executeResetElementCommand(id);
-          }
-        }}
-        imageSourceInput={imageSourceInput}
-        imageStretchInput={imageStretchInput}
-        imageOpacityInput={imageOpacityInput}
-        selectedImageNaturalSizeLabel={selectedImageNaturalSizeLabel}
-        lockAspectRatio={lockAspectRatio}
-        onChangeImageSource={setImageSourceInput}
-        onChangeImageStretch={setImageStretchInput}
-        onChangeImageOpacity={setImageOpacityInput}
-        onCommitImage={commitImageSettings}
-        onApplyNaturalImageSize={applyNaturalImageSize}
-        onChangeLockAspectRatio={setLockAspectRatio}
-        fontFamilyInput={fontFamilyInput}
-        fontSizeInput={fontSizeAttrInput}
-        fontWeightInput={fontWeightInput}
-        fontStyleInput={fontStyleInput}
-        textAlignmentInput={textAlignmentInput}
-        flowDirectionInput={flowDirectionInput}
-        onChangeFontFamily={setFontFamilyInput}
-        onChangeFontSize={setFontSizeAttrInput}
-        onChangeFontWeight={setFontWeightInput}
-        onChangeFontStyle={setFontStyleInput}
-        onChangeTextAlignment={setTextAlignmentInput}
-        onChangeFlowDirection={setFlowDirectionInput}
-        onCommitTypography={commitTypographySettings}
-        sourceDraft={sourceDraft}
-        sourceDirty={sourceDirty}
-        sourceDiagnostic={sourceDiagnostic}
-        canApplySource={canApplySource}
-        onChangeSourceDraft={(value) => {
-          setSourceDraft(value);
-          setSourceDirty(true);
-          setSourceDiagnostic(null);
-        }}
-        onApplySource={applySourceDraft}
-        onRevertSourceDraft={revertSourceDraft}
-      />
+        <section className="document-area">
+          <div className="document-tabs">
+            <button className="document-tab is-active" type="button">{documentFileName}</button>
+            <button className="document-tab" type="button">Resources.xaml</button>
+          </div>
+          <section className="artboard-region" aria-label="Designer artboard">
+            <div className="tool-strip" aria-label="Tools">
+              {['V', 'H', 'Z', 'P', 'T', 'R', 'I', 'G'].map((tool, index) => (
+                <button
+                  key={`${tool}-${index}`}
+                  className={index === 0 ? 'is-active' : ''}
+                  type="button"
+                  title={['Selection', 'Pan', 'Zoom', 'Pen', 'Text', 'Rectangle', 'Image', 'Grid'][index]}
+                >
+                  {tool}
+                </button>
+              ))}
+            </div>
+            <div className="ruler-stage">
+              <div className="ruler ruler-horizontal" aria-hidden="true" />
+              <div className="ruler ruler-vertical" aria-hidden="true" />
+              <Viewport
+                canvasRef={canvasRef}
+                snapEnabled={snapEnabled}
+                gridStep={gridStep}
+                gridOffsetX={gridOffsetX}
+                gridOffsetY={gridOffsetY}
+                overlaySettings={overlaySettings}
+                overlayState={overlayState}
+                onResizeHandlePointerDown={onResizeHandlePointerDown}
+              />
+            </div>
+          </section>
+          <SourcePane
+            documentFileName={documentFileName}
+            sourceDraft={sourceDraft}
+            sourceDirty={sourceDirty}
+            sourceDiagnostic={sourceDiagnostic}
+            canApplySource={canApplySource}
+            onChangeSourceDraft={(value) => {
+              setSourceDraft(value);
+              setSourceDirty(true);
+              setSourceDiagnostic(null);
+            }}
+            onApplySource={applySourceDraft}
+            onRevertSourceDraft={revertSourceDraft}
+          />
+        </section>
+
+        <Inspector
+          selectedId={selectedId}
+          selectedElement={selectedElement}
+          isSelectedImageNode={isSelectedImageNode}
+          isSelectedTextNode={isSelectedTextNode}
+          xInput={xInput}
+          yInput={yInput}
+          widthInput={widthInput}
+          heightInput={heightInput}
+          colorInput={colorInput}
+          onChangeX={setXInput}
+          onChangeY={setYInput}
+          onChangeWidth={setWidthInput}
+          onChangeHeight={setHeightInput}
+          onChangeColor={setColorInput}
+          onCommitPosition={commitInspectorPosition}
+          onCommitSize={commitInspectorSize}
+          onCommitColor={commitInspectorColor}
+          onResetElement={() => {
+            const id = selectedIdRef.current;
+            if (id) {
+              executeResetElementCommand(id);
+            }
+          }}
+          imageSourceInput={imageSourceInput}
+          imageStretchInput={imageStretchInput}
+          imageOpacityInput={imageOpacityInput}
+          selectedImageNaturalSizeLabel={selectedImageNaturalSizeLabel}
+          lockAspectRatio={lockAspectRatio}
+          onChangeImageSource={setImageSourceInput}
+          onChangeImageStretch={setImageStretchInput}
+          onChangeImageOpacity={setImageOpacityInput}
+          onCommitImage={commitImageSettings}
+          onApplyNaturalImageSize={applyNaturalImageSize}
+          onChangeLockAspectRatio={setLockAspectRatio}
+          fontFamilyInput={fontFamilyInput}
+          fontSizeInput={fontSizeAttrInput}
+          fontWeightInput={fontWeightInput}
+          fontStyleInput={fontStyleInput}
+          textAlignmentInput={textAlignmentInput}
+          flowDirectionInput={flowDirectionInput}
+          onChangeFontFamily={setFontFamilyInput}
+          onChangeFontSize={setFontSizeAttrInput}
+          onChangeFontWeight={setFontWeightInput}
+          onChangeFontStyle={setFontStyleInput}
+          onChangeTextAlignment={setTextAlignmentInput}
+          onChangeFlowDirection={setFlowDirectionInput}
+          onCommitTypography={commitTypographySettings}
+        />
+      </section>
+
+      <footer className="blend-statusbar">
+        <span>{status}</span>
+        <span>Zoom {(cameraView.zoom * 100).toFixed(0)}%</span>
+        <span>Snap {snapEnabled ? '8px' : 'Off'}</span>
+        <span>Selection {selectedId ?? 'none'}</span>
+      </footer>
     </main>
   );
 }

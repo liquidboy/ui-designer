@@ -151,7 +151,12 @@ export function LeftRail(props: LeftRailProps) {
 
   return (
     <aside className="left-rail">
-      <h1>Designer</h1>
+      <div className="dock-tabs" role="tablist" aria-label="Designer panels">
+        <button className="dock-tab is-active" type="button">Project</button>
+        <button className="dock-tab" type="button">Assets</button>
+        <button className="dock-tab" type="button">States</button>
+      </div>
+      <h1>Solution Explorer</h1>
       <p>{status}</p>
       <div className="origin">Screen origin: {origin.x.toFixed(0)}, {origin.y.toFixed(0)}</div>
       <div className="origin">Camera: {cameraView.x.toFixed(0)}, {cameraView.y.toFixed(0)}</div>
