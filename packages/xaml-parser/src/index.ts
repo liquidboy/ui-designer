@@ -69,6 +69,7 @@ interface XamlLoweringContext extends XamlLoweringOptions {
   resources: Map<string, XamlRuntimeResourceValue>;
   dynamicResources: Map<string, XamlRuntimeResourceValue>;
   registry: XamlVocabularyRegistry;
+  rootObject: XamlObjectNode;
   namedObjects: Map<string, XamlObjectNode>;
   resolvingReferences: Set<string>;
 }
@@ -1685,28 +1686,37 @@ function runtimeResourceValueFromNode(node: XamlNode): XamlRuntimeResourceValue 
   return resourceObject;
 }
 
+interface XamlResourceObjectEntry {
+  object: XamlObjectNode;
+  scopeObject?: XamlObjectNode;
+}
+
 function collectResourceObject(
-  object: XamlObjectNode,
+  entry: XamlResourceObjectEntry,
   registry: XamlVocabularyRegistry,
   context: XamlLoweringContext
 ): void {
+  const object = entry.object;
   const key = resourceKeyFromObject(object, context);
   if (!key) {
     return;
   }
 
-  const lowered = lowerObjectNode(object, registry, context);
+  const loweringContext = entry.scopeObject && resolveXamlType(entry.scopeObject.type, registry)?.createsNamescope
+    ? lowerContextWithNamescope(context, entry.scopeObject)
+    : context;
+  const lowered = lowerObjectNode(object, registry, loweringContext);
   const value = runtimeResourceValueFromNode(lowered);
   if (value !== undefined) {
     context.resources.set(key, value);
   }
 }
 
-function resourceObjectsFromMember(member: XamlMemberNode, registry: XamlVocabularyRegistry): XamlObjectNode[] {
+function resourceObjectsFromMember(member: XamlMemberNode, registry: XamlVocabularyRegistry): XamlResourceObjectEntry[] {
   const objects = member.values.filter((value): value is XamlObjectNode => value.kind === 'object');
   return objects.flatMap((object) => {
     if (!isResourceDictionaryObject(object, registry)) {
-      return [object];
+      return [{ object }];
     }
 
     return object.members.flatMap((dictionaryMember) => {
@@ -1714,7 +1724,12 @@ function resourceObjectsFromMember(member: XamlMemberNode, registry: XamlVocabul
         return [];
       }
 
-      return dictionaryMember.values.filter((value): value is XamlObjectNode => value.kind === 'object');
+      return dictionaryMember.values
+        .filter((value): value is XamlObjectNode => value.kind === 'object')
+        .map((value) => ({
+          object: value,
+          scopeObject: object
+        }));
     });
   });
 }
@@ -1868,7 +1883,10 @@ function lowerObjectNode(
   options: XamlLoweringContext
 ): XamlNode {
   const ownerType = resolveXamlType(object.type, registry);
-  const localOptions = collectResourcesForObject(object, ownerType, registry, options);
+  const scopedOptions = object !== options.rootObject && ownerType?.createsNamescope
+    ? lowerContextWithNamescope(options, object)
+    : options;
+  const localOptions = collectResourcesForObject(object, ownerType, registry, scopedOptions);
   const attributes: XamlAttributeMap = {};
   const node: XamlNode = {
     type: lowerTypeName(object, registry),
@@ -1945,7 +1963,11 @@ function objectNameValue(object: XamlObjectNode): string {
   return nameMember ? rawTextValueFromValues(nameMember.values).trim() : '';
 }
 
-function collectNamedObjects(object: XamlObjectNode, namedObjects: Map<string, XamlObjectNode>): void {
+function collectNamedObjectsForScope(
+  object: XamlObjectNode,
+  registry: XamlVocabularyRegistry,
+  namedObjects: Map<string, XamlObjectNode>
+): void {
   const name = objectNameValue(object);
   if (name && !namedObjects.has(name)) {
     namedObjects.set(name, object);
@@ -1954,10 +1976,26 @@ function collectNamedObjects(object: XamlObjectNode, namedObjects: Map<string, X
   for (const member of object.members) {
     for (const value of member.values) {
       if (value.kind === 'object') {
-        collectNamedObjects(value, namedObjects);
+        if (resolveXamlType(value.type, registry)?.createsNamescope !== true) {
+          collectNamedObjectsForScope(value, registry, namedObjects);
+        }
       }
     }
   }
+}
+
+function namedObjectsForScope(object: XamlObjectNode, registry: XamlVocabularyRegistry): Map<string, XamlObjectNode> {
+  const namedObjects = new Map<string, XamlObjectNode>();
+  collectNamedObjectsForScope(object, registry, namedObjects);
+  return namedObjects;
+}
+
+function lowerContextWithNamescope(context: XamlLoweringContext, object: XamlObjectNode): XamlLoweringContext {
+  return {
+    ...context,
+    namedObjects: namedObjectsForScope(object, context.registry),
+    resolvingReferences: new Set()
+  };
 }
 
 function createLoweringContext(
@@ -1965,15 +2003,13 @@ function createLoweringContext(
   registry: XamlVocabularyRegistry,
   root: XamlObjectNode
 ): XamlLoweringContext {
-  const namedObjects = new Map<string, XamlObjectNode>();
-  collectNamedObjects(root, namedObjects);
-
   return {
     ...options,
     resources: new Map(),
     dynamicResources: normalizeRuntimeResourceMap(options.dynamicResources),
     registry,
-    namedObjects,
+    rootObject: root,
+    namedObjects: namedObjectsForScope(root, registry),
     resolvingReferences: new Set()
   };
 }

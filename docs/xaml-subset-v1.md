@@ -81,7 +81,8 @@ Current status:
 7. Object-valued resources can depend on earlier primitive resources in the same dictionary.
 8. `{DynamicResource ...}` references resolve against scoped resources by default and runtime override maps when present.
 9. `RuntimeHost` can update and clear dynamic resource overrides without changing XAML source.
-10. Full WPF-style resource invalidation and dependency tracking are outside v1.
+10. `ResourceDictionary` creates a local namescope boundary for `x:Name` and `{x:Reference ...}`.
+11. Full WPF-style resource invalidation and dependency tracking are outside v1.
 
 Supported runtime form:
 
@@ -173,10 +174,11 @@ Supported form:
 Current status:
 
 1. `{x:Reference ...}` and `{x:Reference Name=...}` markup extensions parse as intrinsic XAML language expressions.
-2. Reference names must resolve to an `x:Name` in the current document-wide namescope, including forward references.
+2. Reference names must resolve to an `x:Name` in the active namescope, including forward references.
 3. Authoring lowering preserves the original `{x:Reference ...}` source.
 4. Runtime lowering emits a cloned compatibility node for object-valued reference members.
-5. True object identity and nested template/resource namescope boundaries remain outside v1.
+5. `ResourceDictionary` is a local namescope boundary: dictionary-local references can see dictionary-local names, while outer visual-tree references cannot see names hidden inside the dictionary.
+6. True object identity and template/object-island namescope boundaries remain outside v1.
 
 Supported form:
 
@@ -185,6 +187,24 @@ Supported form:
   <TextBlock x:Name="SharedLabel" Text="Shared label" />
   <Border>
     <Border.Child>{x:Reference SharedLabel}</Border.Child>
+  </Border>
+</Canvas>
+```
+
+Supported resource-local reference form:
+
+```xaml
+<Canvas xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Canvas.Resources>
+    <ResourceDictionary>
+      <TextBlock x:Key="SharedLabel" x:Name="SharedLabel" Text="Resource label" />
+      <Border x:Key="SharedBorder">
+        <Border.Child>{x:Reference SharedLabel}</Border.Child>
+      </Border>
+    </ResourceDictionary>
+  </Canvas.Resources>
+  <Border>
+    <Border.Child>{StaticResource SharedBorder}</Border.Child>
   </Border>
 </Canvas>
 ```

@@ -1302,6 +1302,50 @@ async function runPhase17IntrinsicReferenceFixtures() {
   return files.length;
 }
 
+async function runPhase18NamescopeBoundaryFixtures() {
+  const expectations = {
+    'resource-boundary-duplicate-name.xaml': {
+      errors: [],
+      warnings: ['unsupported-directive', 'unsupported-directive']
+    },
+    'resource-reference-hidden.xaml': {
+      errors: ['unknown-reference-name'],
+      warnings: ['unsupported-directive']
+    },
+    'resource-reference-local.xaml': {
+      errors: [],
+      warnings: ['unsupported-directive']
+    }
+  };
+  const files = await listFixtureFiles('phase18-namescope-boundaries');
+
+  for (const fileName of files) {
+    const input = await readFixture('phase18-namescope-boundaries', fileName);
+    const result = parseAndValidateXaml(input);
+    const expected = expectations[fileName];
+    assert.ok(expected, `Missing namescope boundary expectation for ${fileName}`);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'error'), expected.errors, `${fileName} validation errors`);
+    assert.deepEqual(diagnosticsWithSeverity(result.validation, 'warning'), expected.warnings, `${fileName} validation warnings`);
+
+    if (fileName === 'resource-boundary-duplicate-name.xaml') {
+      const lowered = lowerXamlDocument(result.document);
+      assert.equal(lowered.root.children[0]?.type, 'Resources');
+      assert.equal(lowered.root.children[1]?.attributes.Name, 'SharedName');
+    }
+
+    if (fileName === 'resource-reference-local.xaml') {
+      const runtime = parseRuntimeXaml(input);
+      const staticBorder = runtime.root.children[0]?.children[0];
+      assert.equal(staticBorder?.type, 'Border');
+      assert.equal(staticBorder.children[0]?.type, 'TextBlock');
+      assert.equal(staticBorder.children[0]?.attributes.Name, 'SharedLabel');
+      assert.equal(staticBorder.children[0]?.attributes.Text, 'Resource label');
+    }
+  }
+
+  return files.length;
+}
+
 async function runPhase6CollectionFixtures() {
   const expectations = {
     'theme-dictionary-xkey.xaml': { errors: [], warnings: [] },
@@ -1358,7 +1402,8 @@ const phase14Count = await runPhase14WhitespaceNormalizationFixtures();
 const phase15Count = await runPhase15IntrinsicArrayFixtures();
 const phase16Count = await runPhase16IntrinsicStaticFixtures();
 const phase17Count = await runPhase17IntrinsicReferenceFixtures();
+const phase18Count = await runPhase18NamescopeBoundaryFixtures();
 
 console.log(
-  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources, ${phase9Count} serializer, ${phase10Count} designer serializer, ${phase11Count} XML scope, ${phase12Count} object resources, ${phase13Count} dynamic resources, ${phase14Count} whitespace normalization, ${phase15Count} intrinsic arrays, ${phase16Count} intrinsic static references, ${phase17Count} intrinsic references).`
+  `XAML fixture tests passed (${phase1Count} parser, ${phase2Count} validation, ${phase3Count} lowering, ${phase4Count} designer config, ${phase5Count} markup extension, ${phase6Count} collections, ${phase7Count} runtime extensions, ${phase8Count} resources, ${phase9Count} serializer, ${phase10Count} designer serializer, ${phase11Count} XML scope, ${phase12Count} object resources, ${phase13Count} dynamic resources, ${phase14Count} whitespace normalization, ${phase15Count} intrinsic arrays, ${phase16Count} intrinsic static references, ${phase17Count} intrinsic references, ${phase18Count} namescope boundaries).`
 );

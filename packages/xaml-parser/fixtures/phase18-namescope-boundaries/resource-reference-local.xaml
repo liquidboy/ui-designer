@@ -1,0 +1,13 @@
+<Canvas xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Canvas.Resources>
+    <ResourceDictionary>
+      <TextBlock x:Key="SharedLabel" x:Name="SharedLabel" Text="Resource label" />
+      <Border x:Key="SharedBorder">
+        <Border.Child>{x:Reference SharedLabel}</Border.Child>
+      </Border>
+    </ResourceDictionary>
+  </Canvas.Resources>
+  <Border>
+    <Border.Child>{StaticResource SharedBorder}</Border.Child>
+  </Border>
+</Canvas>

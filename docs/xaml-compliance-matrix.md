@@ -50,7 +50,7 @@ Default rule: parser support should be broader than runtime execution support. U
 | Content property inference | Current | Current | Use vocabulary metadata to route child objects/text into content members. | Implemented for the current runtime and designer vocabularies. |
 | Attached member syntax | Current | Current | Represent attached owner/member names structurally. | Lowered to canonical `Owner.Member` attribute names for compatibility. |
 | Collection members | Partial | Phase 3+ | Add list semantics to vocabulary metadata and lowering. | Known list containers now validate allowed item types; semantic collection lowering is still compatibility-shaped. |
-| Dictionary members | Partial | Phase 3+ | Add dictionary semantics, key validation, and lowering. | Designer theme `Colors` validates dictionary items with explicit `x:Key` or implicit `Color.Id`; runtime `ResourceDictionary` now lowers primitive resources and known control object resources for scoped `StaticResource` and `DynamicResource` lookup. |
+| Dictionary members | Partial | Phase 3+ | Add dictionary semantics, key validation, and lowering. | Designer theme `Colors` validates dictionary items with explicit `x:Key` or implicit `Color.Id`; runtime `ResourceDictionary` now lowers primitive resources and known control object resources for scoped `StaticResource` and `DynamicResource` lookup, and `ResourceDictionary` is the first schema-marked nested namescope boundary. |
 | Text syntax conversion | Partial | Phase 2 | Move primitive conversion into schema-defined text syntax. | Validation is schema-aware today, but legacy lowering still uses shared primitive coercion. |
 | Whitespace handling | Partial | Phase 3+ | Add schema-aware whitespace preservation/collapse rules. | Default lowering now collapses XML whitespace runs and trims text values, while `xml:space="preserve"` keeps exact text and `xml:space="default"` resets inherited preservation. Remaining gaps are edge-case whitespace rules around future templates/object islands. |
 | Markup extension AST | Partial | Phase 5 | Parse brace syntax into structured expressions. | Attribute values and property-element text now parse into a structured AST; runtime lowering evaluates supported extensions while authoring lowering preserves raw text. |
@@ -62,7 +62,7 @@ Default rule: parser support should be broader than runtime execution support. U
 
 | Directive or namespace feature | Current status | Target | Current behavior | Runtime behavior | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `x:Name` | Current | Phase 4 | Parse, preserve, and validate uniqueness within the current document namescope. | Lowered to `Name` in the legacy adapter; runtime still does not resolve object references by name. | Bare `Name` is still not a schema alias. |
+| `x:Name` | Current | Phase 4 | Parse, preserve, and validate uniqueness within the active namescope, including root scope and `ResourceDictionary` boundaries. | Lowered to `Name` in the legacy adapter; runtime `x:Reference` uses scoped named-object maps for supported object-valued references. | Bare `Name` is still not a schema alias. |
 | `x:Key` | Partial | Phase 4 | Parse and validate as a dictionary item key. | Valid dictionary keys are accepted without preserved-only warnings; runtime resource lookup uses them for primitive and known control object `ResourceDictionary` entries. | Misplaced `x:Key`, missing dictionary keys, duplicate dictionary keys, and invalid dictionary item types now produce deterministic errors. |
 | `x:Class` | Current | Phase 4 | Parse, preserve, and enforce root-only placement. | Preserved-only; no markup compilation. | Non-root usage now raises `invalid-directive-placement`. |
 | `x:Uid` | Current | Phase 4 | Parse and preserve with warning. | Preserved-only. | Useful for localization metadata, not rendering. |
@@ -71,7 +71,7 @@ Default rule: parser support should be broader than runtime execution support. U
 | `x:Null` | Partial | Phase 5 | Parse as markup extension or intrinsic null expression. | Runtime lowering maps `{x:Null}` to semantic `null`; authoring lowering preserves raw text. | Serializer support for emitting `x:` namespace declarations from null values is still pending. |
 | `x:Array` | Partial | Phase 5 | Parse and validate intrinsic `x:Array` object elements, required `Type`, direct content, `x:Array.Items`, and simple `{x:Type ...}` item-type expressions. | Lowers structurally as an `Array` node with item children; runtime lowering evaluates `{x:Type ...}` item type values to type-name strings. | True array-valued runtime assignment and primitive CLR item types remain deferred. |
 | `x:Static` / `x:StaticExtension` | Partial | Phase 5 | Parse structured static markup extensions and validate required type-qualified member references. | Runtime lowering evaluates supported `{x:Static ...}` forms to stable member-token strings; authoring lowering preserves raw source. | CLR/static value resolution and object-element static forms remain deferred. |
-| `x:Reference` / `x:ReferenceExtension` | Partial | Phase 5 | Parse structured reference markup extensions, validate required `Name`, and resolve against the current document-wide `x:Name` table including forward references. | Runtime lowering clones the referenced compatibility object into object-valued members; authoring lowering preserves raw source. | True object identity, nested namescope boundaries, and template/resource namescopes remain deferred. |
+| `x:Reference` / `x:ReferenceExtension` | Partial | Phase 5 | Parse structured reference markup extensions, validate required `Name`, and resolve against the active namescope including forward references; `ResourceDictionary` creates a local namescope boundary. | Runtime lowering clones the referenced compatibility object from the active namescope into object-valued members; authoring lowering preserves raw source. | True object identity, template namescopes, and future object-island namescopes remain deferred. |
 | `xml:lang` | Current | Phase 4 | Parse, preserve, validate, and propagate as effective object metadata. | Compatibility lowering emits inherited `lang` metadata on descendants. | Runtime text/layout consumers can now read inherited language metadata from lowered attributes. |
 | `xml:space` | Partial | Phase 4 | Parse, preserve, validate, and apply scoped whitespace preservation/reset. | Preserved whitespace-only text lowers into text-capable content; default text lowering collapses and trims XML whitespace. | Edge-case whitespace behavior around future templates/object islands is still pending. |
 
@@ -123,7 +123,7 @@ Default rule: parser support should be broader than runtime execution support. U
 
 Current limitation:
 
-1. Namescope validation and `x:Reference` resolution currently treat the document root as the only namescope. Nested namescopes for templates, resources, or future object islands are still deferred.
+1. Namescope validation and `x:Reference` resolution now support the document root plus `ResourceDictionary` boundaries; richer template namescopes and future object islands are still deferred.
 2. Markup extension parsing currently covers attribute values and property-element text; `x:Array` object elements are now structural, while remaining object-element intrinsic forms are still deferred.
 3. Runtime resource lookup supports primitive resources, known control object resources, dynamic resource overrides, and structural object resources; true array-valued resource execution, CLR type resolution, and CLR static value resolution remain deferred.
 4. Runtime `Binding` evaluation is v1-only: one-way path lookup against a supplied data context, without converters or multi-binding.
@@ -136,7 +136,7 @@ Completed foundation work:
 1. Infoset/schema primitives, vocabulary registries, and compatibility lowering are in place.
 2. Runtime parse/validate/lower paths now back rendered app documents, while strict authoring parse/validate/lower paths back `designer-core` and the designer config vocabularies.
 3. Validation fixtures cover parser structure, registry-backed validation, lowering behavior, and designer config namespaces.
-4. Intrinsic directive validation now includes `x:Name` document-namescope checks and root-only `x:Class` placement.
+4. Intrinsic directive validation now includes scoped `x:Name` checks and root-only `x:Class` placement.
 5. Attribute-value and property-element text markup extensions now parse into structured AST nodes, including nested extensions, escaped `{}{...}` literals, and prefixed forms such as `{x:Null}`, while authoring lowering preserves the original raw text for source compatibility.
 6. Collection metadata now validates allowed item types for list containers, and dictionary metadata validates explicit `x:Key`, implicit key properties, missing keys, and duplicate keys.
 7. Runtime lowering now evaluates v1 `Binding` paths against a supplied data context, maps `{x:Null}` to semantic `null`, and resolves scoped primitive `{StaticResource ...}` references.
@@ -149,9 +149,12 @@ Completed foundation work:
 14. Intrinsic `x:Array` object elements now parse, validate required `Type`, validate simple object item types, serialize, and lower as structural `Array` compatibility nodes.
 15. `{x:Type ...}` now validates known simple object type names, preserves authoring source, and runtime-lowers to type-name strings for scenarios such as `x:Array Type`.
 16. `{x:Static ...}` now validates required type-qualified member references, preserves authoring source, and runtime-lowers to stable member-token strings.
-17. `{x:Reference ...}` now validates required names, supports forward references within the document namescope, preserves authoring source, and runtime-lowers object-valued references to cloned compatibility nodes.
+17. `{x:Reference ...}` now validates required names, supports forward references within the active namescope, preserves authoring source, and runtime-lowers object-valued references to cloned compatibility nodes.
+18. `ResourceDictionary` now creates a local namescope boundary, so duplicate names inside resources do not collide with visual-tree names, visual-tree references cannot see dictionary-local names, and dictionary-local references can resolve locally.
+
+Approximate targeted core `MS-XAML-2017` support: **74%**. This estimate covers the scoped language/object-mapping target in this matrix, not full WPF vocabulary parity.
 
 Next slice:
 
-1. Expand namescope support beyond the current document-wide namescope.
-2. Add true object identity/reference semantics beyond cloned compatibility nodes.
+1. Add true object identity/reference semantics beyond cloned compatibility nodes.
+2. Expand schema-marked namescope boundaries to templates and future object islands when those vocabulary types are introduced.

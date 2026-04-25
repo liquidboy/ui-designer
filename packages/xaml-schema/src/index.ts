@@ -196,6 +196,7 @@ export interface XamlTypeDefinition {
   collectionKind: XamlCollectionKind;
   allowedContentTypes?: readonly string[];
   dictionaryKeyProperty?: string;
+  createsNamescope: boolean;
   allowsText: boolean;
   allowsChildren: boolean;
   isRuntimeSupported: boolean;
@@ -321,6 +322,7 @@ type TypeDefinitionOptions = Pick<XamlTypeDefinition, 'members' | 'contentProper
   collectionKind?: XamlCollectionKind;
   allowedContentTypes?: readonly string[];
   dictionaryKeyProperty?: string;
+  createsNamescope?: boolean;
   isRuntimeSupported?: boolean;
 };
 
@@ -333,6 +335,7 @@ function typeDefinition(name: string, options: TypeDefinitionOptions): XamlTypeD
     collectionKind: options.collectionKind ?? 'none',
     allowedContentTypes: options.allowedContentTypes,
     dictionaryKeyProperty: options.dictionaryKeyProperty,
+    createsNamescope: options.createsNamescope ?? false,
     allowsText: options.allowsText,
     allowsChildren: options.allowsChildren,
     isRuntimeSupported: options.isRuntimeSupported ?? true
@@ -417,6 +420,7 @@ export const uiDesignerTypes = [
     contentProperty: 'Children',
     collectionKind: 'dictionary',
     allowedContentTypes: ['Color', 'Number', 'String', ...runtimeControlContentTypes],
+    createsNamescope: true,
     allowsText: false,
     allowsChildren: true
   }),
@@ -1125,7 +1129,7 @@ function validateMarkupExtensions(
 interface XamlValidationContext {
   rootObject: XamlObjectNode;
   knownNames: Set<string>;
-  documentNamescope: Map<string, XamlMemberNode>;
+  namescope: Map<string, XamlMemberNode>;
   dictionaryKeyMembers: WeakSet<XamlMemberNode>;
 }
 
@@ -1225,7 +1229,7 @@ function validateDirectiveSemantics(
       return;
     }
 
-    const existing = context.documentNamescope.get(textValue);
+    const existing = context.namescope.get(textValue);
     if (existing && existing !== member) {
       diagnostics.push(validationDiagnostic(
         'error',
@@ -1236,7 +1240,7 @@ function validateDirectiveSemantics(
       return;
     }
 
-    context.documentNamescope.set(textValue, member);
+    context.namescope.set(textValue, member);
     return;
   }
 
@@ -1323,7 +1327,18 @@ function isXamlNameDirective(member: XamlMemberNode): boolean {
   );
 }
 
-function collectKnownNames(object: XamlObjectNode, names: Set<string>): void {
+function createsNamescopeBoundary(
+  object: XamlObjectNode,
+  registry: XamlVocabularyRegistry
+): boolean {
+  return resolveXamlType(object.type, registry)?.createsNamescope === true;
+}
+
+function collectKnownNamesForScope(
+  object: XamlObjectNode,
+  names: Set<string>,
+  registry: XamlVocabularyRegistry
+): void {
   const nameMember = object.members.find(isXamlNameDirective);
   const name = nameMember ? textFromValues(nameMember.values).trim() : '';
   if (name) {
@@ -1333,10 +1348,28 @@ function collectKnownNames(object: XamlObjectNode, names: Set<string>): void {
   for (const member of object.members) {
     for (const value of member.values) {
       if (value.kind === 'object') {
-        collectKnownNames(value, names);
+        if (!createsNamescopeBoundary(value, registry)) {
+          collectKnownNamesForScope(value, names, registry);
+        }
       }
     }
   }
+}
+
+function createNamescopeContext(
+  object: XamlObjectNode,
+  registry: XamlVocabularyRegistry,
+  parentContext: XamlValidationContext | null
+): XamlValidationContext {
+  const knownNames = new Set<string>();
+  collectKnownNamesForScope(object, knownNames, registry);
+
+  return {
+    rootObject: parentContext?.rootObject ?? object,
+    knownNames,
+    namescope: new Map(),
+    dictionaryKeyMembers: parentContext?.dictionaryKeyMembers ?? new WeakSet()
+  };
 }
 
 function findResolvedPropertyMember(
@@ -1595,11 +1628,14 @@ function validateObjectNode(
     return;
   }
 
+  const localContext = object !== context.rootObject && type.createsNamescope
+    ? createNamescopeContext(object, registry, context)
+    : context;
   const assignedMembers = new Set<string>();
 
   for (const memberNode of object.members) {
     if (memberNode.syntax === 'content') {
-      validateContentMember(object, type, memberNode, diagnostics, registry, context);
+      validateContentMember(object, type, memberNode, diagnostics, registry, localContext);
       continue;
     }
 
@@ -1661,14 +1697,14 @@ function validateObjectNode(
     }
 
     if (definition.kind === 'directive') {
-      validateResolvedDirective(object, memberNode, definition, diagnostics, context, registry);
+      validateResolvedDirective(object, memberNode, definition, diagnostics, localContext, registry);
     } else {
-      validateResolvedMember(memberNode, definition, diagnostics, registry, context);
+      validateResolvedMember(memberNode, definition, diagnostics, registry, localContext);
     }
 
     for (const value of memberNode.values) {
       if (value.kind === 'object') {
-        validateObjectNode(value, diagnostics, registry, context);
+        validateObjectNode(value, diagnostics, registry, localContext);
       }
     }
   }
@@ -1689,16 +1725,7 @@ export function validateXamlDocument(
       message: 'XAML document is missing a root object.'
     });
   } else {
-    const context: XamlValidationContext = {
-      rootObject: document.root,
-      knownNames: (() => {
-        const names = new Set<string>();
-        collectKnownNames(document.root, names);
-        return names;
-      })(),
-      documentNamescope: new Map(),
-      dictionaryKeyMembers: new WeakSet()
-    };
+    const context = createNamescopeContext(document.root, registry, null);
     validateObjectNode(document.root, diagnostics, registry, context);
   }
 
