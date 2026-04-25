@@ -355,6 +355,12 @@ function findMember(object, localName, syntax) {
   });
 }
 
+function findDottedMember(object, memberName, syntax) {
+  return object.members.find((member) => {
+    return member.dotted?.member === memberName && (!syntax || member.syntax === syntax);
+  });
+}
+
 function assertNoParseErrors(fileName, result) {
   assert.deepEqual(diagnosticsWithSeverity(result, 'error'), [], `${fileName} should parse without errors`);
   assert.ok(result.document?.root, `${fileName} should produce a root object`);
@@ -548,12 +554,16 @@ async function runPhase4DesignerConfigFixtures() {
 async function runPhase5MarkupExtensionFixtures() {
   const expectations = {
     'binding-attribute.xaml': { errors: [], warnings: [] },
+    'binding-property-element.xaml': { errors: [], warnings: [] },
     'nested-extension.xaml': {
       errors: [],
       warnings: ['unsupported-markup-extension']
     },
     'escaped-literal.xaml': { errors: [], warnings: [] },
+    'escaped-property-element.xaml': { errors: [], warnings: [] },
     'x-null-attribute.xaml': { errors: [], warnings: [] },
+    'x-null-property-element.xaml': { errors: [], warnings: [] },
+    'invalid-property-element.xaml': { errors: ['invalid-markup-extension-syntax'], warnings: [] },
     'invalid-markup-extension.xaml': { errors: ['invalid-markup-extension-syntax'], warnings: [] }
   };
 
@@ -581,6 +591,15 @@ async function runPhase5MarkupExtensionFixtures() {
       assert.equal(textMember.values[0].arguments[0]?.value, 'Title');
     }
 
+    if (fileName === 'binding-property-element.xaml') {
+      const textMember = findDottedMember(root, 'Text', 'propertyElement');
+      assert.equal(textMember?.values[0]?.kind, 'markupExtension');
+      assert.equal(textMember.values[0].type.localName, 'Binding');
+      assert.equal(textMember.values[0].arguments[0]?.kind, 'named');
+      assert.equal(textMember.values[0].arguments[0]?.name, 'Path');
+      assert.equal(textMember.values[0].arguments[0]?.value, 'Title');
+    }
+
     if (fileName === 'nested-extension.xaml') {
       const textMember = findMember(root, 'Text', 'attribute');
       const extension = textMember?.values[0];
@@ -599,8 +618,22 @@ async function runPhase5MarkupExtensionFixtures() {
       assert.equal(textMember.values[0].text, '{Binding Path=Title}');
     }
 
+    if (fileName === 'escaped-property-element.xaml') {
+      const textMember = findDottedMember(root, 'Text', 'propertyElement');
+      assert.equal(textMember?.values[0]?.kind, 'text');
+      assert.equal(textMember.values[0].text, '{Binding Path=Title}');
+    }
+
     if (fileName === 'x-null-attribute.xaml') {
       const contentMember = findMember(root, 'Content', 'attribute');
+      assert.equal(contentMember?.values[0]?.kind, 'markupExtension');
+      assert.equal(contentMember.values[0].type.prefix, 'x');
+      assert.equal(contentMember.values[0].type.localName, 'Null');
+      assert.equal(contentMember.values[0].type.namespaceUri, XAML_LANGUAGE_NAMESPACE);
+    }
+
+    if (fileName === 'x-null-property-element.xaml') {
+      const contentMember = findDottedMember(root, 'Content', 'propertyElement');
       assert.equal(contentMember?.values[0]?.kind, 'markupExtension');
       assert.equal(contentMember.values[0].type.prefix, 'x');
       assert.equal(contentMember.values[0].type.localName, 'Null');
@@ -621,6 +654,11 @@ async function runPhase5MarkupExtensionFixtures() {
       assert.equal(lowered.root.attributes.Text, '{Binding Path=Title}');
     }
 
+    if (fileName === 'binding-property-element.xaml') {
+      assert.equal(lowered.root.attributes.Text, '{Binding Path=Title}');
+      assert.equal(lowered.root.text, '{Binding Path=Title}');
+    }
+
     if (fileName === 'nested-extension.xaml') {
       assert.equal(lowered.root.attributes.Text, '{Binding Path=Title, Converter={StaticResource TitleConverter}}');
     }
@@ -629,7 +667,16 @@ async function runPhase5MarkupExtensionFixtures() {
       assert.equal(lowered.root.attributes.Text, '{Binding Path=Title}');
     }
 
+    if (fileName === 'escaped-property-element.xaml') {
+      assert.equal(lowered.root.attributes.Text, '{Binding Path=Title}');
+      assert.equal(lowered.root.text, '{Binding Path=Title}');
+    }
+
     if (fileName === 'x-null-attribute.xaml') {
+      assert.equal(lowered.root.attributes.Content, '{x:Null}');
+    }
+
+    if (fileName === 'x-null-property-element.xaml') {
       assert.equal(lowered.root.attributes.Content, '{x:Null}');
     }
   }
@@ -662,6 +709,13 @@ async function runPhase7RuntimeExtensionFixtures() {
       assert.equal(runtime.root.text, 'Runtime title');
     }
 
+    if (fileName === 'binding-property-element.xaml') {
+      assert.equal(preserved.root.attributes.Text, '{Binding Path=Title}');
+      assert.equal(strict.root.attributes.Text, '{Binding Path=Title}');
+      assert.equal(runtime.root.attributes.Text, 'Runtime title');
+      assert.equal(runtime.root.text, 'Runtime title');
+    }
+
     if (fileName === 'binding-positional.xaml') {
       assert.equal(preserved.root.attributes.Content, '{Binding Action.Label}');
       assert.equal(runtime.root.attributes.Content, 'Save now');
@@ -674,6 +728,12 @@ async function runPhase7RuntimeExtensionFixtures() {
     }
 
     if (fileName === 'x-null-content.xaml') {
+      assert.equal(preserved.root.attributes.Content, '{x:Null}');
+      assert.equal(runtime.root.attributes.Content, null);
+      assert.equal(runtime.root.text, '');
+    }
+
+    if (fileName === 'x-null-property-element.xaml') {
       assert.equal(preserved.root.attributes.Content, '{x:Null}');
       assert.equal(runtime.root.attributes.Content, null);
       assert.equal(runtime.root.text, '');

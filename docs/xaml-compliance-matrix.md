@@ -53,7 +53,7 @@ Default rule: parser support should be broader than runtime execution support. U
 | Dictionary members | Partial | Phase 3+ | Add dictionary semantics, key validation, and lowering. | Designer theme `Colors` now validates dictionary items with explicit `x:Key` or implicit `Color.Id`; broader resource dictionaries are still pending. |
 | Text syntax conversion | Partial | Phase 2 | Move primitive conversion into schema-defined text syntax. | Validation is schema-aware today, but legacy lowering still uses shared primitive coercion. |
 | Whitespace handling | Missing | Phase 3+ | Add schema-aware whitespace preservation/collapse rules. | Include `xml:space` once directive propagation exists. |
-| Markup extension AST | Partial | Phase 5 | Parse brace syntax into structured expressions. | Attribute values now parse into a structured AST; runtime lowering evaluates supported extensions while authoring lowering preserves raw text. Property-element text is still pending. |
+| Markup extension AST | Partial | Phase 5 | Parse brace syntax into structured expressions. | Attribute values and property-element text now parse into a structured AST; runtime lowering evaluates supported extensions while authoring lowering preserves raw text. |
 | Nested markup extensions | Partial | Phase 5 | Support nested extension arguments. | Nested attribute-value extensions now parse recursively; unsupported nested extensions still warn and preserve. |
 | Semantic serializer | Partial | Phase 7 | Serialize from infoset/semantic model, not string concatenation. | Byte-for-byte formatting preservation is not required. |
 | Semantic round-trip tests | Missing | Phase 8 | Add fixtures for parse, validate, lower, serialize, parse. | Matrix rows should eventually map to tests. |
@@ -123,7 +123,7 @@ Default rule: parser support should be broader than runtime execution support. U
 Current limitation:
 
 1. Namescope validation currently treats the document root as the only namescope. Nested namescopes for templates, resources, or future object islands are still deferred.
-2. Structured markup extension parsing currently applies to attribute values; property-element text markup extensions still fall through as plain text.
+2. Markup extension parsing currently covers attribute values and property-element text; object-element intrinsic forms such as `x:Array` remain deferred.
 3. Runtime `Binding` evaluation is v1-only: one-way path lookup against a supplied data context, without converters or multi-binding.
 
 ## Current Implementation Checkpoint
@@ -134,11 +134,11 @@ Completed foundation work:
 2. Runtime parse/validate/lower paths now back rendered app documents, while strict authoring parse/validate/lower paths back `designer-core` and the designer config vocabularies.
 3. Validation fixtures cover parser structure, registry-backed validation, lowering behavior, and designer config namespaces.
 4. Intrinsic directive validation now includes `x:Name` document-namescope checks and root-only `x:Class` placement.
-5. Attribute-value markup extensions now parse into structured AST nodes, including nested extensions, escaped `{}{...}` literals, and prefixed forms such as `{x:Null}`, while lowering preserves the original raw text for runtime compatibility.
+5. Attribute-value and property-element text markup extensions now parse into structured AST nodes, including nested extensions, escaped `{}{...}` literals, and prefixed forms such as `{x:Null}`, while authoring lowering preserves the original raw text for source compatibility.
 6. Collection metadata now validates allowed item types for list containers, and dictionary metadata validates explicit `x:Key`, implicit key properties, missing keys, and duplicate keys.
 7. Runtime lowering now evaluates v1 `Binding` paths against a supplied data context and maps `{x:Null}` to semantic `null`.
 
 Next slice:
 
-1. Add property-element text markup extension parsing so markup extension coverage is not limited to attributes.
-2. Follow that with broader resource dictionary lowering and semantic serializer coverage.
+1. Broaden resource dictionary lowering and resource-reference semantics beyond designer theme key validation.
+2. Follow that with semantic serializer coverage for namespaces, directives, markup extensions, and collections.

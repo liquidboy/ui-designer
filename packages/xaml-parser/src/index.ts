@@ -709,6 +709,73 @@ function createAttributeValueNode(
   return parsed.node;
 }
 
+function spanForTrimmedValue(
+  value: string,
+  span: XamlSourceSpan | undefined,
+  locator: SourceLocator
+): XamlSourceSpan | undefined {
+  if (!span) {
+    return undefined;
+  }
+
+  const leadingWhitespace = value.length - value.trimStart().length;
+  const trailingWhitespace = value.length - value.trimEnd().length;
+  return locator.span(span.start.offset + leadingWhitespace, span.end.offset - trailingWhitespace);
+}
+
+function createPropertyElementTextValueNode(
+  value: string,
+  ownerElement: Element,
+  span: XamlSourceSpan | undefined,
+  diagnostics: XamlDiagnostic[],
+  locator: SourceLocator
+): XamlValueNode {
+  const trimmed = value.trim();
+  if (trimmed.startsWith('{}')) {
+    return {
+      kind: 'text',
+      text: trimmed.slice(2),
+      span: spanForTrimmedValue(value, span, locator)
+    };
+  }
+
+  if (!trimmed.startsWith('{')) {
+    return {
+      kind: 'text',
+      text: value,
+      span
+    };
+  }
+
+  const trimmedSpan = spanForTrimmedValue(value, span, locator);
+  const parsed = parseMarkupExtension(
+    trimmed,
+    (prefix) => ownerElement.lookupNamespaceURI(prefix),
+    0,
+    trimmedSpan
+  );
+
+  if ('diagnostic' in parsed) {
+    diagnostics.push(parsed.diagnostic);
+    return {
+      kind: 'text',
+      text: value,
+      span
+    };
+  }
+
+  if (parsed.nextIndex !== trimmed.length) {
+    diagnostics.push(markupExtensionDiagnostic('Markup extension contains trailing text after the closing brace.', trimmedSpan));
+    return {
+      kind: 'text',
+      text: value,
+      span
+    };
+  }
+
+  return parsed.node;
+}
+
 function createAttributeMember(
   attr: Attr,
   ownerElement: Element,
@@ -765,7 +832,13 @@ function readValueNodes(element: Element, context: ParseContext): XamlValueNode[
     if (child.nodeType === Node.TEXT_NODE || child.nodeType === Node.CDATA_SECTION_NODE) {
       const textNode = createTextNode(child, context);
       if (textNode) {
-        values.push(textNode);
+        values.push(createPropertyElementTextValueNode(
+          textNode.text,
+          element,
+          textNode.span,
+          context.diagnostics,
+          context.locator
+        ));
       }
       continue;
     }
@@ -1163,6 +1236,9 @@ function lowerPropertyMember(
 
   if (primitiveValue === null) {
     node.attributes[memberName] = null;
+    if (ownerType?.contentProperty === memberName && ownerType.allowsText) {
+      node.text = textValue;
+    }
     return;
   }
 

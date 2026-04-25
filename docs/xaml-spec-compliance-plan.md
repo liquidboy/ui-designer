@@ -40,20 +40,19 @@ The repo now has the core compliance foundation in place:
 2. `packages/xaml-parser` parses XML into the spec-shaped infoset, validates against active vocabularies, and lowers back into the legacy `XamlDocument` shape through compatibility adapters.
 3. `packages/ui-runtime-web` uses the runtime parse/validate/lower path for app documents, including supported runtime markup-extension evaluation.
 4. `packages/designer-core` and the designer config loaders use the registry-backed strict authoring parser for validated, source-compatible documents and designer vocabularies.
-5. Attribute-value markup extensions now parse into structured AST nodes, including nested extensions, escaped `{}{...}` literals, and prefixed intrinsic forms such as `{x:Null}`.
+5. Attribute-value and property-element text markup extensions now parse into structured AST nodes, including nested extensions, escaped `{}{...}` literals, and prefixed intrinsic forms such as `{x:Null}`.
 6. Runtime lowering evaluates v1 `Binding` paths against a supplied data context and maps `{x:Null}` to semantic `null`, while authoring lowering still preserves raw markup text.
 7. The validator currently covers known namespaces/types/members, duplicate scalar members, content rules, enum/primitive checks, namescope collisions for `x:Name`, root-only placement for `x:Class`, collection item-type constraints, dictionary key validation, and warning-only preservation for unsupported markup extensions.
 
 The main remaining gaps are now:
 
-1. Property-element text markup extension parsing.
-2. Broader resource dictionary lowering and serializer support for semantic collections.
-3. `xml:space` whitespace behavior and `xml:lang` propagation semantics.
-4. Semantic serialization and round-trip guarantees from the infoset model.
+1. Broader resource dictionary lowering and serializer support for semantic collections.
+2. `xml:space` whitespace behavior and `xml:lang` propagation semantics.
+3. Semantic serialization and round-trip guarantees from the infoset model.
 
 Current limitation:
 
-1. Structured markup extension parsing currently applies to attribute values. Property-element text markup extensions still need a follow-on slice.
+1. Structured markup extension parsing currently applies to attribute values and property-element text. Object-element intrinsic forms such as `x:Array` remain deferred.
 2. Dictionary support currently validates configured vocabularies and keys, but runtime resource lookup is not implemented yet.
 3. Runtime `Binding` support is intentionally v1-only: one-way path lookup, no converters, and no multi-binding.
 

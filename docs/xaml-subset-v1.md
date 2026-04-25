@@ -83,16 +83,18 @@ Supported runtime form:
 
 ```xaml
 <TextBlock Text="{Binding path=Title}" />
+<TextBlock>
+  <TextBlock.Text>{Binding Path=Title}</TextBlock.Text>
+</TextBlock>
 ```
 
 Current status:
 
-1. Attribute-based binding expressions now parse into a structured markup extension AST instead of plain text.
+1. Attribute-based and property-element text binding expressions now parse into a structured markup extension AST instead of plain text.
 2. Runtime lowering evaluates one-way `Binding` paths against the supplied runtime data context.
 3. Authoring lowering still preserves parsed binding expressions as raw strings for source compatibility.
 4. Escaped literals such as `{}{Binding Path=Title}` stay as literal text, and nested attribute-value extensions are preserved structurally.
 5. `{x:Null}` lowers to semantic `null` in runtime mode and remains raw text in authoring mode.
-6. Property-element text markup extensions are still pending.
 
 Current constraints:
 
