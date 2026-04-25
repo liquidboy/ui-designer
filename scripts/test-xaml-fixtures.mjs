@@ -94,7 +94,10 @@ const {
 } = await import('../packages/xaml-parser/dist/index.js');
 
 const {
+  insertDocumentChild,
+  moveDocumentNode,
   parseDesignerDocumentWithDiagnostics,
+  removeDocumentNode,
   serializeDesignerDocument,
   updateDocumentNodeAttributes
 } = await import('../packages/designer-core/dist/index.js');
@@ -880,12 +883,76 @@ async function runPhase10DesignerSerializerFixtures() {
 
   const edited = updateDocumentNodeAttributes(parsed.document, 'root.0', { Width: 480 });
   const editedSerialized = serializeDesignerDocument(edited);
-  assert.match(editedSerialized, /<Canvas/);
+  assert.match(editedSerialized, /<ui:Canvas/);
   assert.match(editedSerialized, /Width="480"/);
   assert.doesNotMatch(editedSerialized, /Width="320"/);
-  assert.doesNotMatch(editedSerialized, /<ui:Canvas/);
+  assert.match(editedSerialized, /x:Name="RootCanvas"/);
+  assert.match(serializeDesignerDocument(parsed.document), /Width="320"/);
 
-  return 1;
+  const childEdited = updateDocumentNodeAttributes(edited, 'root.0.0', { Text: 'Updated title' });
+  const childEditedSerialized = serializeDesignerDocument(childEdited);
+  assert.match(childEditedSerialized, /<ui:TextBlock/);
+  assert.match(childEditedSerialized, /Text="Updated title"/);
+  assert.match(childEditedSerialized, /x:Name="TitleText"/);
+
+  const inserted = insertDocumentChild(childEdited, 'root.0', {
+    type: 'Rectangle',
+    attributes: {
+      Width: 44,
+      Height: 22,
+      Fill: '#123456'
+    },
+    children: []
+  }, 1);
+  const insertedSerialized = serializeDesignerDocument(inserted);
+  assert.match(insertedSerialized, /<ui:Rectangle Width="44" Height="22" Fill="#123456" \/>/);
+  assert.deepEqual(
+    diagnosticsWithSeverity(parseAndValidateXaml(insertedSerialized).validation, 'error'),
+    [],
+    'inserted designer semantic document should validate'
+  );
+
+  const removed = removeDocumentNode(inserted, 'root.0.0');
+  const removedSerialized = serializeDesignerDocument(removed);
+  assert.doesNotMatch(removedSerialized, /TitleText/);
+  assert.match(removedSerialized, /<ui:Rectangle Width="44" Height="22" Fill="#123456" \/>/);
+
+  const moveInput = [
+    '<ui:Canvas xmlns:ui="https://liquidboy.dev/ui-designer">',
+    '  <ui:TextBlock Text="First" />',
+    '  <ui:Rectangle Fill="#111111" />',
+    '</ui:Canvas>'
+  ].join('\n');
+  const moveParsed = parseDesignerDocumentWithDiagnostics(moveInput);
+  assert.ok(moveParsed.document, 'move fixture should produce a document');
+  const moved = moveDocumentNode(moveParsed.document, 'root.0.0', 'root.0', 2);
+  assert.ok(moved, 'move should produce a document');
+  assert.equal(moved.movedId, 'root.0.1');
+  const movedSerialized = serializeDesignerDocument(moved.document);
+  assert.ok(
+    movedSerialized.indexOf('<ui:Rectangle') < movedSerialized.indexOf('<ui:TextBlock'),
+    'moved designer semantic document should preserve reordered child objects'
+  );
+
+  const markupInput = await readFixture('phase9-serializer', 'markup-extensions.xaml');
+  const markupParsed = parseDesignerDocumentWithDiagnostics(markupInput);
+  assert.ok(markupParsed.document, 'markup fixture should produce a document');
+  const propertyElementEdited = updateDocumentNodeAttributes(markupParsed.document, 'root.0.0', {
+    Foreground: '#ffffff'
+  });
+  const propertyElementEditedSerialized = serializeDesignerDocument(propertyElementEdited);
+  assert.match(propertyElementEditedSerialized, /Text="\{Binding Path=Title\}"/);
+  assert.match(propertyElementEditedSerialized, /<TextBlock\.Foreground>#ffffff<\/TextBlock\.Foreground>/);
+
+  const resourceInput = await readFixture('phase9-serializer', 'collections-resources.xaml');
+  const resourceParsed = parseDesignerDocumentWithDiagnostics(resourceInput);
+  assert.ok(resourceParsed.document, 'resource fixture should produce a document');
+  const resourceEdited = updateDocumentNodeAttributes(resourceParsed.document, 'root.0.1', { Width: 360 });
+  const resourceEditedSerialized = serializeDesignerDocument(resourceEdited);
+  assert.match(resourceEditedSerialized, /<Canvas\.Resources>/);
+  assert.match(resourceEditedSerialized, /<StackPanel Width="360">/);
+
+  return 6;
 }
 
 async function runPhase6CollectionFixtures() {

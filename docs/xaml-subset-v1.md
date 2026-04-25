@@ -121,10 +121,10 @@ Current constraints:
 
 Current status:
 
-1. Clean documents loaded through the designer source panel, import flow, draft load, or startup parse keep their semantic infoset for source serialization.
-2. Semantic serialization preserves namespace prefixes, directives, markup extensions, property elements, and resource collection structures for those clean documents.
-3. Inspector, palette, component-tree, drag, and resize edits currently mutate the lowered compatibility tree, so the designer drops the semantic infoset and serializes from the edited lowered shape.
-4. Keeping semantic serialization active after edits requires the next infoset edit-propagation slice.
+1. Documents loaded through the designer source panel, import flow, draft load, or startup parse keep their semantic infoset for source serialization.
+2. Semantic serialization preserves namespace prefixes, directives, markup extensions, property elements, and resource collection structures.
+3. Inspector, palette, component-tree, drag, and resize edits now propagate mapped attribute, property-element, insert, remove, and move operations into the semantic infoset.
+4. If a future lowered compatibility edit cannot be mapped safely to the infoset, the designer drops back to lowered serialization rather than saving stale semantic source.
 
 ## Example Document
 

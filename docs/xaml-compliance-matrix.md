@@ -55,8 +55,8 @@ Default rule: parser support should be broader than runtime execution support. U
 | Whitespace handling | Missing | Phase 3+ | Add schema-aware whitespace preservation/collapse rules. | Include `xml:space` once directive propagation exists. |
 | Markup extension AST | Partial | Phase 5 | Parse brace syntax into structured expressions. | Attribute values and property-element text now parse into a structured AST; runtime lowering evaluates supported extensions while authoring lowering preserves raw text. |
 | Nested markup extensions | Partial | Phase 5 | Support nested extension arguments. | Nested attribute-value extensions now parse recursively; unsupported nested extensions still warn and preserve. |
-| Semantic serializer | Partial | Phase 7 | Serialize from infoset/semantic model, not string concatenation. | `serializeXamlDocumentNode` now canonicalizes namespace declarations, directives, markup extensions, property elements, and collection content; designer source import/export uses the infoset while the document is clean, then drops back to the lowered serializer after compatibility-tree edits. |
-| Semantic round-trip tests | Partial | Phase 8 | Add fixtures for parse, validate, lower, serialize, parse. | Phase 9 fixtures now cover namespaces/directives, markup extensions, and resource collections. Matrix rows should continue gaining executable coverage. |
+| Semantic serializer | Partial | Phase 7 | Serialize from infoset/semantic model, not string concatenation. | `serializeXamlDocumentNode` now canonicalizes namespace declarations, directives, markup extensions, property elements, and collection content; designer attribute edits and child insert/remove/move operations update the infoset when the lowered path maps safely. |
+| Semantic round-trip tests | Partial | Phase 8 | Add fixtures for parse, validate, lower, serialize, parse. | Phase 9 fixtures cover namespaces/directives, markup extensions, and resource collections; designer serializer fixtures cover edit propagation for attributes, property elements, inserts, deletes, moves, and resource-wrapper path mapping. |
 
 ## Intrinsic Namespace Matrix
 
@@ -126,7 +126,7 @@ Current limitation:
 2. Markup extension parsing currently covers attribute values and property-element text; object-element intrinsic forms such as `x:Array` remain deferred.
 3. Runtime resource lookup is primitive-only: `ResourceDictionary` supports `Color`, `Number`, and `String` entries, not object resources or dynamic updates.
 4. Runtime `Binding` evaluation is v1-only: one-way path lookup against a supplied data context, without converters or multi-binding.
-5. The designer document model preserves the parsed semantic infoset only while the lowered compatibility tree is clean; once inspector, palette, tree, drag, or resize edits mutate the compatibility tree, serialization intentionally falls back to the lowered shape until true infoset edit propagation exists.
+5. Designer infoset edit propagation currently covers mapped object paths, attribute/property-element values, and child insert/remove/move operations. If a future edit targets a lowered compatibility shape that cannot be mapped back to an infoset node safely, serialization still falls back to the lowered shape rather than saving stale semantic source.
 
 ## Current Implementation Checkpoint
 
@@ -140,9 +140,9 @@ Completed foundation work:
 6. Collection metadata now validates allowed item types for list containers, and dictionary metadata validates explicit `x:Key`, implicit key properties, missing keys, and duplicate keys.
 7. Runtime lowering now evaluates v1 `Binding` paths against a supplied data context, maps `{x:Null}` to semantic `null`, and resolves scoped primitive `{StaticResource ...}` references.
 8. Infoset semantic serialization now round-trips namespace declarations, directives, markup extensions, property elements, and resource collection structures through fixture coverage.
-9. Designer source import/export now serializes from the parsed infoset for clean documents and invalidates that infoset on compatibility-tree edits so saved XAML reflects user changes instead of stale source metadata.
+9. Designer source import/export now serializes from the parsed infoset, and mapped designer edits propagate into that infoset so namespace prefixes, directives, property elements, markup extensions, and resource property elements survive common visual editing flows.
 
 Next slice:
 
-1. Add true infoset edit propagation for designer mutations so semantic serialization can remain active after inspector, palette, tree, drag, and resize edits.
-2. Follow that with `xml:space` whitespace behavior and `xml:lang` propagation.
+1. Implement `xml:space` whitespace behavior and `xml:lang` propagation.
+2. Expand resource support toward object-valued resources and dynamic updates.
