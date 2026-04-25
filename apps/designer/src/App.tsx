@@ -28,7 +28,7 @@ import { ensureImageNaturalSize, getImageNaturalSize, type Point, type UiElement
 import { Inspector } from './components/Inspector';
 import { LeftRail } from './components/LeftRail';
 import { SourcePane } from './components/SourcePane';
-import { Viewport } from './components/Viewport';
+import { Viewport, type ResizeHandle } from './components/Viewport';
 import {
   DEFAULT_DESIGNER_CHROME_XAML,
   designerChromeDefinition as defaultDesignerChromeDefinition,
@@ -187,6 +187,19 @@ const DEFAULT_INSERTION_SIZE: Record<InsertionToolId, { width: number; height: n
 };
 
 const MIN_DRAW_SIZE = 24;
+const MIN_RESIZE_SIZE = 24;
+const DRAG_START_THRESHOLD = 3;
+
+const RESIZE_HANDLE_DIRECTIONS: Record<ResizeHandle, { x: -1 | 0 | 1; y: -1 | 0 | 1 }> = {
+  nw: { x: -1, y: -1 },
+  n: { x: 0, y: -1 },
+  ne: { x: 1, y: -1 },
+  e: { x: 1, y: 0 },
+  se: { x: 1, y: 1 },
+  s: { x: 0, y: 1 },
+  sw: { x: -1, y: 1 },
+  w: { x: -1, y: 0 }
+};
 
 const VISUAL_STATE_OPTIONS: readonly VisualStateOption[] = [
   {
@@ -474,6 +487,7 @@ export function App() {
   const [fontSizeAttrInput, setFontSizeAttrInput] = useSignalState('');
   const [fontWeightInput, setFontWeightInput] = useSignalState('');
   const [fontStyleInput, setFontStyleInput] = useSignalState('Normal');
+  const [textContentInput, setTextContentInput] = useSignalState('');
   const [textAlignmentInput, setTextAlignmentInput] = useSignalState('Left');
   const [flowDirectionInput, setFlowDirectionInput] = useSignalState('Auto');
   const [lockAspectRatio, setLockAspectRatio] = useSignalState(true);
@@ -495,12 +509,16 @@ export function App() {
   const isDraggingRef = useRef(false);
   const isResizingRef = useRef(false);
   const dragElementIdRef = useRef<string | null>(null);
+  const dragStartScreenPointRef = useRef<Point>({ x: 0, y: 0 });
   const dragStartOffsetRef = useRef<Point>({ x: 0, y: 0 });
   const dragStartElementPositionRef = useRef<Point>({ x: 0, y: 0 });
   const dragStartWorldRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const dragStartDocumentRef = useRef<DesignerDocument | null>(null);
   const resizeElementIdRef = useRef<string | null>(null);
+  const resizeHandleRef = useRef<ResizeHandle>('se');
   const resizeStartSizeRef = useRef<{ width: number; height: number }>({ width: 0, height: 0 });
+  const resizeStartOffsetRef = useRef<Point>({ x: 0, y: 0 });
+  const resizeStartElementPositionRef = useRef<Point>({ x: 0, y: 0 });
   const resizeStartWorldRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const resizeStartDocumentRef = useRef<DesignerDocument | null>(null);
   const panOriginRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -533,6 +551,7 @@ export function App() {
     setFontSizeAttrInput('');
     setFontWeightInput('');
     setFontStyleInput('Normal');
+    setTextContentInput('');
     setTextAlignmentInput('Left');
     setFlowDirectionInput('Auto');
   };
@@ -612,6 +631,7 @@ export function App() {
       readStringAttribute(node, 'FontWeight') || `${asFiniteNumber(node?.attributes.FontWeight) ?? ''}`.trim()
     );
     setFontStyleInput(readStringAttribute(node, 'FontStyle') || 'Normal');
+    setTextContentInput(readStringAttribute(node, node?.type.toLowerCase() === 'button' ? 'Content' : 'Text'));
     setTextAlignmentInput(readStringAttribute(node, 'TextAlignment') || (element.type.toLowerCase() === 'button' ? 'Center' : 'Left'));
     setFlowDirectionInput(readStringAttribute(node, 'FlowDirection') || 'Auto');
 
@@ -761,6 +781,121 @@ export function App() {
     });
   };
 
+  const buildTransformDocument = (
+    document: DesignerDocument,
+    elementId: string,
+    transform: { offset?: Point; size?: { width: number; height: number } }
+  ) => {
+    const patch: Record<string, EditableAttributeValue> = {};
+
+    if (transform.offset) {
+      patch['Designer.OffsetX'] = Math.round(transform.offset.x) === 0 ? null : Math.round(transform.offset.x);
+      patch['Designer.OffsetY'] = Math.round(transform.offset.y) === 0 ? null : Math.round(transform.offset.y);
+    }
+
+    if (transform.size) {
+      patch.Width = Math.max(MIN_RESIZE_SIZE, Math.round(transform.size.width));
+      patch.Height = Math.max(MIN_RESIZE_SIZE, Math.round(transform.size.height));
+    }
+
+    return updateDocumentNodeAttributes(document, elementId, patch);
+  };
+
+  const resolveHandleResizeTransform = (
+    point: Point,
+    options: { snap: boolean; preserveAspect: boolean; selectedNode: ReturnType<typeof findDocumentNodeById>; selectedUiElement: UiElement | null }
+  ): { offset: Point; size: { width: number; height: number } } => {
+    const handle = resizeHandleRef.current;
+    const direction = RESIZE_HANDLE_DIRECTIONS[handle];
+    const world = screenToWorld(point, cameraRef.current);
+    const startWorld = resizeStartWorldRef.current;
+    const startPosition = resizeStartElementPositionRef.current;
+    const startOffset = resizeStartOffsetRef.current;
+    const startSize = resizeStartSizeRef.current;
+    const dx = world.x - startWorld.x;
+    const dy = world.y - startWorld.y;
+
+    let left = startPosition.x;
+    let top = startPosition.y;
+    let right = startPosition.x + startSize.width;
+    let bottom = startPosition.y + startSize.height;
+
+    if (direction.x < 0) {
+      left += dx;
+    } else if (direction.x > 0) {
+      right += dx;
+    }
+
+    if (direction.y < 0) {
+      top += dy;
+    } else if (direction.y > 0) {
+      bottom += dy;
+    }
+
+    if (options.snap) {
+      if (direction.x < 0) {
+        left = snapValue(left);
+      } else if (direction.x > 0) {
+        right = snapValue(right);
+      }
+
+      if (direction.y < 0) {
+        top = snapValue(top);
+      } else if (direction.y > 0) {
+        bottom = snapValue(bottom);
+      }
+    }
+
+    if (right - left < MIN_RESIZE_SIZE) {
+      if (direction.x < 0) {
+        left = right - MIN_RESIZE_SIZE;
+      } else {
+        right = left + MIN_RESIZE_SIZE;
+      }
+    }
+
+    if (bottom - top < MIN_RESIZE_SIZE) {
+      if (direction.y < 0) {
+        top = bottom - MIN_RESIZE_SIZE;
+      } else {
+        bottom = top + MIN_RESIZE_SIZE;
+      }
+    }
+
+    if (options.preserveAspect && isImageNode(options.selectedNode)) {
+      const lockedSize = resolveAspectLockedSize(
+        right - left,
+        bottom - top,
+        resolveImageAspectRatio(options.selectedNode, options.selectedUiElement),
+        startSize.width,
+        startSize.height
+      );
+
+      if (direction.x < 0) {
+        left = right - lockedSize.width;
+      } else {
+        right = left + lockedSize.width;
+      }
+
+      if (direction.y < 0) {
+        top = bottom - lockedSize.height;
+      } else {
+        bottom = top + lockedSize.height;
+      }
+    }
+
+    return {
+      offset: {
+        x: startOffset.x + (left - startPosition.x),
+        y: startOffset.y + (top - startPosition.y)
+      },
+      size: {
+        width: Math.max(MIN_RESIZE_SIZE, right - left),
+        height: Math.max(MIN_RESIZE_SIZE, bottom - top)
+      }
+    };
+  };
+
   const buildColorDocument = (document: DesignerDocument, elementId: string, color: string) => {
     const node = findDocumentNodeById(document, elementId);
     if (!node) {
@@ -808,6 +943,8 @@ export function App() {
       'FontSize',
       'FontWeight',
       'FontStyle',
+      'Text',
+      'Content',
       'TextAlignment',
       'FlowDirection'
     ] as const) {
@@ -1023,6 +1160,24 @@ export function App() {
         FlowDirection: flowDirectionInput === 'Auto' ? null : flowDirectionInput
       })
     );
+  };
+
+  const commitTextContent = () => {
+    const currentDocument = documentRef.current;
+    const id = selectedIdRef.current;
+    const node = id && currentDocument ? findDocumentNodeById(currentDocument, id) : null;
+    if (!currentDocument || !id || !isTextNode(node)) {
+      return;
+    }
+
+    const textAttribute = node.type.toLowerCase() === 'button' ? 'Content' : 'Text';
+    executeDocumentCommand(
+      'text-content',
+      buildAttributeDocument(currentDocument, id, {
+        [textAttribute]: textContentInput
+      })
+    );
+    setStatus(`Updated ${node.type} ${textAttribute.toLowerCase()}.`);
   };
 
   const applySourceDraft = () => {
@@ -1493,6 +1648,51 @@ export function App() {
     setStatus(`Deleted ${selectedTreeItem.type}.`);
   };
 
+  const duplicateSelectedElement = () => {
+    const currentDocument = documentRef.current;
+    const selectedTreeItem = treeItems.find((item) => item.id === selectedIdRef.current) ?? null;
+    if (!currentDocument || !selectedTreeItem?.parentId || selectedTreeItem.id === 'root.0') {
+      setStatus('Select a non-root element to duplicate it.');
+      return;
+    }
+
+    const parentNode = findDocumentNodeById(currentDocument, selectedTreeItem.parentId);
+    const selectedNode = findDocumentNodeById(currentDocument, selectedTreeItem.id);
+    const selectedIndex = getNodeIndexFromId(selectedTreeItem.id);
+    if (!parentNode || !selectedNode || selectedIndex == null || !canHostAdditionalChildren(parentNode)) {
+      setStatus('The selected element cannot be duplicated there.');
+      return;
+    }
+
+    const insertIndex = selectedIndex + 1;
+    let duplicateNode = cloneXamlNode(selectedNode);
+    if (parentNode.type.toLowerCase() === 'canvas') {
+      const nextX = asFiniteNumber(duplicateNode.attributes.X);
+      const nextY = asFiniteNumber(duplicateNode.attributes.Y);
+      if (nextX != null || nextY != null) {
+        duplicateNode.attributes.X = Math.round((nextX ?? 0) + GRID_SIZE * 3);
+        duplicateNode.attributes.Y = Math.round((nextY ?? 0) + GRID_SIZE * 3);
+      } else {
+        duplicateNode.attributes['Designer.OffsetX'] =
+          Math.round((asFiniteNumber(duplicateNode.attributes['Designer.OffsetX']) ?? 0) + GRID_SIZE * 3);
+        duplicateNode.attributes['Designer.OffsetY'] =
+          Math.round((asFiniteNumber(duplicateNode.attributes['Designer.OffsetY']) ?? 0) + GRID_SIZE * 3);
+      }
+    } else if (parentNode.type.toLowerCase() === 'grid') {
+      duplicateNode = applyContainerPlacement(parentNode, duplicateNode, insertIndex);
+    }
+
+    executeDocumentCommand(
+      'duplicate-node',
+      insertDocumentChild(currentDocument, selectedTreeItem.parentId, duplicateNode, insertIndex),
+      {
+        nextSelectionId: `${selectedTreeItem.parentId}.${insertIndex}`,
+        previousSelectionId: selectedTreeItem.id
+      }
+    );
+    setStatus(`Duplicated ${selectedTreeItem.type}.`);
+  };
+
   const reparentSelectedIn = () => {
     const currentDocument = documentRef.current;
     const selectedTreeItem = treeItems.find((item) => item.id === selectedIdRef.current) ?? null;
@@ -1923,7 +2123,7 @@ export function App() {
           }
         })
         .then(() => {
-          setStatus('Design surface online. Left-drag to move, handle-drag to resize, middle-drag to pan.');
+          setStatus('Design surface online. Click to select, drag to move, handle-drag to resize.');
           runtime?.start();
         })
         .catch((error: unknown) => {
@@ -2054,11 +2254,15 @@ export function App() {
         const id = runtime.pickElementAtScreenPoint(point);
         if (!id || !currentDocument) {
           setSelection(null);
+          setStatus('Selection cleared.');
           return;
         }
 
-        isDraggingRef.current = true;
+        event.preventDefault();
+        setSelection(id);
+        isDraggingRef.current = false;
         dragElementIdRef.current = id;
+        dragStartScreenPointRef.current = point;
         dragStartOffsetRef.current = readDocumentOffset(currentDocument, id);
         const selected = runtime.getElementById(id);
         dragStartElementPositionRef.current = selected
@@ -2066,8 +2270,8 @@ export function App() {
           : { x: 0, y: 0 };
         dragStartWorldRef.current = screenToWorld(point, cameraRef.current);
         dragStartDocumentRef.current = cloneXamlDocument(currentDocument);
-        canvas.classList.add('is-dragging');
         canvas.setPointerCapture(event.pointerId);
+        setStatus(`Selected ${selected?.type ?? 'element'} ${id}. Drag to move it.`);
         return;
       }
 
@@ -2095,40 +2299,36 @@ export function App() {
         }
 
         const point = toCanvasPoint(event);
-        const world = screenToWorld(point, cameraRef.current);
-        const startWorld = resizeStartWorldRef.current;
-        const startSize = resizeStartSizeRef.current;
-        const rawWidth = Math.max(24, startSize.width + (world.x - startWorld.x));
-        const rawHeight = Math.max(24, startSize.height + (world.y - startWorld.y));
-        const nextWidth = Math.max(24, snapValue(rawWidth, snapEnabledRef.current && !event.altKey));
-        const nextHeight = Math.max(24, snapValue(rawHeight, snapEnabledRef.current && !event.altKey));
         const selectedNode = findDocumentNodeById(startDocument, resizeElementIdRef.current);
+        const transform = resolveHandleResizeTransform(point, {
+          snap: snapEnabledRef.current && !event.altKey,
+          preserveAspect: lockAspectRatioRef.current && isImageNode(selectedNode) && !event.altKey,
+          selectedNode,
+          selectedUiElement: selectedElementRef.current
+        });
 
-        previewDocument(
-          buildResizeDocument(
-            startDocument,
-            resizeElementIdRef.current,
-            {
-              width: nextWidth,
-              height: nextHeight
-            },
-            {
-              preserveAspect: lockAspectRatioRef.current && isImageNode(selectedNode) && !event.altKey,
-              selectedNode,
-              selectedUiElement: selectedElementRef.current
-            }
-          )
-        );
+        previewDocument(buildTransformDocument(startDocument, resizeElementIdRef.current, transform));
         return;
       }
 
-      if (isDraggingRef.current && dragElementIdRef.current) {
+      if (dragElementIdRef.current) {
         const startDocument = dragStartDocumentRef.current;
         if (!startDocument) {
           return;
         }
 
         const point = toCanvasPoint(event);
+        if (!isDraggingRef.current) {
+          const start = dragStartScreenPointRef.current;
+          const distance = Math.hypot(point.x - start.x, point.y - start.y);
+          if (distance < DRAG_START_THRESHOLD) {
+            return;
+          }
+
+          isDraggingRef.current = true;
+          canvas.classList.add('is-dragging');
+        }
+
         const world = screenToWorld(point, cameraRef.current);
         const id = dragElementIdRef.current;
         const startWorld = dragStartWorldRef.current;
@@ -2178,31 +2378,35 @@ export function App() {
         const startDocument = resizeStartDocumentRef.current;
         if (runtime && id && startDocument) {
           const selected = runtime.getElementById(id);
-          const to = selected
+          const transform = selected
             ? { width: selected.layout.width, height: selected.layout.height }
             : resizeStartSizeRef.current;
-          const selectedNode = findDocumentNodeById(startDocument, id);
           executeDocumentCommand(
             'handle-resize',
-            buildResizeDocument(startDocument, id, to, {
-              preserveAspect: lockAspectRatioRef.current && isImageNode(selectedNode),
-              selectedNode,
-              selectedUiElement: selected
+            buildTransformDocument(startDocument, id, {
+              offset: selected
+                ? {
+                    x: resizeStartOffsetRef.current.x + (selected.layout.x - resizeStartElementPositionRef.current.x),
+                    y: resizeStartOffsetRef.current.y + (selected.layout.y - resizeStartElementPositionRef.current.y)
+                  }
+                : resizeStartOffsetRef.current,
+              size: transform
             })
           );
         }
 
         isResizingRef.current = false;
         resizeElementIdRef.current = null;
+        resizeHandleRef.current = 'se';
         resizeStartDocumentRef.current = null;
         canvas.classList.remove('is-resizing');
       }
 
-      if (isDraggingRef.current) {
+      if (dragElementIdRef.current) {
         const runtime = runtimeRef.current;
         const id = dragElementIdRef.current;
         const startDocument = dragStartDocumentRef.current;
-        if (runtime && id && startDocument) {
+        if (isDraggingRef.current && runtime && id && startDocument) {
           const selected = runtime.getElementById(id);
           const to = selected
             ? {
@@ -2244,14 +2448,14 @@ export function App() {
     };
 
     canvas.addEventListener('pointerdown', onPointerDown);
-    canvas.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointermove', onPointerMove);
     window.addEventListener('pointerup', endPan);
     window.addEventListener('pointercancel', endPan);
     canvas.addEventListener('wheel', onWheel, { passive: false });
 
     return () => {
       canvas.removeEventListener('pointerdown', onPointerDown);
-      canvas.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', endPan);
       window.removeEventListener('pointercancel', endPan);
       canvas.removeEventListener('wheel', onWheel);
@@ -2285,7 +2489,7 @@ export function App() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target;
-      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) {
         return;
       }
 
@@ -2295,6 +2499,9 @@ export function App() {
       const key = event.key.toLowerCase();
       const isPlainKey = !event.metaKey && !event.ctrlKey && !event.altKey;
       const isToggleSnap = isPlainKey && event.shiftKey && key === 'g';
+      const isDuplicate = (event.metaKey || event.ctrlKey) && key === 'd';
+      const isDelete = isPlainKey && (event.key === 'Delete' || event.key === 'Backspace');
+      const isEscape = isPlainKey && event.key === 'Escape';
       const shortcutToolId = isPlainKey && !event.shiftKey ? TOOL_SHORTCUTS[key] : undefined;
       const arrowKey = event.key;
       const isArrow =
@@ -2306,6 +2513,15 @@ export function App() {
       if (isToggleSnap) {
         event.preventDefault();
         setSnapEnabled((value) => !value);
+        return;
+      }
+
+      if (isEscape) {
+        event.preventDefault();
+        selectDesignerToolById('selection');
+        setInsertionPreview(null);
+        insertionDraftRef.current = null;
+        setStatus('Selection tool active.');
         return;
       }
 
@@ -2323,6 +2539,18 @@ export function App() {
       if (isRedoMac || isRedoWin) {
         event.preventDefault();
         performRedo();
+        return;
+      }
+
+      if (isDuplicate) {
+        event.preventDefault();
+        duplicateSelectedElement();
+        return;
+      }
+
+      if (isDelete) {
+        event.preventDefault();
+        deleteSelectedElement();
         return;
       }
 
@@ -2357,7 +2585,7 @@ export function App() {
     return () => {
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [snapEnabled, historyVersion, chromeDefinition.toolStrip]);
+  }, [snapEnabled, historyVersion, chromeDefinition.toolStrip, treeItems]);
 
   const commitInspectorPosition = () => {
     const currentDocument = documentRef.current;
@@ -2472,6 +2700,7 @@ export function App() {
   const canAddChild = canInsertTemplateIntoParent(selectedTemplate, selectedOrRootNode);
   const canAddSibling = !!selectedTreeItem?.parentId && canInsertTemplateIntoParent(selectedTemplate, siblingParentNode);
   const canDeleteSelected = !!selectedTreeItem && selectedTreeItem.id !== 'root.0';
+  const canDuplicateSelected = canDeleteSelected;
   const canReparentIn = !!selectedTreeItem && !!previousSiblingNode && canHostAdditionalChildren(previousSiblingNode);
   const canReparentOut = !!selectedTreeItem && !!parentTreeItem?.parentId;
   const canApplySource = sourceDirty && sourceDraft.trim().length > 0;
@@ -2523,7 +2752,7 @@ export function App() {
   const gridOffsetX = -((cameraView.x * cameraView.zoom) % gridStep);
   const gridOffsetY = -((cameraView.y * cameraView.zoom) % gridStep);
 
-  const onResizeHandlePointerDown: JSX.PointerEventHandler<HTMLButtonElement> = (event) => {
+  const onResizeHandlePointerDown = (handle: ResizeHandle, event: JSX.TargetedPointerEvent<HTMLButtonElement>) => {
     event.preventDefault();
     event.stopPropagation();
 
@@ -2549,13 +2778,20 @@ export function App() {
 
     isResizingRef.current = true;
     resizeElementIdRef.current = id;
+    resizeHandleRef.current = handle;
     resizeStartSizeRef.current = {
       width: selected.layout.width,
       height: selected.layout.height
     };
+    resizeStartOffsetRef.current = readDocumentOffset(currentDocument, id);
+    resizeStartElementPositionRef.current = {
+      x: selected.layout.x,
+      y: selected.layout.y
+    };
     resizeStartWorldRef.current = world;
     resizeStartDocumentRef.current = cloneXamlDocument(currentDocument);
     canvas.classList.add('is-resizing');
+    setStatus(`Resize ${selected.type} from ${handle.toUpperCase()}. Hold Alt to ignore snap.`);
   };
 
   const updateOverlaySetting = (key: keyof DebugOverlaySettings, value: boolean) => {
@@ -2840,10 +3076,12 @@ export function App() {
           canAddChild={canAddChild}
           canAddSibling={canAddSibling}
           canDeleteSelected={canDeleteSelected}
+          canDuplicateSelected={canDuplicateSelected}
           canReparentIn={canReparentIn}
           canReparentOut={canReparentOut}
           onAddChild={createChildElement}
           onAddSibling={createSiblingElement}
+          onDuplicateSelected={duplicateSelectedElement}
           onDeleteSelected={deleteSelectedElement}
           onNestIn={reparentSelectedIn}
           onMoveOut={reparentSelectedOut}
@@ -3006,14 +3244,17 @@ export function App() {
           fontSizeInput={fontSizeAttrInput}
           fontWeightInput={fontWeightInput}
           fontStyleInput={fontStyleInput}
+          textContentInput={textContentInput}
           textAlignmentInput={textAlignmentInput}
           flowDirectionInput={flowDirectionInput}
           onChangeFontFamily={setFontFamilyInput}
           onChangeFontSize={setFontSizeAttrInput}
           onChangeFontWeight={setFontWeightInput}
           onChangeFontStyle={setFontStyleInput}
+          onChangeTextContent={setTextContentInput}
           onChangeTextAlignment={setTextAlignmentInput}
           onChangeFlowDirection={setFlowDirectionInput}
+          onCommitTextContent={commitTextContent}
           onCommitTypography={commitTypographySettings}
         />
       </section>

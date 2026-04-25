@@ -735,10 +735,12 @@ button {
 
 .selection-rect {
   position: absolute;
-  border: 1px solid #49c3ff;
+  border: 1px solid #6fd3ff;
+  background: rgba(73, 195, 255, 0.035);
   box-shadow:
-    0 0 0 1px rgba(73, 195, 255, 0.22),
-    inset 0 0 0 1px rgba(73, 195, 255, 0.18);
+    0 0 0 1px rgba(73, 195, 255, 0.34),
+    0 0 0 3px rgba(73, 195, 255, 0.08),
+    inset 0 0 0 1px rgba(73, 195, 255, 0.22);
   pointer-events: none;
   overflow: visible;
 }
@@ -876,15 +878,64 @@ button {
 
 .resize-handle {
   position: absolute;
-  right: -5px;
-  bottom: -5px;
   width: 10px;
   height: 10px;
   border: 1px solid #56c5ff;
   border-radius: 0;
   background: #121c23;
   pointer-events: auto;
+}
+
+.resize-handle-nw {
+  left: -5px;
+  top: -5px;
   cursor: nwse-resize;
+}
+
+.resize-handle-n {
+  left: 50%;
+  top: -5px;
+  transform: translateX(-50%);
+  cursor: ns-resize;
+}
+
+.resize-handle-ne {
+  right: -5px;
+  top: -5px;
+  cursor: nesw-resize;
+}
+
+.resize-handle-e {
+  right: -5px;
+  top: 50%;
+  transform: translateY(-50%);
+  cursor: ew-resize;
+}
+
+.resize-handle-se {
+  right: -5px;
+  bottom: -5px;
+  cursor: nwse-resize;
+}
+
+.resize-handle-s {
+  left: 50%;
+  bottom: -5px;
+  transform: translateX(-50%);
+  cursor: ns-resize;
+}
+
+.resize-handle-sw {
+  left: -5px;
+  bottom: -5px;
+  cursor: nesw-resize;
+}
+
+.resize-handle-w {
+  left: -5px;
+  top: 50%;
+  transform: translateY(-50%);
+  cursor: ew-resize;
 }
 
 .dock-tabs {
@@ -973,7 +1024,8 @@ button {
 }
 
 .field input,
-.field select {
+.field select,
+.field textarea {
   min-width: 0;
   height: 24px;
   border: 1px solid #464750;
@@ -983,8 +1035,19 @@ button {
   color: var(--designer-text-bright);
 }
 
+.field textarea {
+  min-height: 64px;
+  resize: vertical;
+}
+
+.field-stacked {
+  grid-template-columns: 1fr;
+  align-items: stretch;
+}
+
 .field input:focus,
 .field select:focus,
+.field textarea:focus,
 .source-preview:focus {
   outline: 1px solid var(--designer-accent-line);
   outline-offset: -1px;

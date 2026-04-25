@@ -45,10 +45,12 @@ interface LeftRailProps {
   canAddChild: boolean;
   canAddSibling: boolean;
   canDeleteSelected: boolean;
+  canDuplicateSelected: boolean;
   canReparentIn: boolean;
   canReparentOut: boolean;
   onAddChild: () => void;
   onAddSibling: () => void;
+  onDuplicateSelected: () => void;
   onDeleteSelected: () => void;
   onNestIn: () => void;
   onMoveOut: () => void;
@@ -129,10 +131,12 @@ export function LeftRail(props: LeftRailProps) {
     canAddChild,
     canAddSibling,
     canDeleteSelected,
+    canDuplicateSelected,
     canReparentIn,
     canReparentOut,
     onAddChild,
     onAddSibling,
+    onDuplicateSelected,
     onDeleteSelected,
     onNestIn,
     onMoveOut,
@@ -289,6 +293,9 @@ export function LeftRail(props: LeftRailProps) {
                 Move Out
               </button>
             </div>
+            <button className="toolbar-btn full-width" type="button" onClick={onDuplicateSelected} disabled={!canDuplicateSelected}>
+              Duplicate Selected
+            </button>
             <button className="toolbar-btn full-width" type="button" onClick={onDeleteSelected} disabled={!canDeleteSelected}>
               Delete Selected
             </button>

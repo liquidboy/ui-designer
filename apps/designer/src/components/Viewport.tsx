@@ -1,6 +1,19 @@
 import type { JSX } from 'preact';
 import type { DebugOverlaySettings, ViewportOverlayState } from '../designer/overlays';
 
+export type ResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
+
+const RESIZE_HANDLES: readonly { id: ResizeHandle; label: string }[] = [
+  { id: 'nw', label: 'Resize from top left' },
+  { id: 'n', label: 'Resize from top' },
+  { id: 'ne', label: 'Resize from top right' },
+  { id: 'e', label: 'Resize from right' },
+  { id: 'se', label: 'Resize from bottom right' },
+  { id: 's', label: 'Resize from bottom' },
+  { id: 'sw', label: 'Resize from bottom left' },
+  { id: 'w', label: 'Resize from left' }
+];
+
 interface ViewportProps {
   canvasRef: { current: HTMLCanvasElement | null };
   activeToolId: string;
@@ -17,7 +30,7 @@ interface ViewportProps {
   gridOffsetY: number;
   overlaySettings: DebugOverlaySettings;
   overlayState: ViewportOverlayState;
-  onResizeHandlePointerDown: JSX.PointerEventHandler<HTMLButtonElement>;
+  onResizeHandlePointerDown: (handle: ResizeHandle, event: JSX.TargetedPointerEvent<HTMLButtonElement>) => void;
 }
 
 export function Viewport(props: ViewportProps) {
@@ -151,12 +164,16 @@ export function Viewport(props: ViewportProps) {
           >
             {overlayState.selectionLabel ? <span className="overlay-chip selection-chip">{overlayState.selectionLabel}</span> : null}
             {overlayState.layoutBadge ? <span className="overlay-chip layout-chip">{overlayState.layoutBadge}</span> : null}
-            <button
-              className="resize-handle"
-              type="button"
-              aria-label="Resize selected element"
-              onPointerDown={onResizeHandlePointerDown}
-            />
+            {RESIZE_HANDLES.map((handle) => (
+              <button
+                key={handle.id}
+                className={`resize-handle resize-handle-${handle.id}`}
+                type="button"
+                aria-label={handle.label}
+                title={handle.label}
+                onPointerDown={(event) => onResizeHandlePointerDown(handle.id, event)}
+              />
+            ))}
           </div>
         ) : null}
       </div>

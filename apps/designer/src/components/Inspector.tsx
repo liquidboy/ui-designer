@@ -39,14 +39,17 @@ interface InspectorProps {
   fontSizeInput: string;
   fontWeightInput: string;
   fontStyleInput: string;
+  textContentInput: string;
   textAlignmentInput: string;
   flowDirectionInput: string;
   onChangeFontFamily: (value: string) => void;
   onChangeFontSize: (value: string) => void;
   onChangeFontWeight: (value: string) => void;
   onChangeFontStyle: (value: string) => void;
+  onChangeTextContent: (value: string) => void;
   onChangeTextAlignment: (value: string) => void;
   onChangeFlowDirection: (value: string) => void;
+  onCommitTextContent: () => void;
   onCommitTypography: () => void;
 }
 
@@ -93,14 +96,17 @@ export function Inspector(props: InspectorProps) {
     fontSizeInput,
     fontWeightInput,
     fontStyleInput,
+    textContentInput,
     textAlignmentInput,
     flowDirectionInput,
     onChangeFontFamily,
     onChangeFontSize,
     onChangeFontWeight,
     onChangeFontStyle,
+    onChangeTextContent,
     onChangeTextAlignment,
     onChangeFlowDirection,
+    onCommitTextContent,
     onCommitTypography
   } = props;
 
@@ -233,6 +239,28 @@ export function Inspector(props: InspectorProps) {
               Use Natural Size
             </button>
           </div>
+        </section>
+      ) : null}
+
+      {selectedElement && isSelectedTextNode ? (
+        <section className="inspector-group">
+          <h3>Text</h3>
+          <label className="field field-stacked">
+            <span>{selectedElement.type.toLowerCase() === 'button' ? 'Content' : 'Text'}</span>
+            <textarea
+              value={textContentInput}
+              onInput={(event) => onChangeTextContent((event.target as HTMLTextAreaElement).value)}
+              onBlur={onCommitTextContent}
+              onKeyDown={(event) => {
+                if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+                  onCommitTextContent();
+                }
+              }}
+            />
+          </label>
+          <button className="toolbar-btn full-width" type="button" onClick={onCommitTextContent}>
+            Apply Text
+          </button>
         </section>
       ) : null}
 
