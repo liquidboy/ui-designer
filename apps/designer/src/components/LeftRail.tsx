@@ -3,11 +3,13 @@ import type { CameraState, DesignerTreeItem } from '@ui-designer/designer-core';
 import type { DesignerChromeItem } from '../designer/chrome';
 import type { DebugOverlaySettings } from '../designer/overlays';
 import type { TreeDropIntent } from '../designer/document';
-import type { DesignerPanelsDefinition } from '../designer/panels';
+import type { DesignerPanelId, DesignerPanelsDefinition } from '../designer/panels';
 import type { DesignerFontAsset, DesignerImageAsset, PaletteTemplate } from '../designer/presets';
 
 interface LeftRailProps {
   dockTabs: readonly DesignerChromeItem[];
+  activeDockTabId: string;
+  onSelectDockTab: (id: string) => void;
   panels: DesignerPanelsDefinition['panels'];
   status: string;
   origin: { x: number; y: number };
@@ -83,6 +85,8 @@ interface LeftRailProps {
 export function LeftRail(props: LeftRailProps) {
   const {
     dockTabs,
+    activeDockTabId,
+    onSelectDockTab,
     panels,
     status,
     origin,
@@ -154,133 +158,148 @@ export function LeftRail(props: LeftRailProps) {
     isSelectedImageNode,
     isSelectedTextNode
   } = props;
+  const showPanel = (panelId: DesignerPanelId) => panels[panelId].dockTabId === activeDockTabId;
 
   return (
     <aside className="left-rail">
       <div className="dock-tabs" role="tablist" aria-label="Designer panels">
         {dockTabs.map((tab) => (
-          <button key={tab.id} className={`dock-tab ${tab.isActive ? 'is-active' : ''}`} type="button">
+          <button
+            key={tab.id}
+            className={`dock-tab ${tab.id === activeDockTabId ? 'is-active' : ''}`}
+            type="button"
+            onClick={() => onSelectDockTab(tab.id)}
+          >
             {tab.label}
           </button>
         ))}
       </div>
-      <h1>{panels.solution.title}</h1>
-      <p>{status}</p>
-      <div className="origin">Screen origin: {origin.x.toFixed(0)}, {origin.y.toFixed(0)}</div>
-      <div className="origin">Camera: {cameraView.x.toFixed(0)}, {cameraView.y.toFixed(0)}</div>
-      <div className="origin">Zoom: {(cameraView.zoom * 100).toFixed(0)}%</div>
-      <div className="origin">Snap: {snapEnabled ? 'On (8px)' : 'Off'} (toggle: G)</div>
-      <div className="origin">File: {documentFileName}</div>
-      <div className="toolbar-row">
-        <button className="toolbar-btn" type="button" onClick={onUndo} disabled={!canUndo}>
-          Undo
-        </button>
-        <button className="toolbar-btn" type="button" onClick={onRedo} disabled={!canRedo}>
-          Redo
-        </button>
-      </div>
-      <div className="toolbar-row">
-        <button className="toolbar-btn" type="button" onClick={onSaveDraft}>
-          Save Draft
-        </button>
-        <button className="toolbar-btn" type="button" onClick={onLoadDraft}>
-          Load Draft
-        </button>
-      </div>
-      <div className="toolbar-row">
-        <button className="toolbar-btn" type="button" onClick={onImportFile}>
-          Import File
-        </button>
-        <button className="toolbar-btn" type="button" onClick={onExportFile}>
-          Export File
-        </button>
-      </div>
-      <button className="toolbar-btn full-width" type="button" onClick={onClearDraftStorage}>
-        Clear Draft Storage
-      </button>
-
-      <section className="palette-panel">
-        <h2>{panels.palette.title}</h2>
-        {panels.palette.caption ? <p className="tree-caption">{panels.palette.caption}</p> : null}
-        <div className="palette-grid">
-          {paletteTemplates.map((template) => {
-            const childEnabled = canUseTemplateAsChild(template);
-            const siblingEnabled = canUseTemplateAsSibling(template);
-
-            return (
-              <button
-                key={template.id}
-                className={`palette-card ${selectedTemplateId === template.id ? 'is-selected' : ''}`}
-                type="button"
-                onClick={() => onSelectTemplate(template.id)}
-              >
-                <span className="palette-swatch" style={{ background: template.accent }} />
-                <span className="palette-title">{template.title}</span>
-                <span className="palette-description">{template.description}</span>
-                <span className="palette-meta">
-                  {childEnabled ? 'Child OK' : 'Child blocked'} | {siblingEnabled ? 'Sibling OK' : 'Sibling blocked'}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </section>
-
-      <section className="tree-panel">
-        <h2>{panels.tree.title}</h2>
-        <p className="tree-caption">
-          Target: {selectedTreeNodeLabel}{selectedTreeItemId ? ` (${selectedTreeItemId})` : ''}
-        </p>
-        <p className="tree-caption">
-          Template: {selectedTemplateTitle} | Child target: {childTargetLabel} | Sibling target: {siblingTargetLabel}
-        </p>
-        <div className="tree-toolbar">
+      {showPanel('solution') ? (
+        <>
+          <h1>{panels.solution.title}</h1>
+          <p>{status}</p>
+          <div className="origin">Screen origin: {origin.x.toFixed(0)}, {origin.y.toFixed(0)}</div>
+          <div className="origin">Camera: {cameraView.x.toFixed(0)}, {cameraView.y.toFixed(0)}</div>
+          <div className="origin">Zoom: {(cameraView.zoom * 100).toFixed(0)}%</div>
+          <div className="origin">Snap: {snapEnabled ? 'On (8px)' : 'Off'} (toggle: G)</div>
+          <div className="origin">File: {documentFileName}</div>
           <div className="toolbar-row">
-            <button className="toolbar-btn" type="button" onClick={onAddChild} disabled={!canAddChild}>
-              Add Child
+            <button className="toolbar-btn" type="button" onClick={onUndo} disabled={!canUndo}>
+              Undo
             </button>
-            <button className="toolbar-btn" type="button" onClick={onAddSibling} disabled={!canAddSibling}>
-              Add Sibling
+            <button className="toolbar-btn" type="button" onClick={onRedo} disabled={!canRedo}>
+              Redo
             </button>
           </div>
           <div className="toolbar-row">
-            <button className="toolbar-btn" type="button" onClick={onNestIn} disabled={!canReparentIn}>
-              Nest In
+            <button className="toolbar-btn" type="button" onClick={onSaveDraft}>
+              Save Draft
             </button>
-            <button className="toolbar-btn" type="button" onClick={onMoveOut} disabled={!canReparentOut}>
-              Move Out
+            <button className="toolbar-btn" type="button" onClick={onLoadDraft}>
+              Load Draft
             </button>
           </div>
-          <button className="toolbar-btn full-width" type="button" onClick={onDeleteSelected} disabled={!canDeleteSelected}>
-            Delete Selected
+          <div className="toolbar-row">
+            <button className="toolbar-btn" type="button" onClick={onImportFile}>
+              Import File
+            </button>
+            <button className="toolbar-btn" type="button" onClick={onExportFile}>
+              Export File
+            </button>
+          </div>
+          <button className="toolbar-btn full-width" type="button" onClick={onClearDraftStorage}>
+            Clear Draft Storage
           </button>
-        </div>
-        <div className="tree-list" role="tree">
-          {treeItems.map((item) => (
-            <button
-              key={item.id}
-              className={`tree-item ${selectedId === item.id ? 'is-selected' : ''} ${
-                treeDragSourceId === item.id ? 'is-drag-source' : ''
-              } ${treeDropTargetId === item.id && treeDropIntent === 'before' ? 'drop-before' : ''} ${
-                treeDropTargetId === item.id && treeDropIntent === 'inside' ? 'drop-inside' : ''
-              } ${treeDropTargetId === item.id && treeDropIntent === 'after' ? 'drop-after' : ''}`}
-              style={{ paddingLeft: `${12 + item.depth * 16}px` }}
-              type="button"
-              draggable={item.id !== 'root.0'}
-              onClick={() => onSelectElement(item.id)}
-              onDragStart={(event) => onTreeDragStart(item.id, event)}
-              onDragOver={(event) => onTreeDragOver(item.id, event)}
-              onDrop={(event) => onTreeDrop(item.id, event)}
-              onDragEnd={onTreeDragEnd}
-            >
-              <span className="tree-type">{item.type}</span>
-              <span className="tree-label">{item.label}</span>
-            </button>
-          ))}
-        </div>
-      </section>
+        </>
+      ) : null}
 
-      <section className="library-panel">
+      {showPanel('palette') ? (
+        <section className="palette-panel">
+          <h2>{panels.palette.title}</h2>
+          {panels.palette.caption ? <p className="tree-caption">{panels.palette.caption}</p> : null}
+          <div className="palette-grid">
+            {paletteTemplates.map((template) => {
+              const childEnabled = canUseTemplateAsChild(template);
+              const siblingEnabled = canUseTemplateAsSibling(template);
+
+              return (
+                <button
+                  key={template.id}
+                  className={`palette-card ${selectedTemplateId === template.id ? 'is-selected' : ''}`}
+                  type="button"
+                  onClick={() => onSelectTemplate(template.id)}
+                >
+                  <span className="palette-swatch" style={{ background: template.accent }} />
+                  <span className="palette-title">{template.title}</span>
+                  <span className="palette-description">{template.description}</span>
+                  <span className="palette-meta">
+                    {childEnabled ? 'Child OK' : 'Child blocked'} | {siblingEnabled ? 'Sibling OK' : 'Sibling blocked'}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
+
+      {showPanel('tree') ? (
+        <section className="tree-panel">
+          <h2>{panels.tree.title}</h2>
+          <p className="tree-caption">
+            Target: {selectedTreeNodeLabel}{selectedTreeItemId ? ` (${selectedTreeItemId})` : ''}
+          </p>
+          <p className="tree-caption">
+            Template: {selectedTemplateTitle} | Child target: {childTargetLabel} | Sibling target: {siblingTargetLabel}
+          </p>
+          <div className="tree-toolbar">
+            <div className="toolbar-row">
+              <button className="toolbar-btn" type="button" onClick={onAddChild} disabled={!canAddChild}>
+                Add Child
+              </button>
+              <button className="toolbar-btn" type="button" onClick={onAddSibling} disabled={!canAddSibling}>
+                Add Sibling
+              </button>
+            </div>
+            <div className="toolbar-row">
+              <button className="toolbar-btn" type="button" onClick={onNestIn} disabled={!canReparentIn}>
+                Nest In
+              </button>
+              <button className="toolbar-btn" type="button" onClick={onMoveOut} disabled={!canReparentOut}>
+                Move Out
+              </button>
+            </div>
+            <button className="toolbar-btn full-width" type="button" onClick={onDeleteSelected} disabled={!canDeleteSelected}>
+              Delete Selected
+            </button>
+          </div>
+          <div className="tree-list" role="tree">
+            {treeItems.map((item) => (
+              <button
+                key={item.id}
+                className={`tree-item ${selectedId === item.id ? 'is-selected' : ''} ${
+                  treeDragSourceId === item.id ? 'is-drag-source' : ''
+                } ${treeDropTargetId === item.id && treeDropIntent === 'before' ? 'drop-before' : ''} ${
+                  treeDropTargetId === item.id && treeDropIntent === 'inside' ? 'drop-inside' : ''
+                } ${treeDropTargetId === item.id && treeDropIntent === 'after' ? 'drop-after' : ''}`}
+                style={{ paddingLeft: `${12 + item.depth * 16}px` }}
+                type="button"
+                draggable={item.id !== 'root.0'}
+                onClick={() => onSelectElement(item.id)}
+                onDragStart={(event) => onTreeDragStart(item.id, event)}
+                onDragOver={(event) => onTreeDragOver(item.id, event)}
+                onDrop={(event) => onTreeDrop(item.id, event)}
+                onDragEnd={onTreeDragEnd}
+              >
+                <span className="tree-type">{item.type}</span>
+                <span className="tree-label">{item.label}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {showPanel('assets') ? (
+        <section className="library-panel">
         <h2>{panels.assets.title}</h2>
         {panels.assets.caption ? <p className="tree-caption">{panels.assets.caption}</p> : null}
         <div className="toolbar-row">
@@ -334,7 +353,11 @@ export function LeftRail(props: LeftRailProps) {
             )}
           </div>
         </div>
+      </section>
+      ) : null}
 
+      {showPanel('fonts') ? (
+        <section className="library-panel">
         <h2>{panels.fonts.title}</h2>
         {panels.fonts.caption ? <p className="tree-caption">{panels.fonts.caption}</p> : null}
         <div className="toolbar-row">
@@ -383,8 +406,10 @@ export function LeftRail(props: LeftRailProps) {
           Active library picks: image {selectedAssetTitle}, font {selectedFontTitle}.
         </p>
       </section>
+      ) : null}
 
-      <section className="library-panel">
+      {showPanel('overlays') ? (
+        <section className="library-panel">
         <h2>{panels.overlays.title}</h2>
         {panels.overlays.caption ? <p className="tree-caption">{panels.overlays.caption}</p> : null}
         <label className="toggle-row">
@@ -420,6 +445,7 @@ export function LeftRail(props: LeftRailProps) {
           <span>Show text and image content guides</span>
         </label>
       </section>
+      ) : null}
 
       <div className="origin">Hover: {hoveredId ?? 'none'}</div>
       <div className="origin">Selected: {selectedId ?? 'none'}</div>

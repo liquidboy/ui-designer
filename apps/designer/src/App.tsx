@@ -199,6 +199,10 @@ function inlineDiagnosticMessage(message: string): string {
   return message.replace(/\s+/g, ' ').trim();
 }
 
+function getInitialActiveItemId(items: readonly DesignerChromeItem[], fallback: string): string {
+  return items.find((item) => item.isActive)?.id ?? items[0]?.id ?? fallback;
+}
+
 function createInitialChromeState(): InitialChromeState {
   const storedDraft = readChromeDraftXaml();
   const storedApplied = readAppliedChromeXaml();
@@ -348,6 +352,9 @@ export function App() {
   const [initialPanelsState] = useState<InitialPanelsState>(() => createInitialPanelsState());
   const [initialThemeState] = useState<InitialThemeState>(() => createInitialThemeState());
   const [activeSourceDocument, setActiveSourceDocument] = useState<SourceDocumentId>('document');
+  const [selectedLeftDockTabId, setSelectedLeftDockTabId] = useState(() =>
+    getInitialActiveItemId(initialChromeState.definition.leftDockTabs, 'project')
+  );
   const [chromeDefinition, setChromeDefinition] = useState<DesignerChromeDefinition>(initialChromeState.definition);
   const [chromeSourceDraft, setChromeSourceDraft] = useState(initialChromeState.draft);
   const [chromeSourceDirty, setChromeSourceDirty] = useState(initialChromeState.dirty);
@@ -2259,6 +2266,9 @@ export function App() {
     const value = item.valueBinding ? statusValues[item.valueBinding] : '';
     return item.label ? `${item.label} ${value}` : value;
   };
+  const activeLeftDockTabId = chromeDefinition.leftDockTabs.some((tab) => tab.id === selectedLeftDockTabId)
+    ? selectedLeftDockTabId
+    : getInitialActiveItemId(chromeDefinition.leftDockTabs, 'project');
   const documentTabs = [...chromeDefinition.documentTabs];
   if (!documentTabs.some((tab) => tab.id === 'document')) {
     documentTabs.unshift({
@@ -2459,6 +2469,8 @@ export function App() {
       <section className="blend-workspace">
         <LeftRail
           dockTabs={chromeDefinition.leftDockTabs}
+          activeDockTabId={activeLeftDockTabId}
+          onSelectDockTab={setSelectedLeftDockTabId}
           panels={panelsDefinition.panels}
           status={status}
           origin={origin}

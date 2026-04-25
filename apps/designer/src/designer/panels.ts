@@ -11,6 +11,7 @@ export interface DesignerPanelText {
   id: string;
   title: string;
   caption: string;
+  dockTabId?: string;
 }
 
 export interface DesignerPanelsDefinition {
@@ -31,32 +32,38 @@ const DEFAULT_PANEL_TEXTS: Record<DesignerPanelId, DesignerPanelText> = {
   solution: {
     id: 'solution',
     title: 'Solution Explorer',
-    caption: ''
+    caption: '',
+    dockTabId: 'project'
   },
   palette: {
     id: 'palette',
     title: 'Palette',
-    caption: 'Pick a template, then insert it as a child or sibling. Placement adapts automatically for Canvas and Grid containers.'
+    caption: 'Pick a template, then insert it as a child or sibling. Placement adapts automatically for Canvas and Grid containers.',
+    dockTabId: 'project'
   },
   tree: {
     id: 'tree',
     title: 'Component Tree',
-    caption: ''
+    caption: '',
+    dockTabId: 'project'
   },
   assets: {
     id: 'assets',
     title: 'Asset Library',
-    caption: 'Import real images, select a library entry, then apply it directly to the current image or insert it as a new component.'
+    caption: 'Import real images, select a library entry, then apply it directly to the current image or insert it as a new component.',
+    dockTabId: 'assets'
   },
   fonts: {
     id: 'fonts',
     title: 'Font Library',
-    caption: 'Import real font files or apply preset families. Imported fonts embed their FontSource into XAML when you apply them.'
+    caption: 'Import real font files or apply preset families. Imported fonts embed their FontSource into XAML when you apply them.',
+    dockTabId: 'assets'
   },
   overlays: {
     id: 'overlays',
     title: 'Debug Overlays',
-    caption: 'Keep structure visible while editing text, images, and container layouts.'
+    caption: 'Keep structure visible while editing text, images, and container layouts.',
+    dockTabId: 'states'
   }
 };
 
@@ -110,7 +117,8 @@ function applyKnownText<TId extends string>(
     target[id] = {
       id,
       title: title || target[id].title,
-      caption: caption || target[id].caption
+      caption: caption || target[id].caption,
+      dockTabId: readString(node, 'DockTab') || target[id].dockTabId
     };
   }
 }
